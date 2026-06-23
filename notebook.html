@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elias Lab — Lab Notebook</title>
+    <meta name="robots" content="noindex">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' rx='12' fill='%23072e2a'/%3E%3Ccircle cx='30' cy='30' r='9' fill='none' stroke='%231fd197' stroke-width='3'/%3E%3Ccircle cx='30' cy='30' r='3.5' fill='%231fd197'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/notebook.css">
+</head>
+<body>
+  <div id="ln-mode-banner"></div>
+
+  <!-- LOGIN / SIGN-UP -->
+  <div id="ln-login-screen">
+    <div class="ln-login-box">
+      <a class="ln-back-link" href="index.html">← Back to website</a>
+      <div class="ln-logo"><div style="font-size:36px;">🧬</div><h2>Elias Lab Notebook</h2><p>Secure laboratory management system</p></div>
+      <div id="ln-signup-fields" style="display:none;">
+        <div class="ln-input-group"><label>Full Name</label><input type="text" id="ln-name" placeholder="Dr. Jane Doe"></div>
+      </div>
+      <div class="ln-input-group"><label>Email Address</label><input type="email" id="ln-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')lnPrimary()"></div>
+      <div class="ln-input-group"><label>Password</label><input type="password" id="ln-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')lnPrimary()"></div>
+      <button class="ln-btn" id="ln-primary-btn" data-mode="signin" onclick="lnPrimary()">Sign In →</button>
+      <div id="ln-login-msg" class="ln-msg" style="display:none;"></div>
+      <p class="ln-auth-switch">
+        <span id="ln-signup-link">New to the lab? <a onclick="lnAuthMode('signup')">Request an account</a></span>
+        <span id="ln-signin-link" style="display:none;">Already have an account? <a onclick="lnAuthMode('signin')">Sign in</a></span>
+      </p>
+      <p style="font-size:12px;color:#aaa;text-align:center;margin-top:1rem;">New accounts require approval by the PI.</p>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="ln-app">
+    <div class="ln-shell">
+      <div class="ln-sidebar">
+        <div class="ln-sidebar-header"><h2>🧬 Lab Notebook</h2><p>Elias Lab</p></div>
+        <div class="ln-nav-section">Overview</div>
+        <div class="ln-nav-item active" onclick="lnShow('dashboard')"><span class="ni">📊</span><span>Dashboard</span></div>
+        <div class="ln-nav-section">Research</div>
+        <div class="ln-nav-item" onclick="lnShow('protocols')"><span class="ni">📋</span><span>Protocols</span></div>
+        <div class="ln-nav-item" onclick="lnShow('notebooks')"><span class="ni">📓</span><span>Experiment Notebooks</span></div>
+        <div class="ln-nav-item" onclick="lnShow('presentations')"><span class="ni">🖥️</span><span>Presentations</span></div>
+        <div class="ln-nav-item" onclick="lnShow('webapps')"><span class="ni">🌐</span><span>Webapps &amp; Tools</span></div>
+        <div class="ln-nav-section">Inventory</div>
+        <div class="ln-nav-item" onclick="lnShow('inventory')"><span class="ni">🧪</span><span>All Inventory</span></div>
+        <div id="ln-admin-nav" style="display:none;">
+          <div class="ln-nav-section">Admin</div>
+          <div class="ln-nav-item" onclick="lnShow('admin')"><span class="ni">⚙️</span><span>User Management</span></div>
+        </div>
+        <div class="ln-sidebar-footer">
+          <div class="ln-user-info">Logged in as</div>
+          <div class="ln-user-name" id="ln-sidebar-name">—</div>
+          <button class="ln-logout-btn" onclick="lnLogout()">Sign Out</button>
+          <a class="ln-logout-btn" href="index.html" style="margin-top:.35rem;background:rgba(255,255,255,.05);display:block;text-align:center;text-decoration:none;line-height:1.4;">← Website</a>
+        </div>
+      </div>
+      <div class="ln-main">
+        <!-- DASHBOARD -->
+        <div id="ln-dashboard" class="ln-section active">
+          <div class="ln-section-header"><div><h2 id="ln-welcome-msg">Welcome!</h2><p>Elias Lab · Molecular Biology &amp; Gene Therapy</p></div></div>
+          <div class="ln-stats-grid" id="ln-stats-grid"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div><h3 style="font-size:15px;font-weight:700;margin-bottom:1rem;color:#444;">Recent Protocols</h3><div id="ln-recent-protocols"></div></div>
+            <div><h3 style="font-size:15px;font-weight:700;margin-bottom:1rem;color:#444;">Recent Experiments</h3><div id="ln-recent-notebooks"></div></div>
+          </div>
+        </div>
+        <!-- PROTOCOLS -->
+        <div id="ln-protocols" class="ln-section">
+          <div class="ln-section-header"><div><h2>Protocols</h2><p>SOPs and experimental methods</p></div><button class="ln-add-btn" onclick="openModal('protocol')">+ Add Protocol</button></div>
+          <input class="ln-search" placeholder="🔍 Search protocols..." oninput="renderProtocols(this.value)" style="margin-bottom:1.5rem;">
+          <div id="ln-protocols-list"></div>
+        </div>
+        <!-- NOTEBOOKS -->
+        <div id="ln-notebooks" class="ln-section">
+          <div class="ln-section-header"><div><h2>Experiment Notebooks</h2><p>Detailed experiment documentation</p></div><button class="ln-add-btn" onclick="openModal('notebook')">+ New Entry</button></div>
+          <input class="ln-search" placeholder="🔍 Search experiments..." oninput="renderNotebooks(this.value)" style="margin-bottom:1.5rem;">
+          <div id="ln-notebooks-list"></div>
+        </div>
+        <!-- PRESENTATIONS -->
+        <div id="ln-presentations" class="ln-section">
+          <div class="ln-section-header"><div><h2>Presentations</h2><p>Lab meetings, conferences, seminars</p></div><button class="ln-add-btn" onclick="openModal('presentation')">+ Add Presentation</button></div>
+          <div id="ln-presentations-list"></div>
+        </div>
+        <!-- WEBAPPS -->
+        <div id="ln-webapps" class="ln-section">
+          <div class="ln-section-header"><div><h2>Webapps &amp; Tools</h2><p>Curated bioinformatics tools and custom lab applications</p></div></div>
+          <h3 class="ln-webapp-sub">🔬 Custom Elias Lab Tools</h3>
+          <div class="ln-webapp-grid" id="ln-custom-tools-grid" style="margin-bottom:2rem;"></div>
+          <h3 class="ln-webapp-sub" style="color:#444;">🌐 External Bioinformatics Tools</h3>
+          <div class="ln-webapp-grid" id="ln-webapp-grid"></div>
+        </div>
+        <!-- INVENTORY -->
+        <div id="ln-inventory" class="ln-section">
+          <div class="ln-section-header"><div><h2>Lab Inventory</h2><p>Track all lab materials and reagents</p></div><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Item</button></div>
+          <div class="ln-tabs">
+            <div class="ln-tab active" onclick="lnInvTab('enzymes',this)">Restriction Enzymes</div>
+            <div class="ln-tab" onclick="lnInvTab('primers',this)">Primers</div>
+            <div class="ln-tab" onclick="lnInvTab('plasmids',this)">Plasmids</div>
+            <div class="ln-tab" onclick="lnInvTab('stocks',this)">Glycerol Stocks</div>
+            <div class="ln-tab" onclick="lnInvTab('kits',this)">Kits &amp; Reagents</div>
+          </div>
+          <div id="ln-inv-enzymes" class="ln-tab-content active"></div>
+          <div id="ln-inv-primers" class="ln-tab-content"></div>
+          <div id="ln-inv-plasmids" class="ln-tab-content"></div>
+          <div id="ln-inv-stocks" class="ln-tab-content"></div>
+          <div id="ln-inv-kits" class="ln-tab-content"></div>
+        </div>
+        <!-- ADMIN -->
+        <div id="ln-admin" class="ln-section">
+          <div class="ln-section-header">
+            <div><h2>User Management</h2><p>Approve, manage and remove lab members</p></div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+              <button class="ln-add-btn" id="ln-import-btn" style="display:none;background:#1d5fd4;" onclick="runImport()">⇪ Import local data</button>
+              <button class="ln-add-btn" id="ln-adduser-btn" onclick="openModal('adduser')">+ Add User</button>
+            </div>
+          </div>
+          <div class="ln-user-table-wrap">
+            <table class="ln-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Added</th><th>Actions</th></tr></thead>
+            <tbody id="ln-users-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALS -->
+  <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
+  <div id="ln-tool-modal-bg"><div id="ln-tool-modal"></div></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/tools.js"></script>
+  <script src="js/notebook.js"></script>
+</body>
+</html>

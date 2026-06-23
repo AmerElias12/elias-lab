@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GenomeScan — Consensus Sequence Finder</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- SeqViz: Benchling/SnapGene-style DNA sequence viewer -->
+<script src="https://unpkg.com/seqviz@3.10.22/dist/seqviz.min.js"></script>
+<style>
+  :root {
+    --bg:#0a0e14;--surface:#111720;--surface2:#161d28;--border:#1e2d3d;
+    --accent:#00d4aa;--accent2:#0099ff;--accent3:#ff6b35;
+    --text:#cdd9e5;--text-dim:#7a8a9a;--text-bright:#e8f0f8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;min-height:100vh;}
+  header{border-bottom:1px solid var(--border);padding:18px 40px;display:flex;align-items:center;gap:16px;background:var(--surface);}
+  .logo-mark{width:36px;height:36px;border:2px solid var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);letter-spacing:-1px;}
+  header h1{font-size:18px;font-weight:600;color:var(--text-bright);}
+  header h1 span{color:var(--accent);}
+  .consensus-badge{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:4px 10px;}
+  .consensus-badge span{color:var(--accent);}
+  main{padding:32px 40px;max-width:1200px;margin:0 auto;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px;}
+  .panel-title{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:18px;display:flex;align-items:center;gap:8px;}
+  .panel-title::before{content:'';display:inline-block;width:3px;height:12px;background:var(--accent);border-radius:2px;}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .form-group{display:flex;flex-direction:column;gap:8px;}
+  .form-group.full{grid-column:1/-1;}
+  label{font-size:11px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);}
+  select,input[type="text"],textarea{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text-bright);font-family:'IBM Plex Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;width:100%;}
+  select:focus,input:focus,textarea:focus{border-color:var(--accent);}
+  textarea{font-family:'IBM Plex Mono',monospace;font-size:13px;resize:vertical;min-height:80px;}
+  .toggle-group{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+  .toggle-btn{flex:1;padding:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13px;transition:all 0.2s;}
+  .toggle-btn.active{background:var(--accent);color:var(--bg);font-weight:600;}
+  .input-area{display:none;}
+  .input-area.active{display:block;margin-top:12px;}
+  .ncbi-note{font-size:11px;color:var(--text-dim);margin-top:6px;padding:8px 12px;background:var(--surface2);border-radius:4px;border-left:3px solid var(--accent2);}
+  .advanced-toggle{background:none;border:none;color:var(--accent2);cursor:pointer;font-size:12px;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;gap:4px;margin-top:8px;}
+  .advanced-section{display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);}
+  .advanced-section.open{display:block;}
+  .range-group{display:flex;align-items:center;gap:12px;}
+  .range-group input[type=number]{width:90px;}
+  .search-btn{width:100%;padding:14px;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-family:'IBM Plex Sans',sans-serif;font-size:15px;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-top:20px;}
+  .search-btn:hover{opacity:0.88;}
+  .search-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .progress-bar-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:14px;display:none;}
+  .progress-bar-wrap.active{display:block;}
+  .progress-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;width:0%;transition:width 0.3s;}
+  .progress-label{font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;display:none;}
+  .progress-label.active{display:block;}
+  #results{display:none;}
+  #results.visible{display:block;}
+  .stats-row{display:flex;gap:16px;margin-bottom:20px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 20px;flex:1;}
+  .stat-card .val{font-size:28px;font-weight:600;font-family:'IBM Plex Mono',monospace;color:var(--text-bright);}
+  .stat-card .val.green{color:#00d4aa;}
+  .stat-card .val.orange{color:#ff6b35;}
+  .stat-card .lbl{font-size:11px;color:var(--text-dim);letter-spacing:0.8px;text-transform:uppercase;margin-top:2px;}
+  /* Map */
+  .map-ctrl-btn{padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:var(--text-dim);cursor:pointer;font-size:12px;font-family:'IBM Plex Sans',sans-serif;transition:border-color 0.15s,color 0.15s;}
+  .map-ctrl-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .map-ctrl-btn.active-btn{border-color:var(--accent2);color:var(--accent2);}
+  .legend-row{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:11px;color:var(--text-dim);}
+  .leg{display:flex;align-items:center;gap:5px;}
+  .leg-box{width:14px;height:10px;border-radius:2px;}
+  /* Table */
+  .table-actions{display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;}
+  .dl-btn{padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:'IBM Plex Sans',sans-serif;transition:border-color 0.2s,color 0.2s;}
+  .dl-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .filter-input{margin-left:auto;width:200px;padding:7px 12px;font-size:13px;}
+  .table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead tr{background:var(--surface2);}
+  th{padding:10px 14px;text-align:left;font-size:10px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text-dim);white-space:nowrap;cursor:pointer;user-select:none;}
+  th:hover{color:var(--accent);}
+  td{padding:9px 14px;border-top:1px solid var(--border);white-space:nowrap;}
+  tr:hover td{background:var(--surface2);}
+  tr.hit-highlight td{background:rgba(0,212,170,0.08)!important;}
+  .seq-cell{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.5px;}
+  .B-arm{color:#00d4aa;font-weight:600;text-transform:uppercase;}
+  .O-seq{color:#7a8a9a;text-transform:lowercase;}
+  .B-prime{color:#ff6b35;font-weight:600;text-transform:uppercase;}
+  /* attP-like core highlighting: C' (compl. to B') · O · C (compl. to B) */
+  .attp-Cp{background:rgba(255,107,53,0.20);color:#ff8a5c;font-weight:700;border-radius:2px;}
+  .attp-O{background:rgba(120,138,154,0.20);color:#cdd9e5;font-weight:700;border-radius:2px;}
+  .attp-C{background:rgba(0,212,170,0.20);color:#00d4aa;font-weight:700;border-radius:2px;}
+  .attp-flank{color:#5f6f7e;}
+  .strand-plus{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace;background:rgba(0,212,170,0.12);color:#00d4aa;border:1px solid rgba(0,212,170,0.3);}
+  .strand-minus{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace;background:rgba(255,107,53,0.12);color:#ff6b35;border:1px solid rgba(255,107,53,0.3);}
+  .coord-cell{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent2);}
+  .error-msg{background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.4);color:#ff6b35;border-radius:6px;padding:12px 16px;font-size:13px;margin-top:12px;display:none;}
+  .error-msg.visible{display:block;}
+  footer{text-align:center;padding:24px;color:var(--text-dim);font-size:11px;border-top:1px solid var(--border);margin-top:40px;}
+  footer span{color:var(--accent);}
+  .pagination{display:flex;justify-content:flex-end;gap:6px;margin-top:12px;align-items:center;}
+  .page-btn{padding:5px 11px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;}
+  .page-btn.active{background:var(--accent);color:var(--bg);border-color:var(--accent);}
+  .page-info{font-size:12px;color:var(--text-dim);}
+
+  /* ── Copy Number ── */
+  .utab{padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-dim);cursor:pointer;font-size:12px;font-family:'IBM Plex Sans',sans-serif;transition:all 0.15s;}
+  .utab:hover{border-color:var(--accent);color:var(--accent);}
+  .utab.on{border-color:var(--accent);color:var(--accent);background:rgba(0,212,170,0.07);font-weight:600;}
+  .ubadge{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
+  .ub-unique{background:rgba(0,212,170,0.12);color:#00d4aa;border:1px solid rgba(0,212,170,0.3);}
+  .ub-multi{background:rgba(255,107,53,0.12);color:#ff6b35;border:1px solid rgba(255,107,53,0.3);}
+  .ub-pend{background:rgba(100,115,135,0.1);color:#7a8a9a;border:1px solid rgba(100,115,135,0.2);}
+  .ub-err{background:rgba(150,150,50,0.1);color:#cccc60;border:1px solid rgba(150,150,50,0.25);}
+  .uniq-run-btn{padding:9px 20px;background:var(--accent2);color:#fff;border:none;border-radius:7px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:opacity 0.2s;}
+  .uniq-run-btn:hover{opacity:0.85;}
+  .uniq-run-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .check-btn{padding:3px 9px;border-radius:4px;border:1px solid #1e3a55;background:rgba(0,153,255,0.07);color:#4d90fe;cursor:pointer;font-size:11px;font-family:'IBM Plex Mono',monospace;transition:border-color 0.15s,background 0.15s;white-space:nowrap;}
+  .check-btn:hover{border-color:#4d90fe;background:rgba(0,153,255,0.18);}
+  .check-btn:disabled{opacity:0.5;cursor:not-allowed;}
+  /* Copy-number badge variants */
+  .cn-unique{display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:rgba(0,212,170,0.12);color:#00d4aa;border:1px solid rgba(0,212,170,0.35);}
+  .cn-multi{display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;background:rgba(255,107,53,0.13);color:#ff6b35;border:1px solid rgba(255,107,53,0.35);}
+  .cn-pend{display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-family:'IBM Plex Mono',monospace;background:rgba(100,115,135,0.1);color:#7a8a9a;border:1px solid rgba(100,115,135,0.2);}
+  .cn-err{display:inline-block;padding:2px 10px;border-radius:4px;font-size:11px;font-family:'IBM Plex Mono',monospace;background:rgba(150,150,50,0.1);color:#cccc60;border:1px solid rgba(150,150,50,0.25);}
+  /* Copy-number panel bar */
+  .cn-prog-wrap{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:10px;display:none;}
+  .cn-prog-bar{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:2px;width:0%;transition:width 0.25s;}
+  @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+  .spin{display:inline-block;animation:spin 1s linear infinite;}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo-mark">GS</div>
+  <h1>Genome<span>Scan</span></h1>
+  <div class="consensus-badge">Consensus: <span>NNDCTTWNNNNNNNAAAGBNN</span></div>
+</header>
+<main>
+  <!-- Search panel -->
+  <div class="panel">
+    <div class="panel-title">Search Parameters</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Organism / Genome</label>
+        <select id="organism">
+          <option value="hg38">Homo sapiens (Human) — hg38</option>
+          <option value="hg19">Homo sapiens (Human) — hg19</option>
+          <option value="mm39">Mus musculus (Mouse) — mm39</option>
+          <option value="mm10">Mus musculus (Mouse) — mm10</option>
+          <option value="susScr11">Sus scrofa (Pig) — susScr11</option>
+          <option value="bosTau9">Bos taurus (Cow) — bosTau9</option>
+          <option value="rn7">Rattus norvegicus (Rat) — rn7</option>
+          <option value="danRer11">Danio rerio (Zebrafish) — danRer11</option>
+          <option value="dm6">Drosophila melanogaster (Fly) — dm6</option>
+          <option value="ce11">Caenorhabditis elegans (Worm) — ce11</option>
+          <option value="sacCer3">Saccharomyces cerevisiae (Yeast) — sacCer3</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Input Mode</label>
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="btn-gene" onclick="setMode('gene')">Gene Name</button>
+          <button class="toggle-btn" id="btn-seq" onclick="setMode('seq')">Paste Sequence</button>
+          <button class="toggle-btn" id="btn-coord" onclick="setMode('coord')">Coordinates</button>
+        </div>
+      </div>
+      <div class="form-group full input-area active" id="area-gene">
+        <label>Gene Name or Accession</label>
+        <input type="text" id="gene-input" placeholder="e.g. BRCA1, TP53, CTNS, GAPDH..." />
+        <div class="ncbi-note">Sequence + annotation fetched via NCBI Entrez (esearch + esummary + efetch)</div>
+      </div>
+      <div class="form-group full input-area" id="area-seq">
+        <label>Nucleotide Sequence (FASTA or raw)</label>
+        <textarea id="seq-input" placeholder=">My_sequence&#10;ATGCTAGCTAGCTAGCGATCG..."></textarea>
+      </div>
+      <div class="form-group full input-area" id="area-coord">
+        <label>Genomic Coordinates</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="chrom-input" placeholder="chr17" style="width:100px;"/>
+          <input type="text" id="start-input" placeholder="Start (1-based)" style="flex:1;"/>
+          <input type="text" id="end-input" placeholder="End (1-based)" style="flex:1;"/>
+        </div>
+        <div class="ncbi-note">Sequence retrieved via NCBI efetch using the RefSeq NC_ accession.</div>
+      </div>
+    </div>
+    <button class="advanced-toggle" onclick="toggleAdvanced()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2l4 8H2z"/></svg>
+      Advanced Options
+    </button>
+    <div class="advanced-section" id="advanced-section">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Search Strand</label>
+          <select id="strand-opt">
+            <option value="both">Both strands</option>
+            <option value="plus">Forward (+) only</option>
+            <option value="minus">Reverse (−) only</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Upstream / Downstream padding (bp)</label>
+          <div class="range-group">
+            <input type="number" id="pad-up" value="500" min="0" max="50000"/>
+            <span style="color:var(--text-dim)">up / down</span>
+            <input type="number" id="pad-down" value="500" min="0" max="50000"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Custom Consensus (IUPAC)</label>
+          <input type="text" id="custom-consensus" placeholder="Default: NNDCTTWNNNNNNNAAAGBNN" style="font-family:'IBM Plex Mono',monospace;letter-spacing:1px;"/>
+        </div>
+        <div class="form-group">
+          <label>Max mismatches</label>
+          <input type="number" id="mismatches" value="0" min="0" max="3"/>
+        </div>
+      </div>
+    </div>
+    <button class="search-btn" id="search-btn" onclick="runSearch()">Scan Genome</button>
+    <div class="progress-bar-wrap" id="prog-wrap"><div class="progress-bar" id="prog-bar"></div></div>
+    <div class="progress-label" id="prog-label"></div>
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="stats-row">
+      <div class="stat-card"><div class="val green" id="stat-total">0</div><div class="lbl">Total Hits</div></div>
+      <div class="stat-card"><div class="val green" id="stat-plus">0</div><div class="lbl">Forward (+) Strand</div></div>
+      <div class="stat-card"><div class="val orange" id="stat-minus">0</div><div class="lbl">Reverse (−) Strand</div></div>
+      <div class="stat-card"><div class="val" id="stat-len">0</div><div class="lbl">Sequence Length (bp)</div></div>
+    </div>
+
+    <!-- ── Copy-Number Panel ── -->
+    <div class="panel" id="cn-panel" style="padding:18px 24px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="display:inline-block;width:3px;height:12px;background:var(--accent2);border-radius:2px;flex-shrink:0;"></span>
+        <div>
+          <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:var(--text-dim);">Whole-Genome Copy Number</span>
+          <span style="font-size:12px;color:var(--text-dim);margin-left:10px;">via NCBI BLAST — counts exact copies on the primary chromosomes (usually under a minute per hit). Click a result to see every copy's chromosome / start / end.</span>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <!-- Filter tabs -->
+          <button class="utab on" id="utab-all"    onclick="setCnFilter('all')">All</button>
+          <button class="utab"    id="utab-unique" onclick="setCnFilter('unique')">Unique only</button>
+          <button class="utab"    id="utab-multi"  onclick="setCnFilter('multi')">Multi-copy</button>
+          <span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;"></span>
+          <button class="uniq-run-btn" id="cn-check-all-btn" onclick="checkAllCopyNumbers()">Check All Copy Numbers</button>
+          <button class="uniq-run-btn" style="background:#2a3a50;color:var(--text-dim);display:none;" id="cn-cancel-btn" onclick="cancelCopyNumbers()">Cancel</button>
+        </div>
+      </div>
+      <div class="cn-prog-wrap" id="cn-prog-wrap">
+        <div class="cn-prog-bar" id="cn-prog-bar"></div>
+      </div>
+      <div id="cn-prog-status" style="font-size:11px;color:var(--text-dim);margin-top:6px;display:none;"></div>
+      <div id="cn-summary" style="font-size:12px;color:var(--text-dim);margin-top:8px;display:none;"></div>
+    </div>
+
+    <!-- Sequence Map Panel (SeqViz — Benchling/SnapGene-style viewer) -->
+    <div class="panel" id="gene-map-container">
+      <div class="panel-title" style="margin-bottom:12px;">
+        Sequence Map
+        <span id="map-gene-label" style="font-size:12px;font-weight:500;color:var(--text);letter-spacing:0;text-transform:none;margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <div class="toggle-group" style="width:auto;">
+            <button class="toggle-btn active" id="sv-mode-linear"   onclick="setViewerMode('linear')">Linear</button>
+            <button class="toggle-btn"        id="sv-mode-both"     onclick="setViewerMode('both')">Both</button>
+            <button class="toggle-btn"        id="sv-mode-circular" onclick="setViewerMode('circular')">Circular</button>
+          </div>
+          <button class="map-ctrl-btn" id="btn-show-annot" onclick="toggleAnnot()">Features ✓</button>
+          <button class="map-ctrl-btn" id="btn-show-index" onclick="toggleIndex()">Ruler ✓</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+        <label style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);">Zoom</label>
+        <input type="range" id="sv-zoom" min="1" max="100" value="35" oninput="setViewerZoom(this.value)" style="flex:1;min-width:160px;max-width:300px;accent-color:var(--accent);">
+        <input type="text" id="sv-search" placeholder="Highlight a sub-sequence (e.g. GAATTC)…" oninput="setViewerSearch(this.value)" style="width:260px;padding:7px 12px;font-size:13px;font-family:'IBM Plex Mono',monospace;"/>
+        <span style="margin-left:auto;font-size:11px;color:var(--text-dim);">Drag to select · scroll to zoom · powered by SeqViz</span>
+      </div>
+      <div id="seqviz-root" style="width:100%;height:560px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fbfdff;"></div>
+      <div class="legend-row">
+        <div class="leg"><div class="leg-box" style="background:#3b6fb0;border:1px solid #4d90fe;"></div><span>Exon / CDS</span></div>
+        <div class="leg"><div class="leg-box" style="background:#0d2d5e;border:1px solid #2860cc;"></div><span>5' / 3' UTR</span></div>
+        <div class="leg"><div class="leg-box" style="background:#00b894;"></div><span>attB hit (+ strand)</span></div>
+        <div class="leg"><div class="leg-box" style="background:#ff6b35;"></div><span>attB hit (− strand)</span></div>
+        <span style="margin-left:auto;font-size:11px;">Click a hit row in the table below to highlight it here</span>
+      </div>
+    </div>
+
+    <!-- Hit Table -->
+    <div class="panel">
+      <div class="panel-title">Hit Table</div>
+      <div class="table-actions">
+        <button class="dl-btn" onclick="downloadCSV()">↓ CSV</button>
+        <button class="dl-btn" onclick="downloadExcel()">↓ Excel</button>
+        <button class="dl-btn" onclick="downloadFASTA()">↓ FASTA (hits)</button>
+        <button class="dl-btn" onclick="downloadAttPFastaAll()" title="Multi-record FASTA of every hit's attP-like site">↓ FASTA (attP-like)</button>
+        <input type="text" class="filter-input" id="filter-input" placeholder="Filter table..." oninput="filterTable()"/>
+      </div>
+      <div class="table-wrap">
+        <table id="hit-table">
+          <thead>
+            <tr>
+              <th onclick="sortTable(0)">#</th>
+              <th onclick="sortTable(1)">Chr</th>
+              <th onclick="sortTable(2)">Start</th>
+              <th onclick="sortTable(3)">End</th>
+              <th onclick="sortTable(4)">Strand</th>
+              <th onclick="sortTable(5)">Hit Sequence (B|o|B')</th>
+              <th onclick="sortTable(6)">B arm</th>
+              <th onclick="sortTable(7)">O linker</th>
+              <th onclick="sortTable(8)">B' arm</th>
+              <th onclick="sortTable(9)">Genome Copies</th>
+              <th>attP-like Site</th>
+            </tr>
+          </thead>
+          <tbody id="hit-tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- Cell Line & Primary Cell Models Panel -->
+    <div class="panel" id="cell-models-panel">
+      <div class="panel-title" style="margin-bottom:14px;">
+        Cell Line &amp; Primary Cell Models
+        <span id="cm-gene-label" style="font-size:12px;font-weight:500;color:var(--text);letter-spacing:0;text-transform:none;margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <button class="uniq-run-btn" id="cm-run-btn" onclick="findCellModels()">Find models for this gene</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+        Cell-line dependency &amp; expression from <strong style="color:var(--accent2);">DepMap</strong>, plus baseline tissue expression — via the Open Targets Platform. Use these to pick a relevant model for the gene of interest. <span style="color:var(--text-dim);">(Human gene data only.)</span>
+      </div>
+      <div class="cn-prog-wrap" id="cm-prog-wrap"><div class="cn-prog-bar" id="cm-prog-bar"></div></div>
+      <div id="cm-status" style="font-size:12px;color:var(--text-dim);margin-top:8px;display:none;"></div>
+      <div id="cm-error" class="error-msg" style="margin-top:8px;"></div>
+
+      <!-- Tissue expression summary -->
+      <div id="cm-tissues" style="display:none;margin-top:8px;margin-bottom:18px;">
+        <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Highest-expressing tissues <span style="text-transform:none;font-weight:400;">(where the gene is most active — guides primary-cell choice)</span></div>
+        <div id="cm-tissue-chips" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+
+      <!-- Cell-line table -->
+      <div id="cm-results" style="display:none;">
+        <div class="table-actions">
+          <button class="dl-btn" onclick="downloadCellModelsCSV()">↓ CSV</button>
+          <select id="cm-tissue-filter" onchange="renderCellModels()" style="width:auto;min-width:180px;padding:7px 12px;font-size:13px;"></select>
+          <select id="cm-sort" onchange="renderCellModels()" style="width:auto;padding:7px 12px;font-size:13px;">
+            <option value="expr">Sort: highest expression</option>
+            <option value="dep">Sort: strongest dependency</option>
+            <option value="name">Sort: cell line name</option>
+          </select>
+          <input type="text" class="filter-input" id="cm-filter" placeholder="Filter cell lines…" oninput="renderCellModels()"/>
+        </div>
+        <div class="table-wrap" style="max-height:460px;overflow:auto;">
+          <table id="cm-table">
+            <thead>
+              <tr>
+                <th>Cell Line</th>
+                <th>Tissue</th>
+                <th>Disease / Origin</th>
+                <th title="Log2(TPM+1) — higher = gene more expressed in this line">Expression</th>
+                <th title="DepMap Chronos gene-effect: more negative = cells depend on the gene (essential); ~0 = non-essential">Dependency</th>
+                <th>Mutation</th>
+                <th>Links</th>
+              </tr>
+            </thead>
+            <tbody id="cm-tbody"></tbody>
+          </table>
+        </div>
+        <div id="cm-count" style="font-size:11px;color:var(--text-dim);margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Copy-location modal -->
+<div id="cn-modal" style="display:none;position:fixed;inset:0;background:rgba(5,8,14,0.78);z-index:100;align-items:center;justify-content:center;padding:24px;" onclick="if(event.target===this)closeCopyLoci()">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:680px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.7);">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+      <div id="cn-modal-title" style="font-size:13px;color:var(--text);flex:1;"></div>
+      <button class="dl-btn" onclick="downloadLociCSV()">↓ CSV</button>
+      <button class="map-ctrl-btn" onclick="closeCopyLoci()" style="font-size:16px;line-height:1;padding:4px 10px;">✕</button>
+    </div>
+    <div id="cn-modal-body" style="overflow:auto;padding:8px 0;"></div>
+  </div>
+</div>
+
+<!-- attP-like site modal -->
+<div id="attp-modal" style="display:none;position:fixed;inset:0;background:rgba(5,8,14,0.78);z-index:100;align-items:center;justify-content:center;padding:24px;" onclick="if(event.target===this)closeAttP()">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:820px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.7);">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <div id="attp-modal-title" style="font-size:13px;color:var(--text);flex:1;"></div>
+      <button class="dl-btn" onclick="copyAttP()">⧉ Copy</button>
+      <button class="dl-btn" onclick="downloadAttPFasta()">↓ FASTA</button>
+      <button class="map-ctrl-btn" onclick="closeAttP()" style="font-size:16px;line-height:1;padding:4px 10px;">✕</button>
+    </div>
+    <div id="attp-modal-body" style="overflow:auto;padding:18px 22px;"></div>
+  </div>
+</div>
+
+<footer>GenomeScan &mdash; Consensus Sequence Finder &nbsp;|&nbsp; Powered by <span>NCBI Entrez</span> &amp; <span>NCBI BLAST</span></footer>
+
+<script>
+// ─── IUPAC ────────────────────────────────────────────────────────────────────
+const IUPAC={A:['A'],T:['T'],C:['C'],G:['G'],R:['A','G'],Y:['C','T'],S:['G','C'],W:['A','T'],K:['G','T'],M:['A','C'],B:['C','G','T'],D:['A','G','T'],H:['A','C','T'],V:['A','C','G'],N:['A','T','C','G']};
+const DEFAULT_CONSENSUS='NNDCTTWNNNNNNNAAAGBNN';
+const B_LEN=7,O_LEN=7,BP_LEN=7;
+
+// ── attP-like site generation ─────────────────────────────────────────────────
+// The attP-like site is built as:  UPSTREAM + COC' core + DOWNSTREAM
+// The COC' core is the SAME sequence as the chosen attB hit BOB' (similar, NOT
+// complementary): C=B, O=O, C'=B'. The hit's 21 bp is dropped between the fixed
+// attP flanks unchanged.
+const ATTP_UP='aggtcactaatactatctaagtagttgattcatagtgactggatatgttgcgttttgtcgcattatgtagtctatcatttaaccacagattagtgtaatgcgatgatttttaagtgattaatgttattttgtc';
+const ATTP_DOWN='tatatttaaaatctctttaattatcagtaaattaatgtaagtaggtcattattagtcaaaataaaatcat';
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let currentMode='gene';
+let allHits=[],filteredHits=[];
+let currentPage=1; const PAGE_SIZE=20;
+// hitCopyNumber[i] = null (unchecked) | number (count) | -1 (error) | 'checking'
+let hitCopyNumber=[];
+// hitCopyLoci[i] = array of {chrom,start,end,strand} for every exact genome copy
+let hitCopyLoci=[];
+let cnFilter='all'; // 'all'|'unique'|'multi'
+let cnCancelFlag=false;
+let sortCol=2,sortAsc=true;
+let currentSeq='',currentChrom='',currentStart=0,currentGeneName='',currentGeneSymbol='';
+let geneFeatures=null;
+let showAnnotation=true;
+
+function setMode(m){
+  currentMode=m;
+  ['gene','seq','coord'].forEach(x=>{
+    document.getElementById('area-'+x).classList.toggle('active',x===m);
+    document.getElementById('btn-'+x).classList.toggle('active',x===m);
+  });
+}
+function toggleAdvanced(){document.getElementById('advanced-section').classList.toggle('open');}
+function toggleAnnot(){
+  showAnnotation=!showAnnotation;
+  document.getElementById('btn-show-annot').textContent='Features '+(showAnnotation?'✓':'○');
+  renderViewer();
+}
+
+// ─── IUPAC matching ───────────────────────────────────────────────────────────
+function matchesIUPAC(base,code){return(IUPAC[code.toUpperCase()]||[]).includes(base.toUpperCase());}
+function matchesConsensus(seq,cons,maxMM){
+  if(seq.length!==cons.length)return false;
+  let mm=0;
+  for(let i=0;i<cons.length;i++){if(!matchesIUPAC(seq[i],cons[i])){if(++mm>maxMM)return false;}}
+  return true;
+}
+function revComp(seq){const c={A:'T',T:'A',C:'G',G:'C',N:'N'};return seq.split('').reverse().map(b=>c[b.toUpperCase()]||'N').join('');}
+function comp1(b){const c={A:'T',T:'A',C:'G',G:'C',N:'N'};return c[b.toUpperCase()]||'N';}
+
+function findHits(seq,cons,strand,maxMM,chrom,seqStart){
+  const hits=[],L=cons.length;
+  const scan=(s,st)=>{
+    for(let i=0;i<=s.length-L;i++){
+      const sub=s.substring(i,i+L).toUpperCase();
+      if(matchesConsensus(sub,cons,maxMM)){
+        const gs=seqStart+(st==='+'?i:s.length-i-L);
+        hits.push({chrom,start:gs,end:gs+L-1,strand:st,seq:sub,
+          B:sub.substring(0,B_LEN),O:sub.substring(B_LEN,B_LEN+O_LEN).toLowerCase(),Bp:sub.substring(B_LEN+O_LEN),
+          score:calcScore(sub,cons)});
+      }
+    }
+  };
+  if(strand!=='minus')scan(seq,'+');
+  if(strand!=='plus')scan(revComp(seq),'-');
+  return hits;
+}
+function calcScore(seq,cons){
+  let s=0;
+  for(let i=0;i<cons.length;i++){const c=cons[i].toUpperCase();if(c===seq[i].toUpperCase())s++;else if(IUPAC[c]&&IUPAC[c].length<4)s+=0.5;}
+  return((s/cons.length)*100).toFixed(1);
+}
+
+// ─── NCBI fetch ───────────────────────────────────────────────────────────────
+const TAXID_MAP={hg38:'9606',hg19:'9606',mm39:'10090',mm10:'10090',susScr11:'9823',bosTau9:'9913',rn7:'10116',danRer11:'7955',dm6:'7227',ce11:'6239',sacCer3:'4932'};
+const NC_TABLE={
+  hg38:{'1':'NC_000001.11','2':'NC_000002.12','3':'NC_000003.12','4':'NC_000004.12','5':'NC_000005.10','6':'NC_000006.12','7':'NC_000007.14','8':'NC_000008.11','9':'NC_000009.12','10':'NC_000010.11','11':'NC_000011.10','12':'NC_000012.12','13':'NC_000013.11','14':'NC_000014.9','15':'NC_000015.10','16':'NC_000016.10','17':'NC_000017.11','18':'NC_000018.10','19':'NC_000019.10','20':'NC_000020.11','21':'NC_000021.9','22':'NC_000022.11','X':'NC_000023.11','Y':'NC_000024.10','MT':'NC_012920.1','M':'NC_012920.1'},
+  hg19:{'1':'NC_000001.10','2':'NC_000002.11','3':'NC_000003.11','4':'NC_000004.11','5':'NC_000005.9','6':'NC_000006.11','7':'NC_000007.13','8':'NC_000008.10','9':'NC_000009.11','10':'NC_000010.10','11':'NC_000011.9','12':'NC_000012.11','13':'NC_000013.10','14':'NC_000014.8','15':'NC_000015.9','16':'NC_000016.9','17':'NC_000017.10','18':'NC_000018.9','19':'NC_000019.9','20':'NC_000020.10','21':'NC_000021.8','22':'NC_000022.10','X':'NC_000023.10','Y':'NC_000024.9'},
+  mm39:{'1':'NC_000067.7','2':'NC_000068.8','3':'NC_000069.7','4':'NC_000070.7','5':'NC_000071.7','6':'NC_000072.7','7':'NC_000073.7','8':'NC_000074.7','9':'NC_000075.7','10':'NC_000076.7','11':'NC_000077.7','12':'NC_000078.7','13':'NC_000079.7','14':'NC_000080.7','15':'NC_000081.7','16':'NC_000082.7','17':'NC_000083.7','18':'NC_000084.7','19':'NC_000085.7','X':'NC_000086.8','Y':'NC_000087.8'},
+  mm10:{'1':'NC_000067.6','2':'NC_000068.7','3':'NC_000069.6','4':'NC_000070.6','5':'NC_000071.6','6':'NC_000072.6','7':'NC_000073.6','8':'NC_000074.6','9':'NC_000075.6','10':'NC_000076.6','11':'NC_000077.6','12':'NC_000078.6','13':'NC_000079.6','14':'NC_000080.6','15':'NC_000081.6','16':'NC_000082.6','17':'NC_000083.6','18':'NC_000084.6','19':'NC_000085.6','X':'NC_000086.7','Y':'NC_000087.7'}
+};
+
+async function fetchFasta(acc,s,e){
+  const url=`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${encodeURIComponent(acc)}&rettype=fasta&retmode=text&seq_start=${s}&seq_stop=${e}`;
+  const r=await fetch(url);
+  if(!r.ok)throw new Error(`NCBI efetch failed (${r.status})`);
+  const t=await r.text();
+  if(!t||!t.startsWith('>'))throw new Error('No FASTA data returned from NCBI.');
+  return t.split('\n').slice(1).join('').replace(/\s+/g,'').toUpperCase();
+}
+
+async function fetchGeneFeatures(ncAcc,fetchStart1,fetchStop1){
+  try{
+    const url=`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${encodeURIComponent(ncAcc)}&rettype=ft&retmode=text&seq_start=${fetchStart1}&seq_stop=${fetchStop1}`;
+    const r=await fetch(url);
+    if(!r.ok)return null;
+    const txt=await r.text();
+    return parseFeatureTable(txt,fetchStart1);
+  }catch(e){console.warn('Feature fetch failed:',e);return null;}
+}
+
+function parseFeatureTable(text,fetchStart1){
+  // NCBI 5-column feature table. A feature is a header line
+  //   start <TAB> end <TAB> type
+  // optionally followed by additional INTERVAL lines (start <TAB> end, no type)
+  // — these are the exon intervals of an mRNA/CDS join — then qualifier lines
+  // (\t\t\t key <TAB> value). We must capture every interval, not just the first.
+  const offset=fetchStart1-1;
+  const toAbs=r=>r-1+offset;
+  const feats={geneStrand:'+',geneName:'',exons:[],cds:[],utr5:[],utr3:[],tss:null,polyA:null,mrnaRange:null};
+  const lines=text.split('\n');
+
+  // Pass 1 — group lines into features with all their intervals + qualifiers.
+  const features=[]; let cur=null;
+  for(const ln of lines){
+    if(!ln || ln[0]==='>') continue;
+    let m=ln.match(/^(<?)(\d+)\t(>?)(\d+)\t(\S+)/);      // header: has a type
+    if(m){ cur={type:m[5], iv:[[parseInt(m[2]),parseInt(m[4])]], quals:{}}; features.push(cur); continue; }
+    m=ln.match(/^(<?)(\d+)\t(>?)(\d+)\s*$/);             // continuation interval
+    if(m && cur){ cur.iv.push([parseInt(m[2]),parseInt(m[4])]); continue; }
+    m=ln.match(/^\t\t\t(\S+)(?:\t(.*))?$/);              // qualifier
+    if(m && cur){ cur.quals[m[1]]=m[2]||''; continue; }
+  }
+  const ivStrand=iv=>iv[0][0]<=iv[0][1]?'+':'-';
+  const absInterval=([a,b])=>({start:toAbs(Math.min(a,b)),end:toAbs(Math.max(a,b))});
+
+  // gene feature → strand, name, TSS / poly-A
+  const geneF=features.find(f=>f.type==='gene');
+  if(geneF){
+    feats.geneStrand=ivStrand(geneF.iv);
+    feats.geneName=geneF.quals['gene']||geneF.quals['locus_tag']||'';
+    const span=absInterval([Math.min(...geneF.iv.flat()),Math.max(...geneF.iv.flat())]);
+    feats.tss   = feats.geneStrand==='+'?span.start:span.end;
+    feats.polyA = feats.geneStrand==='+'?span.end:span.start;
+  }
+  // exon structure: prefer the first mRNA's intervals, else the first CDS's
+  const mrnaF=features.find(f=>f.type==='mRNA');
+  const cdsF =features.find(f=>f.type==='CDS');
+  const exonSrc=mrnaF||cdsF;
+  if(exonSrc){
+    exonSrc.iv.forEach(iv=>feats.exons.push(absInterval(iv)));
+    feats.mrnaRange={start:Math.min(...feats.exons.map(e=>e.start)),end:Math.max(...feats.exons.map(e=>e.end))};
+  }
+  if(cdsF) cdsF.iv.forEach(iv=>feats.cds.push(absInterval(iv)));
+
+  feats.exons.sort((a,b)=>a.start-b.start);
+  feats.cds.sort((a,b)=>a.start-b.start);
+
+  // Infer 5'/3' UTRs from the exon span vs the CDS span.
+  if(feats.exons.length>0 && feats.cds.length>0){
+    const cdsStart=Math.min(...feats.cds.map(c=>c.start));
+    const cdsEnd  =Math.max(...feats.cds.map(c=>c.end));
+    const geneStart=Math.min(...feats.exons.map(e=>e.start));
+    const geneEnd  =Math.max(...feats.exons.map(e=>e.end));
+    if(feats.geneStrand==='+'){
+      if(geneStart<cdsStart)feats.utr5.push({start:geneStart,end:cdsStart-1});
+      if(cdsEnd<geneEnd)    feats.utr3.push({start:cdsEnd+1,end:geneEnd});
+    } else {
+      if(cdsEnd<geneEnd)    feats.utr5.push({start:cdsEnd+1,end:geneEnd});
+      if(geneStart<cdsStart)feats.utr3.push({start:geneStart,end:cdsStart-1});
+    }
+  }
+  return feats;
+}
+
+async function fetchByGeneName(gene,organism){
+  const taxid=TAXID_MAP[organism]||'9606';
+  setProgress(8,`Searching NCBI Gene for "${gene}"...`);
+  let ids=[];
+  const s1=await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&term=${encodeURIComponent(gene+'[Gene Name] AND '+taxid+'[Taxonomy ID] AND alive[property]')}&retmode=json&retmax=10`);
+  if(!s1.ok)throw new Error('NCBI esearch failed. Check your internet connection.');
+  const d1=await s1.json(); ids=d1.esearchresult?.idlist||[];
+  if(!ids.length){
+    const s2=await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&term=${encodeURIComponent(gene+'[Gene Name] AND '+taxid+'[Taxonomy ID]')}&retmode=json&retmax=10`);
+    const d2=await s2.json(); ids=d2.esearchresult?.idlist||[];
+  }
+  if(!ids.length)throw new Error(`Gene "${gene}" not found. Check spelling or try the official symbol.`);
+  setProgress(22,'Fetching gene record...');
+  const sr=await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&id=${ids[0]}&retmode=json`);
+  if(!sr.ok)throw new Error('Failed to fetch gene summary from NCBI.');
+  const sd=await sr.json(); const summary=sd.result?.[ids[0]];
+  if(!summary)throw new Error('No gene summary returned.');
+  const geneName=summary.name||gene;
+  const geneFullName=summary.description||'';
+  const chrom=summary.chromosome?'chr'+summary.chromosome:'chrUnknown';
+  const loc=summary.genomicinfo?.[0];
+  if(!loc)throw new Error(`No genomic location for ${geneName}.`);
+  const ncAccession=loc.chraccver;
+  if(!ncAccession)throw new Error(`No NC_ accession. Keys: ${Object.keys(loc).join(', ')}`);
+  const rawStart=loc.chrstart,rawStop=loc.chrstop;
+  if(rawStart===undefined||rawStop===undefined)throw new Error(`Unexpected genomicinfo. Keys: ${Object.keys(loc).join(', ')}`);
+  const geneStart1=Math.min(rawStart,rawStop)+1;
+  const geneStop1=Math.max(rawStart,rawStop)+1;
+  const padUp=parseInt(document.getElementById('pad-up').value)||0;
+  const padDown=parseInt(document.getElementById('pad-down').value)||0;
+  const fetchStart1=Math.max(1,geneStart1-padUp);
+  const fetchStop1=geneStop1+padDown;
+  setProgress(42,`Fetching sequence (${(fetchStop1-fetchStart1+1).toLocaleString()} bp)...`);
+  const seq=await fetchFasta(ncAccession,fetchStart1,fetchStop1);
+  return{seq,chrom,start:fetchStart1-1,geneName:`${geneName} (${geneFullName})`,geneSymbol:geneName,ncAccession,fetchStart1,fetchStop1};
+}
+
+async function fetchByCoords(organism){
+  const chromRaw=document.getElementById('chrom-input').value.trim();
+  const start1=parseInt(document.getElementById('start-input').value.trim());
+  const stop1=parseInt(document.getElementById('end-input').value.trim());
+  if(!chromRaw||isNaN(start1)||isNaN(stop1)||stop1<=start1)throw new Error('Invalid coordinates.');
+  const chromNum=chromRaw.replace(/^chr/i,'');
+  let ncAcc=NC_TABLE[organism]?.[chromNum];
+  if(!ncAcc){
+    setProgress(30,'Looking up chromosome accession...');
+    const taxid=TAXID_MAP[organism]||'9606';
+    const sr=await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=${encodeURIComponent(chromRaw+'[Chromosome] AND '+taxid+'[Taxonomy ID] AND RefSeq[Filter]')}&retmode=json&retmax=5`);
+    const sd=await sr.json(); const aids=sd.esearchresult?.idlist||[];
+    if(!aids.length)throw new Error(`Cannot resolve NC_ accession for ${chromRaw}.`);
+    const ss=await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=${aids[0]}&retmode=json`);
+    const sd2=await ss.json(); ncAcc=sd2.result?.[aids[0]]?.accessionversion;
+    if(!ncAcc)throw new Error('Could not resolve chromosome accession.');
+  }
+  setProgress(50,`Fetching ${chromRaw} (${ncAcc})...`);
+  const seq=await fetchFasta(ncAcc,start1,stop1);
+  return{seq,chrom:chromRaw,start:start1-1,geneName:`${chromRaw}:${start1}-${stop1}`,ncAccession:null};
+}
+
+function parsePastedSeq(){
+  let raw=document.getElementById('seq-input').value.trim();
+  if(!raw)throw new Error('Please paste a nucleotide sequence.');
+  raw=raw.replace(/^>.*$/mg,'').replace(/\s+/g,'').toUpperCase();
+  if(!/^[ATCGNRYSWKMBDHV]+$/.test(raw))throw new Error('Invalid characters in sequence.');
+  return{seq:raw,chrom:'seq',start:0,geneName:'Custom Sequence',ncAccession:null};
+}
+
+function setProgress(pct,lbl){
+  document.getElementById('prog-wrap').classList.add('active');
+  document.getElementById('prog-label').classList.add('active');
+  document.getElementById('prog-bar').style.width=pct+'%';
+  document.getElementById('prog-label').textContent=lbl;
+}
+function clearProgress(){
+  document.getElementById('prog-wrap').classList.remove('active');
+  document.getElementById('prog-label').classList.remove('active');
+  document.getElementById('prog-bar').style.width='0%';
+}
+function showError(msg){const el=document.getElementById('error-msg');el.textContent=msg;el.classList.add('visible');}
+function clearError(){document.getElementById('error-msg').classList.remove('visible');}
+
+async function runSearch(){
+  clearError();
+  document.getElementById('results').classList.remove('visible');
+  const btn=document.getElementById('search-btn'); btn.disabled=true;
+  geneFeatures=null;
+  hitCopyNumber=[];
+  hitCopyLoci=[];
+  cnCancelFlag=false;
+  const organism=document.getElementById('organism').value;
+  const strandOpt=document.getElementById('strand-opt').value;
+  const maxMM=parseInt(document.getElementById('mismatches').value)||0;
+  const customC=document.getElementById('custom-consensus').value.trim().toUpperCase();
+  const consensus=customC||DEFAULT_CONSENSUS;
+  try{
+    let result;
+    if(currentMode==='gene'){
+      const gene=document.getElementById('gene-input').value.trim();
+      if(!gene)throw new Error('Please enter a gene name.');
+      result=await fetchByGeneName(gene,organism);
+    } else if(currentMode==='seq'){
+      result=parsePastedSeq();
+    } else {
+      result=await fetchByCoords(organism);
+    }
+    currentSeq=result.seq; currentChrom=result.chrom;
+    currentStart=result.start; currentGeneName=result.geneName;
+    currentGeneSymbol=result.geneSymbol||'';
+    if(result.ncAccession){
+      setProgress(68,'Fetching gene annotation...');
+      geneFeatures=await fetchGeneFeatures(result.ncAccession,result.fetchStart1,result.fetchStop1);
+    }
+    setProgress(84,`Scanning ${currentSeq.length.toLocaleString()} bp for consensus matches...`);
+    await new Promise(r=>setTimeout(r,30));
+    allHits=findHits(currentSeq,consensus,strandOpt,maxMM,currentChrom,currentStart);
+    allHits.sort((a,b)=>a.start-b.start);
+    hitCopyNumber=new Array(allHits.length).fill(null);
+    hitCopyLoci=new Array(allHits.length).fill(null);
+    filteredHits=[...allHits];
+    setProgress(96,'Rendering...');
+    await new Promise(r=>setTimeout(r,30));
+    renderStats();
+    initViewer();
+    renderTable();
+    resetCnPanel();
+    resetCellModelsPanel();
+    document.getElementById('results').classList.add('visible');
+    clearProgress();
+    if(!allHits.length)showError(`No consensus matches found with <= ${maxMM} mismatches.`);
+  }catch(e){
+    clearProgress(); showError(e.message||'Unknown error.');
+  }finally{ btn.disabled=false; }
+}
+
+function renderStats(){
+  document.getElementById('stat-total').textContent=allHits.length;
+  document.getElementById('stat-plus').textContent=allHits.filter(h=>h.strand==='+').length;
+  document.getElementById('stat-minus').textContent=allHits.filter(h=>h.strand==='-').length;
+  document.getElementById('stat-len').textContent=currentSeq.length.toLocaleString();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COPY-NUMBER — NCBI BLAST (programmatic URL API)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// We use NCBI BLAST (not UCSC BLAT) because:
+//   • UCSC's hgBlat CGI is now behind a Cloudflare CAPTCHA — programmatic
+//     requests return an HTML challenge page, not results.  Unusable.
+//   • NCBI BLAST sends CORS headers (access-control-allow-origin reflects the
+//     caller's Origin, including "null" for file:// pages), so a plain
+//     standalone HTML file CAN call it directly from the browser.
+//
+// Method (verified against TTTCTTTGACTCAGAAAGGGA → 283 exact copies on the
+// primary human assembly):
+//   1. Put  — submit blastn-short, no masking, against the genome assembly
+//   2. Poll — SearchInfo until Status=READY (these short searches take ~2–4 min)
+//   3. Get  — XML; keep HSPs with identity==len AND align-len==len (gapless exact)
+//   4. Map each kept HSP's accession+coords → chromosome / start / end / strand
+//
+// NOTE on counts: BLAST reports ALL exact occurrences. UCSC BLAT undercounts
+// short repetitive matches because of its 11-mer tiling heuristic, so a manual
+// BLAT count will usually be lower than what is reported here.
+
+// blastn genome DB per organism, using NCBI's GPIPE genomic path keyed by taxid.
+function blastDbForOrganism(organism){
+  const taxid=TAXID_MAP[organism]||'9606';
+  return `GPIPE/${taxid}/current/ref_top_level`;
+}
+
+// Build a reverse map: bare RefSeq accession (no version) → "chrN" label,
+// derived from NC_TABLE for the current organism. Returns {} if unknown.
+function ncAccToChromMap(organism){
+  const tbl=NC_TABLE[organism]; const map={};
+  if(!tbl) return map;
+  for(const [chrom,acc] of Object.entries(tbl)){
+    map[acc.split('.')[0]]='chr'+chrom;   // strip .version
+  }
+  return map;
+}
+
+const BLAST_URL='https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi';
+
+// Submit a blastn-short genome search. Returns {rid,rtoe} or throws.
+async function blastSubmit(seq, organism){
+  const params=new URLSearchParams({
+    CMD:'Put', PROGRAM:'blastn',
+    DATABASE:blastDbForOrganism(organism),
+    QUERY:seq,
+    TASK:'blastn-short',  // tuned for sequences < 30 bp; disables soft masking
+    // WORD_SIZE=11: any exact full-length match necessarily contains perfect
+    // 11-mers, so every exact copy is still seeded — but low-complexity queries
+    // (e.g. CTTT/AAAAG runs) no longer trigger a huge word_size=7 seed explosion.
+    // This turned a 22-min search into ~30 s with no loss of exact matches.
+    WORD_SIZE:'11',
+    FILTER:'F',           // no dust masking of the query
+    SOFT_MASKING:'false', // count copies inside repeat elements too
+    HITLIST_SIZE:'1000',
+    DESCRIPTIONS:'1000',
+    ALIGNMENTS:'1000',
+    EXPECT:'10',          // exact 21-mer hits have E ≪ 10; keeps results lean & fast
+    FORMAT_TYPE:'XML'
+  });
+  const r=await fetch(BLAST_URL,{method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+  if(!r.ok) throw new Error(`BLAST submit HTTP ${r.status}`);
+  const html=await r.text();
+  const rid=(html.match(/RID\s*=\s*(\S+)/)||[])[1];
+  const rtoe=parseInt((html.match(/RTOE\s*=\s*(\d+)/)||[])[1]||'30');
+  if(!rid) throw new Error('BLAST returned no RID — server busy, try again');
+  console.log(`[BLAST] submitted RID=${rid} RTOE=${rtoe}s`);
+  return{rid,rtoe};
+}
+
+// Poll until Status=READY. With word_size=11 most searches finish in well under
+// a minute, but a generous cap is free insurance (successful searches exit early)
+// against the occasional pathologically slow query. Throws 'cancelled' on cancel.
+async function blastWait(rid, rtoe, onTick){
+  await sleep(Math.max(8000, rtoe*1000));
+  for(let attempt=0; attempt<150; attempt++){         // 150 × 5 s ≈ 12.5 min
+    if(cnCancelFlag) throw new Error('cancelled');
+    const r=await fetch(`${BLAST_URL}?CMD=Get&FORMAT_OBJECT=SearchInfo&RID=${rid}`);
+    const txt=await r.text();
+    if(txt.includes('Status=READY')) return true;
+    if(txt.includes('Status=FAILED')||txt.includes('Status=UNKNOWN'))
+      throw new Error('BLAST job failed on server');
+    if(onTick) onTick(attempt);
+    await sleep(5000);
+  }
+  throw new Error('BLAST timed out — this sequence is unusually slow on NCBI; try again');
+}
+
+// Fetch XML results and return {count, loci[]} of exact full-length matches
+// on the primary chromosomes (NC_0000xx etc.). loci = {chrom,start,end,strand}.
+async function blastFetchResult(rid, seqLen, organism){
+  const r=await fetch(`${BLAST_URL}?CMD=Get&RID=${rid}&FORMAT_TYPE=XML&ALIGNMENTS=1000&HITLIST_SIZE=1000`);
+  if(!r.ok) throw new Error(`BLAST results HTTP ${r.status}`);
+  const txt=await r.text();
+  const dom=new DOMParser().parseFromString(txt,'text/xml');
+  if(dom.querySelector('parsererror')) throw new Error('Could not parse BLAST XML response');
+
+  const chromMap=ncAccToChromMap(organism);
+  const hits=dom.getElementsByTagName('Hit');
+  const loci=[];
+  const seen=new Set();
+  for(let i=0;i<hits.length;i++){
+    const hit=hits[i];
+    const accRaw=hit.getElementsByTagName('Hit_accession')[0]?.textContent||'';
+    const acc=accRaw.split('.')[0];
+    // Keep only primary chromosomes (NC_), skip alt loci / patches (NT_, NW_)
+    if(!/^NC_/.test(acc)) continue;
+    // If we have a chrom map for this organism, require the accession to be in it
+    // (this excludes the mitochondrion-less edge cases & non-primary NC_ contigs).
+    const chrom=chromMap[acc] || (Object.keys(chromMap).length?null:acc);
+    if(chrom===null) continue;
+    const hsps=hit.getElementsByTagName('Hsp');
+    for(let j=0;j<hsps.length;j++){
+      const h=hsps[j];
+      const id=parseInt(h.getElementsByTagName('Hsp_identity')[0]?.textContent??-1);
+      const al=parseInt(h.getElementsByTagName('Hsp_align-len')[0]?.textContent??0);
+      if(id!==seqLen||al!==seqLen) continue;   // gapless, 100% identity only
+      const hf=parseInt(h.getElementsByTagName('Hsp_hit-from')[0].textContent);
+      const ht=parseInt(h.getElementsByTagName('Hsp_hit-to')[0].textContent);
+      const start=Math.min(hf,ht), end=Math.max(hf,ht);
+      const strand=hf<=ht?'+':'-';
+      const key=`${acc}:${start}:${strand}`;
+      if(seen.has(key)) continue;              // de-dupe identical HSPs
+      seen.add(key);
+      loci.push({chrom,start,end,strand});
+    }
+  }
+  loci.sort((a,b)=>a.chrom.localeCompare(b.chrom,undefined,{numeric:true})||a.start-b.start);
+  console.log(`[BLAST] RID=${rid} → ${loci.length} exact copies on primary chromosomes`);
+  return{count:loci.length, loci};
+}
+
+// Full pipeline for one hit.
+// Returns {count, loci} on success, null if cancelled, or {count:-1,loci:[]} on error.
+async function queryGenomeCopies(seq, organism, onStatus){
+  try{
+    if(onStatus) onStatus('Submitting to NCBI BLAST…');
+    const{rid,rtoe}=await blastSubmit(seq, organism);
+    if(onStatus) onStatus(`BLAST running (est. ${rtoe}s) — RID ${rid}`);
+    await blastWait(rid, rtoe, attempt=>{
+      const elapsed=(attempt+1)*5+Math.max(10,rtoe);
+      if(onStatus) onStatus(`Searching genome… ~${elapsed}s elapsed (RID ${rid})`);
+    });
+    if(onStatus) onStatus('Parsing results…');
+    return await blastFetchResult(rid, seq.length, organism);
+  }catch(e){
+    if(e.message==='cancelled') return null;
+    console.warn('[BLAST] error:',e);
+    return {count:-1, loci:[]};
+  }
+}
+
+function resetCnPanel(){
+  document.getElementById('cn-check-all-btn').style.display='';
+  document.getElementById('cn-cancel-btn').style.display='none';
+  document.getElementById('cn-prog-wrap').style.display='none';
+  document.getElementById('cn-prog-status').style.display='none';
+  document.getElementById('cn-summary').style.display='none';
+  cnFilter='all';
+  ['all','unique','multi'].forEach(k=>document.getElementById('utab-'+k).classList.toggle('on',k==='all'));
+}
+
+// Check a single hit (called from table row button).
+// BLAST takes ~30-60 s per query — status is shown in the CN panel.
+async function checkSingleCopyNumber(gi){
+  if(hitCopyNumber[gi]==='checking') return;
+  hitCopyNumber[gi]='checking';
+  document.getElementById('cn-prog-status').style.display='block';
+  renderPage();
+  const organism=document.getElementById('organism').value;
+  const result=await queryGenomeCopies(allHits[gi].seq, organism, msg=>{
+    document.getElementById('cn-prog-status').textContent=`Hit #${gi+1}: ${msg}`;
+  });
+  if(result===null){
+    hitCopyNumber[gi]=null; hitCopyLoci[gi]=null; // cancelled
+  } else {
+    hitCopyNumber[gi]=result.count;
+    hitCopyLoci[gi]=result.loci;
+  }
+  document.getElementById('cn-prog-status').style.display='none';
+  renderPage();
+  updateCnSummary();
+}
+
+// Batch-check all hits sequentially.
+// Each BLAST job takes ~30-90 s — runs one at a time to respect NCBI rate limits.
+async function checkAllCopyNumbers(){
+  cnCancelFlag=false;
+  const organism=document.getElementById('organism').value;
+  const total=allHits.length;
+  if(!total) return;
+
+  document.getElementById('cn-check-all-btn').style.display='none';
+  document.getElementById('cn-cancel-btn').style.display='';
+  document.getElementById('cn-prog-wrap').style.display='block';
+  document.getElementById('cn-prog-status').style.display='block';
+  document.getElementById('cn-summary').style.display='none';
+
+  for(let i=0; i<total; i++){
+    if(cnCancelFlag) break;
+    // Skip already-resolved hits
+    const v=hitCopyNumber[i];
+    if(v!==null && v!=='checking' && v>=0){
+      document.getElementById('cn-prog-bar').style.width=((i+1)/total*100)+'%';
+      document.getElementById('cn-prog-status').textContent=`Hit ${i+1}/${total}: already checked, skipping`;
+      continue;
+    }
+    hitCopyNumber[i]='checking';
+    renderPage();
+    const result=await queryGenomeCopies(allHits[i].seq, organism, msg=>{
+      document.getElementById('cn-prog-status').textContent=`Hit ${i+1}/${total}: ${msg}`;
+    });
+    if(cnCancelFlag){ hitCopyNumber[i]=null; hitCopyLoci[i]=null; break; }
+    if(result===null){ hitCopyNumber[i]=null; hitCopyLoci[i]=null; }
+    else { hitCopyNumber[i]=result.count; hitCopyLoci[i]=result.loci; }
+    document.getElementById('cn-prog-bar').style.width=((i+1)/total*100)+'%';
+    renderPage();
+    // 2 s gap between submissions — NCBI asks for ≥3 req/s max on their APIs
+    if(i<total-1 && !cnCancelFlag) await sleep(2000);
+  }
+
+  cnCancelFlag=false;
+  document.getElementById('cn-check-all-btn').style.display='';
+  document.getElementById('cn-cancel-btn').style.display='none';
+  document.getElementById('cn-prog-wrap').style.display='none';
+  document.getElementById('cn-prog-status').style.display='none';
+  updateCnSummary();
+  filterTable();
+}
+
+function cancelCopyNumbers(){
+  cnCancelFlag=true;
+  document.getElementById('cn-cancel-btn').textContent='Cancelling…';
+  // blastWait will throw 'cancelled' on next poll iteration
+  setTimeout(()=>{
+    document.getElementById('cn-cancel-btn').textContent='Cancel';
+    document.getElementById('cn-check-all-btn').style.display='';
+    document.getElementById('cn-cancel-btn').style.display='none';
+    document.getElementById('cn-prog-wrap').style.display='none';
+    document.getElementById('cn-prog-status').style.display='none';
+    renderPage();
+  },1500);
+}
+
+function updateCnSummary(){
+  const checked=hitCopyNumber.filter(v=>typeof v==='number'&&v>=0);
+  if(!checked.length){document.getElementById('cn-summary').style.display='none';return;}
+  const unique=checked.filter(v=>v===1).length;
+  const multi=checked.filter(v=>v>1).length;
+  const err=hitCopyNumber.filter(v=>v===-1).length;
+  const total=allHits.length;
+  document.getElementById('cn-summary').style.display='block';
+  document.getElementById('cn-summary').innerHTML=
+    `<strong style="color:var(--text-bright);">${checked.length}/${total}</strong> hits checked &nbsp;·&nbsp; `+
+    `<span class="cn-unique">✓ ${unique} unique</span> &nbsp; `+
+    `<span class="cn-multi">⚠ ${multi} multi-copy</span>`+
+    (err?` &nbsp; <span class="cn-err">⚡ ${err} errors</span>`:'');
+}
+
+function setCnFilter(f){
+  cnFilter=f;
+  ['all','unique','multi'].forEach(k=>document.getElementById('utab-'+k).classList.toggle('on',k===f));
+  filterTable();
+}
+
+// Render the copy-number cell for a given hit index
+function renderCnCell(gi){
+  const v=hitCopyNumber[gi];
+  if(v===null){
+    return `<button class="check-btn" title="Run NCBI BLAST to count exact genome-wide copies (usually under a minute)" onclick="event.stopPropagation();checkSingleCopyNumber(${gi})">check copies</button>`;
+  }
+  if(v==='checking'){
+    return `<span class="cn-pend"><span class="spin">⟳</span> searching…</span>`;
+  }
+  if(v===-1){
+    return `<span class="cn-err" title="BLAST request failed">⚡ error</span> `+
+           `<button class="check-btn" onclick="event.stopPropagation();checkSingleCopyNumber(${gi})">retry</button>`;
+  }
+  if(v===0){
+    return `<span class="cn-err" title="No exact matches found on the primary assembly">0 found</span> `+
+           `<button class="check-btn" onclick="event.stopPropagation();checkSingleCopyNumber(${gi})">retry</button>`;
+  }
+  if(v===1){
+    // unique — clicking still shows the single location
+    return `<span class="cn-unique" style="cursor:pointer;" title="Click to view location" onclick="event.stopPropagation();showCopyLoci(${gi})">✓ Unique (1 copy)</span>`;
+  }
+  return `<span class="cn-multi" style="cursor:pointer;" title="Click to view all ${v} locations" onclick="event.stopPropagation();showCopyLoci(${gi})">⚠ ${v} copies ▸</span>`;
+}
+
+let cnModalGi=null; // hit index currently shown in the copy-location modal
+
+// Modal showing the genomic location of every exact copy of a hit.
+function showCopyLoci(gi){
+  cnModalGi=gi;
+  const loci=hitCopyLoci[gi]||[];
+  const h=allHits[gi];
+  const rows=loci.map((l,i)=>{
+    const isOrigin=(l.chrom===h.chrom); // best-effort flag of the originating region
+    return `<tr>
+      <td style="padding:5px 12px;color:var(--text-dim);">${i+1}</td>
+      <td style="padding:5px 12px;font-family:'IBM Plex Mono',monospace;color:var(--accent2);">${l.chrom}</td>
+      <td style="padding:5px 12px;font-family:'IBM Plex Mono',monospace;">${l.start.toLocaleString()}</td>
+      <td style="padding:5px 12px;font-family:'IBM Plex Mono',monospace;">${l.end.toLocaleString()}</td>
+      <td style="padding:5px 12px;">${l.strand==='+'?'<span class="strand-plus">+</span>':'<span class="strand-minus">−</span>'}</td>
+    </tr>`;
+  }).join('');
+  const modal=document.getElementById('cn-modal');
+  document.getElementById('cn-modal-title').innerHTML=
+    `Hit #${gi+1} — <span style="font-family:'IBM Plex Mono',monospace;">`+
+    `<span class="B-arm">${h.B}</span><span class="O-seq">${h.O}</span><span class="B-prime">${h.Bp}</span></span> `+
+    `&nbsp;·&nbsp; ${loci.length} exact ${loci.length===1?'copy':'copies'} in genome`;
+  document.getElementById('cn-modal-body').innerHTML=
+    `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+       <thead><tr style="background:var(--surface2);">
+         <th style="padding:6px 12px;text-align:left;color:var(--text-dim);font-size:10px;letter-spacing:1px;">#</th>
+         <th style="padding:6px 12px;text-align:left;color:var(--text-dim);font-size:10px;letter-spacing:1px;">CHR</th>
+         <th style="padding:6px 12px;text-align:left;color:var(--text-dim);font-size:10px;letter-spacing:1px;">START</th>
+         <th style="padding:6px 12px;text-align:left;color:var(--text-dim);font-size:10px;letter-spacing:1px;">END</th>
+         <th style="padding:6px 12px;text-align:left;color:var(--text-dim);font-size:10px;letter-spacing:1px;">STRAND</th>
+       </tr></thead><tbody>${rows||'<tr><td style="padding:10px;color:var(--text-dim);" colspan="5">No coordinates available.</td></tr>'}</tbody>
+     </table>`;
+  modal.style.display='flex';
+}
+function closeCopyLoci(){document.getElementById('cn-modal').style.display='none';}
+
+// Download the currently-shown hit's copy locations as CSV.
+function downloadLociCSV(){
+  if(cnModalGi===null) return;
+  const h=allHits[cnModalGi];
+  const loci=hitCopyLoci[cnModalGi]||[];
+  const hdr=['Copy','Chr','Start','End','Strand'];
+  const rows=loci.map((l,i)=>[i+1,l.chrom,l.start,l.end,l.strand]);
+  dl(`hit${cnModalGi+1}_${h.seq}_copies.csv`,'text/csv',
+     [hdr,...rows].map(r=>r.join(',')).join('\n'));
+}
+
+// ── attP-like site generation ─────────────────────────────────────────────────
+let attpModalGi=null;
+
+// Build the attP-like site for a hit. The chosen attB hit is BOB' (sense, forward);
+// the attP core COC' is the SAME sequence as BOB' (C=B, O=O, C'=B' — similar, not
+// complementary), placed between the fixed upstream/downstream attP flanks.
+function buildAttP(gi){
+  const h=allHits[gi];
+  const newCore=h.seq;                            // COC' core = BOB' unchanged
+  const C=newCore.slice(0,B_LEN);                 // C  (= B)
+  const Ocore=newCore.slice(B_LEN,B_LEN+O_LEN);   // O
+  const Cp=newCore.slice(B_LEN+O_LEN);            // C' (= B')
+  const left=ATTP_UP, right=ATTP_DOWN;
+  // Plain sequence: lower-case flanks, UPPER-case core so the insert is visible even as text
+  const seq=left+newCore.toUpperCase()+right;
+  return {h,newCore,C,Ocore,Cp,left,right,seq,coreStart:left.length};
+}
+
+function showAttP(gi){
+  attpModalGi=gi;
+  const a=buildAttP(gi);
+  const h=a.h;
+  // Wrap the full sequence at 50 cols (keeps the 21 bp core on one line) and
+  // color the central core by segment.
+  const WRAP=50;
+  let html='';
+  for(let i=0;i<a.seq.length;i+=WRAP){
+    const lineStart=i, lineEnd=Math.min(i+WRAP,a.seq.length);
+    let line='';
+    for(let p=lineStart;p<lineEnd;p++){
+      const rel=p-a.coreStart; // position within the 21 bp core
+      const ch=a.seq[p];
+      if(rel<0||rel>=21){ line+=`<span class="attp-flank">${ch}</span>`; }
+      else if(rel<B_LEN){ line+=`<span class="attp-C">${ch}</span>`; }       // C
+      else if(rel<B_LEN+O_LEN){ line+=`<span class="attp-O">${ch}</span>`; } // O
+      else { line+=`<span class="attp-Cp">${ch}</span>`; }                    // C'
+    }
+    const num=String(lineStart+1).padStart(4,' ').replace(/ /g,'&nbsp;');
+    html+=`<div><span style="color:#3a5060;">${num}</span>&nbsp;&nbsp;${line}</div>`;
+  }
+
+  document.getElementById('attp-modal-title').innerHTML=
+    `attP-like site for <strong style="color:var(--text-bright);">Hit #${gi+1}</strong> `+
+    `<span style="color:var(--text-dim);">· ${h.chrom}:${(h.start+1).toLocaleString()} (${h.strand} strand) · ${a.seq.length} bp</span>`;
+
+  document.getElementById('attp-modal-body').innerHTML=`
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px;">
+      <div>
+        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Chosen attB hit (BOB', forward)</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:1px;">
+          <span class="B-arm">${h.B}</span><span class="O-seq">${h.O}</span><span class="B-prime">${h.Bp}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">
+          <span style="color:#00d4aa;">B</span> · <span style="color:#7a8a9a;">O</span> · <span style="color:#ff6b35;">B'</span>
+        </div>
+      </div>
+      <div style="font-size:22px;color:var(--text-dim);align-self:center;">→ same core →</div>
+      <div>
+        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Generated attP core (COC')</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:1px;">
+          <span class="attp-C">${a.C}</span><span class="attp-O">${a.Ocore}</span><span class="attp-Cp">${a.Cp}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">
+          <span style="color:#00d4aa;">C</span> (= B) · <span style="color:#cdd9e5;">O</span> · <span style="color:#ff8a5c;">C'</span> (= B') &nbsp;·&nbsp; same as the hit
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">
+      Full attP-like sequence <span style="text-transform:none;font-weight:400;">— flanks dimmed, swapped core highlighted</span>
+    </div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.8;letter-spacing:0.5px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:nowrap;">
+      ${html}
+    </div>`;
+  document.getElementById('attp-modal').style.display='flex';
+}
+
+function closeAttP(){ document.getElementById('attp-modal').style.display='none'; }
+
+function copyAttP(){
+  if(attpModalGi===null) return;
+  const a=buildAttP(attpModalGi);
+  navigator.clipboard.writeText(a.seq).then(()=>{
+    const b=document.querySelector('#attp-modal .dl-btn'); const t=b.textContent;
+    b.textContent='✓ Copied'; setTimeout(()=>b.textContent=t,1200);
+  },()=>{});
+}
+
+function downloadAttPFasta(){
+  if(attpModalGi===null) return;
+  const a=buildAttP(attpModalGi); const h=a.h;
+  const hdr=`>attP-like_Hit${attpModalGi+1}_${h.chrom}:${h.start+1}-${h.end+1}(${h.strand})_core=${a.newCore}`;
+  dl(`attP-like_hit${attpModalGi+1}.fasta`,'text/plain',`${hdr}\n${a.seq}\n`);
+}
+
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEQUENCE VIEWER — SeqViz (Benchling / SnapGene-style)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Replaces the old hand-rolled canvas map. SeqViz renders a real molecular-biology
+// sequence map: linear & circular views, feature arrows with directionality,
+// base-level zoom, selection, and motif search. We feed it:
+//   • gene features (exons / UTRs) as directional annotations
+//   • every attB-like hit as a colored annotation (green = +, orange = −)
+//   • a yellow highlight + auto-scroll when a hit row is clicked
+
+let svViewer=null;
+let svMode='linear';            // 'linear' | 'both' | 'circular'
+let svZoom=35;                  // 0–100 (linear)
+let svShowIndex=true;
+let svShowComplement=true;
+let svSearchQuery='';
+let svSelectedHitGi=null;       // persistent yellow-highlighted hit
+let svPendingFocus=null;        // one-shot: hit to scroll into view on next render
+let svResizeTO=null;
+
+function svLocal(absInclusive){ return absInclusive-currentStart; } // abs 0-based → local index
+
+// Build SeqViz annotations from gene features + attB hits.
+function buildAnnotations(){
+  const L=currentSeq.length, ann=[];
+  const clamp=x=>Math.max(0,Math.min(L,x));
+  if(showAnnotation && geneFeatures){
+    const dir=geneFeatures.geneStrand==='-'?-1:1;
+    geneFeatures.exons.forEach((ex,i)=>ann.push({
+      name:`Exon ${i+1}`, start:clamp(svLocal(ex.start)), end:clamp(svLocal(ex.end)+1),
+      direction:dir, color:'#3b6fb0'
+    }));
+    geneFeatures.utr5.forEach(u=>ann.push({
+      name:"5'UTR", start:clamp(svLocal(u.start)), end:clamp(svLocal(u.end)+1),
+      direction:dir, color:'#16335f'
+    }));
+    geneFeatures.utr3.forEach(u=>ann.push({
+      name:"3'UTR", start:clamp(svLocal(u.start)), end:clamp(svLocal(u.end)+1),
+      direction:dir, color:'#16335f'
+    }));
+  }
+  allHits.forEach((h,i)=>ann.push({
+    name:`attB ${i+1}`,
+    start:clamp(svLocal(h.start)), end:clamp(svLocal(h.end)+1),
+    direction:h.strand==='+'?1:-1,
+    color:h.strand==='+'?'#00b894':'#ff6b35'
+  }));
+  return ann;
+}
+
+function buildHighlights(){
+  if(svSelectedHitGi==null || !allHits[svSelectedHitGi]) return [];
+  const h=allHits[svSelectedHitGi];
+  return [{start:svLocal(h.start), end:svLocal(h.end)+1, color:'rgba(255,213,79,0.55)'}];
+}
+
+// (Re)render the SeqViz viewer with current state.
+function renderViewer(){
+  const root=document.getElementById('seqviz-root');
+  if(!root) return;
+  if(!window.seqviz){
+    root.innerHTML='<div style="padding:24px;color:#555;font-family:sans-serif;font-size:13px;">'+
+      'Sequence viewer could not load — the SeqViz library (CDN) appears to be blocked. '+
+      'Check your network connection and reload.</div>';
+    return;
+  }
+  if(!currentSeq){ root.innerHTML=''; return; }
+
+  const opts={
+    name: currentGeneSymbol || currentGeneName || 'Sequence',
+    seq: currentSeq,
+    annotations: buildAnnotations(),
+    viewer: svMode,
+    showComplement: svShowComplement,
+    showIndex: svShowIndex,
+    zoom: { linear: svZoom },
+    bpColors: { A:'#15803d', T:'#b91c1c', C:'#1d4ed8', G:'#b45309' },
+    highlights: buildHighlights(),
+    // always pass search so clearing the box removes prior highlights
+    search: { query: svSearchQuery||'', mismatch: 0 },
+    style: { height:'100%', width:'100%' }
+  };
+  // One-shot focus: pass a selection so SeqViz scrolls the linear view to the hit.
+  // Always set selection (empty {} clears any stale one from a previous render).
+  if(svPendingFocus!=null && allHits[svPendingFocus]){
+    const h=allHits[svPendingFocus];
+    opts.selection={ start:svLocal(h.start), end:svLocal(h.end)+1, clockwise:h.strand!=='-' };
+    svPendingFocus=null;
+  } else {
+    opts.selection={};
+  }
+  try{
+    // Create the viewer once; React 18 allows only one root per container, so
+    // every later update must go through setState — never re-create the Viewer.
+    if(!svViewer){
+      svViewer=window.seqviz.Viewer('seqviz-root', opts);
+      svViewer.render();
+    } else {
+      svViewer.setState(opts);
+    }
+  }catch(e){
+    console.error('[SeqViz] render error:',e);
+    root.innerHTML='<div style="padding:24px;color:#b91c1c;font-family:sans-serif;font-size:13px;">Viewer error: '+escHtml(e.message||String(e))+'</div>';
+  }
+}
+
+// Called from runSearch after a new sequence is loaded.
+function initViewer(){
+  const lbl=document.getElementById('map-gene-label');
+  if(lbl) lbl.textContent=currentGeneName;
+  svSelectedHitGi=null; svPendingFocus=null; svSearchQuery='';
+  const s=document.getElementById('sv-search'); if(s) s.value='';
+  renderViewer();
+}
+
+// ── Viewer controls ───────────────────────────────────────────────────────────
+function setViewerMode(m){
+  svMode=m;
+  ['linear','both','circular'].forEach(k=>{
+    const b=document.getElementById('sv-mode-'+k);
+    if(b) b.classList.toggle('active',k===m);
+  });
+  renderViewer();
+}
+function setViewerZoom(v){ svZoom=parseInt(v)||1; renderViewer(); }
+function setViewerSearch(q){ svSearchQuery=(q||'').trim().toUpperCase(); renderViewer(); }
+function toggleIndex(){
+  svShowIndex=!svShowIndex;
+  const b=document.getElementById('btn-show-index');
+  if(b) b.textContent='Ruler '+(svShowIndex?'✓':'○');
+  renderViewer();
+}
+
+// Highlight a hit in the viewer and scroll it into view (called from the table).
+function focusHit(gi){
+  svSelectedHitGi=gi;
+  svPendingFocus=gi;
+  if(svZoom<55){ svZoom=55; const z=document.getElementById('sv-zoom'); if(z) z.value=svZoom; }
+  if(svMode==='circular') setViewerMode('linear'); else renderViewer();
+}
+
+window.addEventListener('resize',()=>{
+  if(!currentSeq) return;
+  clearTimeout(svResizeTO); svResizeTO=setTimeout(renderViewer,200);
+});
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+function formatBp(n){if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'k';return n.toLocaleString();}
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ─── Table ────────────────────────────────────────────────────────────────────
+function renderTable(){currentPage=1;renderPage();}
+
+function renderPage(){
+  const tbody=document.getElementById('hit-tbody');
+  const start=(currentPage-1)*PAGE_SIZE;
+  tbody.innerHTML=filteredHits.slice(start,start+PAGE_SIZE).map((h,i)=>{
+    const gi=allHits.indexOf(h);
+    const n=start+i+1;
+    const badge=h.strand==='+'?`<span class="strand-plus">+ sense</span>`:`<span class="strand-minus">- antisense</span>`;
+    const sq=`<span class="B-arm">${h.B}</span><span class="O-seq">${h.O}</span><span class="B-prime">${h.Bp}</span>`;
+    return `<tr onclick="onRowClick(${gi})">
+      <td>${n}</td><td class="coord-cell">${h.chrom}</td>
+      <td class="coord-cell">${(h.start+1).toLocaleString()}</td>
+      <td class="coord-cell">${(h.end+1).toLocaleString()}</td>
+      <td>${badge}</td><td class="seq-cell">${sq}</td>
+      <td class="seq-cell B-arm">${h.B}</td>
+      <td class="seq-cell O-seq">${h.O}</td>
+      <td class="seq-cell B-prime">${h.Bp}</td>
+      <td style="white-space:nowrap;">${renderCnCell(gi)}</td>
+      <td style="white-space:nowrap;"><button class="check-btn" title="Generate the complementary attP-like site for this hit" onclick="event.stopPropagation();showAttP(${gi})">Generate ↗</button></td>
+    </tr>`;
+  }).join('');
+  renderPagination();
+}
+
+function onRowClick(gi){
+  // Highlight & scroll to this hit in the SeqViz viewer
+  focusHit(gi);
+  document.getElementById('gene-map-container').scrollIntoView({behavior:'smooth',block:'nearest'});
+  document.querySelectorAll('#hit-tbody tr').forEach((r,i)=>{
+    r.classList.toggle('hit-highlight',allHits.indexOf(filteredHits[(currentPage-1)*PAGE_SIZE+i])===gi);
+  });
+}
+
+function renderPagination(){
+  const total=Math.ceil(filteredHits.length/PAGE_SIZE);
+  const pg=document.getElementById('pagination');
+  if(total<=1){pg.innerHTML='';return;}
+  let html=`<span class="page-info">${filteredHits.length} hits</span>`;
+  html+=`<button class="page-btn" onclick="goPage(${Math.max(1,currentPage-1)})">prev</button>`;
+  for(let p=1;p<=total;p++){
+    if(total>8&&p>2&&p<total-1&&Math.abs(p-currentPage)>1){if(p===3||p===total-2)html+='<span style="color:var(--text-dim);padding:0 4px">…</span>';continue;}
+    html+=`<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  }
+  html+=`<button class="page-btn" onclick="goPage(${Math.min(total,currentPage+1)})">next</button>`;
+  pg.innerHTML=html;
+}
+
+function goPage(p){currentPage=p;renderPage();}
+
+function filterTable(){
+  const q=document.getElementById('filter-input').value.toLowerCase();
+  filteredHits=allHits.filter(h=>{
+    const textMatch=h.chrom.toLowerCase().includes(q)||h.seq.toLowerCase().includes(q)||
+      h.strand.includes(q)||String(h.start+1).includes(q);
+    if(!textMatch)return false;
+    if(cnFilter==='all')return true;
+    const gi=allHits.indexOf(h);
+    const v=hitCopyNumber[gi];
+    if(cnFilter==='unique')return typeof v==='number'&&v===1;
+    if(cnFilter==='multi')return typeof v==='number'&&v>1;
+    return true;
+  });
+  currentPage=1;renderPage();
+}
+
+function sortTable(col){
+  if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}
+  const keys=[null,'chrom','start','end','strand','seq','B','O','Bp',null,null];
+  // col 9 = copy number sort
+  if(col===9){
+    filteredHits.sort((a,b)=>{
+      const va=hitCopyNumber[allHits.indexOf(a)]??Infinity;
+      const vb=hitCopyNumber[allHits.indexOf(b)]??Infinity;
+      const na=typeof va==='number'?va:Infinity;
+      const nb=typeof vb==='number'?vb:Infinity;
+      return sortAsc?na-nb:nb-na;
+    });
+    renderPage(); return;
+  }
+  const k=keys[col];if(!k)return;
+  filteredHits.sort((a,b)=>{const av=a[k],bv=b[k];if(typeof av==='number')return sortAsc?av-bv:bv-av;return sortAsc?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));});
+  renderPage();
+}
+
+// ─── Downloads ────────────────────────────────────────────────────────────────
+// Format the copy-number value and the list of copy locations for export.
+function cnExportFields(i){
+  const cn=hitCopyNumber[i];
+  const cnStr=cn===null?'':cn==='checking'?'checking':cn===-1?'error':cn===0?'0':String(cn);
+  const loci=hitCopyLoci[i]||[];
+  // Semicolon-separated list of chr:start-end(strand) for every copy
+  const lociStr=loci.map(l=>`${l.chrom}:${l.start}-${l.end}(${l.strand})`).join('; ');
+  return[cnStr,lociStr];
+}
+function downloadCSV(){
+  const hdr=['#','Chr','Start','End','Strand','Sequence','B_arm','O_linker','Bprime_arm','Genome_copies','Copy_locations','attP_core_COCprime','attP_like_sequence'];
+  dl('genomescan_hits.csv','text/csv',[hdr,...allHits.map((h,i)=>{
+    const [cnStr,lociStr]=cnExportFields(i);
+    const a=buildAttP(i);
+    // Wrap copy-locations in quotes — it contains commas/semicolons
+    return[i+1,h.chrom,h.start+1,h.end+1,h.strand,h.seq,h.B,h.O,h.Bp,cnStr,`"${lociStr}"`,a.newCore,a.seq];
+  })].map(r=>r.join(',')).join('\n'));
+}
+function downloadExcel(){
+  const hdr=['#','Chr','Start','End','Strand','Sequence','B_arm','O_linker','Bprime_arm','Genome_copies','Copy_locations','attP_core_COCprime','attP_like_sequence'];
+  dl('genomescan_hits.tsv','text/tab-separated-values',[hdr,...allHits.map((h,i)=>{
+    const [cnStr,lociStr]=cnExportFields(i);
+    const a=buildAttP(i);
+    return[i+1,h.chrom,h.start+1,h.end+1,h.strand,h.seq,h.B,h.O,h.Bp,cnStr,lociStr,a.newCore,a.seq];
+  })].map(r=>r.join('\t')).join('\n'));
+}
+function downloadFASTA(){
+  dl('genomescan_hits.fasta','text/plain',allHits.map((h,i)=>`>Hit_${i+1} ${h.chrom}:${h.start+1}-${h.end+1}(${h.strand})\n${h.seq}`).join('\n'));
+}
+// Multi-record FASTA of every hit's full attP-like site (70-col wrapped).
+function downloadAttPFastaAll(){
+  if(!allHits.length) return;
+  const wrap=(s,n=70)=>{let o='';for(let i=0;i<s.length;i+=n)o+=s.slice(i,i+n)+'\n';return o;};
+  const records=allHits.map((h,i)=>{
+    const a=buildAttP(i);
+    return `>attP-like_Hit${i+1} ${h.chrom}:${h.start+1}-${h.end+1}(${h.strand}) core=${a.newCore} len=${a.seq.length}\n${wrap(a.seq)}`;
+  });
+  dl(`genomescan_attP-like_${currentGeneSymbol||'sites'}.fasta`,'text/plain',records.join(''));
+}
+function dl(name,mime,content){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:mime}));a.download=name;a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CELL LINE & PRIMARY CELL MODELS — Open Targets Platform (DepMap + expression)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Resolves the gene symbol → Ensembl ID, then pulls:
+//   • depMapEssentiality: cancer cell lines profiled for this gene, with the
+//     CRISPR dependency (Chronos geneEffect), expression, disease & mutation
+//   • expressions: baseline RNA expression across tissues → guides primary-cell choice
+// The public Open Targets GraphQL API is CORS-enabled, so the browser calls it directly.
+
+const OT_GRAPHQL='https://api.platform.opentargets.org/api/v4/graphql';
+let cellModels=[];      // flattened cell-line rows
+let cellTissueExpr=[];  // [{tissue,value,z}]
+let cmEnsembl='';
+
+async function cmGraphQL(query,variables){
+  const r=await fetch(OT_GRAPHQL,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query,variables})});
+  if(!r.ok) throw new Error(`Open Targets HTTP ${r.status}`);
+  const j=await r.json();
+  if(j.errors&&j.errors.length) throw new Error(j.errors[0].message||'GraphQL error');
+  return j.data;
+}
+
+async function otResolveTarget(symbol){
+  const q=`query($s:String!){ search(queryString:$s, entityNames:["target"]){ hits { id object { ... on Target { approvedSymbol } } } } }`;
+  const d=await cmGraphQL(q,{s:symbol});
+  const hits=(d.search&&d.search.hits)||[];
+  if(!hits.length) return null;
+  const exact=hits.find(h=>h.object&&h.object.approvedSymbol&&h.object.approvedSymbol.toUpperCase()===symbol.toUpperCase());
+  return (exact||hits[0]).id;
+}
+
+async function otFetchModels(ensembl){
+  const q=`query($id:String!){ target(ensemblId:$id){ approvedSymbol
+    expressions { tissue { label } rna { value zscore } }
+    depMapEssentiality { tissueName screens { cellLineName diseaseFromSource geneEffect expression mutation } } } }`;
+  const d=await cmGraphQL(q,{id:ensembl});
+  return d.target;
+}
+
+function resetCellModelsPanel(){
+  cellModels=[]; cellTissueExpr=[]; cmEnsembl='';
+  document.getElementById('cm-results').style.display='none';
+  document.getElementById('cm-tissues').style.display='none';
+  document.getElementById('cm-status').style.display='none';
+  document.getElementById('cm-prog-wrap').style.display='none';
+  document.getElementById('cm-error').classList.remove('visible');
+  const lbl=document.getElementById('cm-gene-label');
+  const btn=document.getElementById('cm-run-btn');
+  if(currentGeneSymbol){
+    lbl.textContent=currentGeneSymbol;
+    btn.disabled=false; btn.textContent=`Find models for ${currentGeneSymbol}`;
+  } else {
+    lbl.textContent='— run a Gene-Name search to enable —';
+    btn.disabled=true; btn.textContent='Find models for this gene';
+  }
+}
+
+async function findCellModels(){
+  if(!currentGeneSymbol) return;
+  const btn=document.getElementById('cm-run-btn'); btn.disabled=true;
+  const err=document.getElementById('cm-error'); err.classList.remove('visible');
+  const status=document.getElementById('cm-status'); status.style.display='block';
+  const pw=document.getElementById('cm-prog-wrap'), pb=document.getElementById('cm-prog-bar');
+  pw.style.display='block'; pb.style.width='25%';
+  status.textContent=`Resolving ${currentGeneSymbol} in Open Targets…`;
+  try{
+    const ens=await otResolveTarget(currentGeneSymbol);
+    if(!ens) throw new Error(`No Open Targets human target found for "${currentGeneSymbol}". (Cell-model data is human-only.)`);
+    cmEnsembl=ens;
+    pb.style.width='60%';
+    status.textContent=`Fetching DepMap cell lines & tissue expression for ${currentGeneSymbol}…`;
+    const t=await otFetchModels(ens);
+    if(!t) throw new Error('No target data returned by Open Targets.');
+    cellModels=[];
+    (t.depMapEssentiality||[]).forEach(grp=>{
+      (grp.screens||[]).forEach(s=>cellModels.push({
+        cellLine:s.cellLineName||'?',
+        tissue:grp.tissueName||'—',
+        disease:s.diseaseFromSource||'—',
+        expression:(s.expression==null?null:s.expression),
+        geneEffect:(s.geneEffect==null?null:s.geneEffect),
+        mutation:s.mutation||''
+      }));
+    });
+    cellTissueExpr=(t.expressions||[]).filter(e=>e.rna).map(e=>({tissue:e.tissue.label,value:e.rna.value,z:e.rna.zscore}))
+      .sort((a,b)=>b.value-a.value);
+    pb.style.width='100%'; status.style.display='none'; pw.style.display='none';
+    buildTissueFilter(); renderTissueChips(); renderCellModels();
+    document.getElementById('cm-tissues').style.display=cellTissueExpr.length?'block':'none';
+    document.getElementById('cm-results').style.display=cellModels.length?'block':'none';
+    if(!cellModels.length && !cellTissueExpr.length){
+      err.textContent=`No DepMap or expression data available for ${t.approvedSymbol||currentGeneSymbol}.`;
+      err.classList.add('visible');
+    } else if(!cellModels.length){
+      err.textContent=`No DepMap cell-line screens for ${t.approvedSymbol||currentGeneSymbol}, but tissue expression is shown above.`;
+      err.classList.add('visible');
+    }
+  }catch(e){
+    pw.style.display='none'; status.style.display='none';
+    err.textContent='Could not load cell models: '+(e.message||e);
+    err.classList.add('visible');
+  }finally{ btn.disabled=false; }
+}
+
+function buildTissueFilter(){
+  const sel=document.getElementById('cm-tissue-filter');
+  const tissues=[...new Set(cellModels.map(m=>m.tissue))].sort();
+  sel.innerHTML=`<option value="">All tissues (${cellModels.length})</option>`+
+    tissues.map(t=>`<option value="${escHtml(t)}">${escHtml(t)} (${cellModels.filter(m=>m.tissue===t).length})</option>`).join('');
+}
+
+function renderTissueChips(){
+  const wrap=document.getElementById('cm-tissue-chips');
+  const top=cellTissueExpr.slice(0,8);
+  const max=top.length?Math.max(...top.map(t=>t.value),1):1;
+  wrap.innerHTML=top.map(t=>{
+    const pct=Math.round(100*t.value/max);
+    return `<span style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);font-size:12px;">
+      <span style="color:var(--text-bright);">${escHtml(t.tissue)}</span>
+      <span style="color:var(--text-dim);font-family:'IBM Plex Mono',monospace;">${Math.round(t.value).toLocaleString()}</span>
+      <span style="width:46px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden;display:inline-block;"><span style="display:block;height:100%;width:${pct}%;background:var(--accent);"></span></span>
+    </span>`;
+  }).join('')||'<span style="color:var(--text-dim);font-size:12px;">No tissue expression data.</span>';
+}
+
+function cmDepText(v){
+  // DepMap Chronos: < -0.5 ≈ dependency; ~0 non-essential; positive ≈ enriched
+  const col=v<=-1?'#ff6b35':v<=-0.5?'#ffa14d':'#7a8a9a';
+  return `<span style="color:${col};font-weight:600;">${v.toFixed(2)}</span>`;
+}
+
+function renderCellModels(){
+  if(!cellModels.length) return;
+  const tissue=document.getElementById('cm-tissue-filter').value;
+  const q=document.getElementById('cm-filter').value.toLowerCase();
+  const sort=document.getElementById('cm-sort').value;
+  let rows=cellModels.filter(m=>(!tissue||m.tissue===tissue)&&
+    (!q||m.cellLine.toLowerCase().includes(q)||m.disease.toLowerCase().includes(q)||m.tissue.toLowerCase().includes(q)));
+  rows.sort((a,b)=>{
+    if(sort==='name') return a.cellLine.localeCompare(b.cellLine);
+    if(sort==='dep')  return (a.geneEffect==null?1:a.geneEffect)-(b.geneEffect==null?1:b.geneEffect);
+    return (b.expression==null?-99:b.expression)-(a.expression==null?-99:a.expression);
+  });
+  const cap=500, shown=rows.slice(0,cap);
+  document.getElementById('cm-tbody').innerHTML=shown.map(m=>{
+    const expr=m.expression==null?'<span style="color:var(--text-dim)">—</span>':m.expression.toFixed(2);
+    const dep=m.geneEffect==null?'<span style="color:var(--text-dim)">—</span>':cmDepText(m.geneEffect);
+    const mut=m.mutation?`<span style="color:#ff6b35;">${escHtml(m.mutation)}</span>`:'<span style="color:var(--text-dim)">—</span>';
+    const cl=encodeURIComponent(m.cellLine);
+    return `<tr>
+      <td style="font-weight:600;color:var(--text-bright);">${escHtml(m.cellLine)}</td>
+      <td>${escHtml(m.tissue)}</td>
+      <td>${escHtml(m.disease)}</td>
+      <td class="seq-cell">${expr}</td>
+      <td class="seq-cell">${dep}</td>
+      <td class="seq-cell">${mut}</td>
+      <td style="white-space:nowrap;">
+        <a class="check-btn" style="text-decoration:none;" target="_blank" rel="noopener" href="https://www.cellosaurus.org/search?input=${cl}">Cellosaurus↗</a>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('cm-count').textContent=
+    `Showing ${shown.length.toLocaleString()} of ${rows.length.toLocaleString()} cell lines`+
+    (rows.length>cap?` (capped at ${cap})`:'')+` · ${cellModels.length.toLocaleString()} total profiled in DepMap`;
+}
+
+function downloadCellModelsCSV(){
+  const hdr=['Cell_line','Tissue','Disease_or_origin','Expression_log2TPM1','Dependency_geneEffect','Mutation'];
+  const rows=cellModels.map(m=>[m.cellLine,m.tissue,m.disease,
+    m.expression==null?'':m.expression,m.geneEffect==null?'':m.geneEffect,m.mutation||'']);
+  dl(`${currentGeneSymbol||'gene'}_cell_models.csv`,'text/csv',
+     [hdr,...rows].map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n'));
+}
+
+</script>
+</body>
+</html>
