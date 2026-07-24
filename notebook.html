@@ -30,7 +30,13 @@
         <datalist id="ln-known-emails"></datalist>
         <div id="ln-email-chips" class="ln-email-chips"></div>
       </div>
-      <div class="ln-input-group"><label for="ln-password">Password</label><input type="password" id="ln-password" name="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')lnPrimary()"></div>
+      <div class="ln-input-group">
+        <label for="ln-password">Password</label>
+        <div class="ln-pw-wrap">
+          <input type="password" id="ln-password" name="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')lnPrimary()">
+          <button type="button" class="ln-pw-toggle" id="ln-pw-toggle" aria-label="Show password" onclick="lnTogglePw()">Show</button>
+        </div>
+      </div>
       <button class="ln-btn" id="ln-primary-btn" data-mode="signin" onclick="lnPrimary()">Sign In →</button>
       <div id="ln-login-msg" class="ln-msg" style="display:none;"></div>
       <p class="ln-auth-switch">

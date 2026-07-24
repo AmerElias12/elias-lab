@@ -39,6 +39,19 @@ function renderKnownEmails() {
       '<button type="button" class="ln-chip-x" title="Forget this email" aria-label="Forget ' + esc(e) + '" onclick="forgetEmail(\'' + esc(e) + '\')">×</button></span>';
   }).join('');
 }
+// Reveal the password field — makes it obvious when the browser has autofilled
+// something other than what you meant to type.
+function lnTogglePw() {
+  var f = document.getElementById('ln-password');
+  var b = document.getElementById('ln-pw-toggle');
+  if (!f || !b) return;
+  var show = f.type === 'password';
+  f.type = show ? 'text' : 'password';
+  b.textContent = show ? 'Hide' : 'Show';
+  b.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  f.focus();
+}
+
 function useKnownEmail(email) {
   var f = document.getElementById('ln-email');
   if (f) f.value = email;
