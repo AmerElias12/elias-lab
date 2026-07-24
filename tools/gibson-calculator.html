@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gibson Assembly Calculator</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2430;
+    --border: #30363d;
+    --accent: #39d353;
+    --accent2: #58a6ff;
+    --accent3: #f78166;
+    --text: #e6edf3;
+    --text-muted: #7d8590;
+    --text-dim: #484f58;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --radius: 8px;
+    --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* BACKGROUND */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 10% 0%, rgba(57, 211, 83, 0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 90% 100%, rgba(88, 166, 255, 0.06) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* HEADER */
+  header {
+    margin-bottom: 48px;
+    animation: fadeDown 0.5s ease both;
+  }
+  .header-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(22px, 4vw, 30px);
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 300;
+    max-width: 500px;
+  }
+
+  /* STEP */
+  .step {
+    margin-bottom: 32px;
+    animation: fadeUp 0.4s ease both;
+  }
+  .step:nth-child(2) { animation-delay: 0.05s; }
+  .step:nth-child(3) { animation-delay: 0.1s; }
+  .step:nth-child(4) { animation-delay: 0.15s; }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .step-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 24px;
+  }
+  .step-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .step-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* KIT SELECTOR */
+  .kit-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .kit-card {
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all var(--transition);
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .kit-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+  .kit-card.neb::before { background: radial-gradient(ellipse at top left, rgba(88,166,255,0.08), transparent 70%); }
+  .kit-card.ligon::before { background: radial-gradient(ellipse at top left, rgba(57,211,83,0.08), transparent 70%); }
+  .kit-card:hover { border-color: var(--text-dim); }
+  .kit-card.selected.neb { border-color: var(--accent2); }
+  .kit-card.selected.ligon { border-color: var(--accent); }
+  .kit-card.selected::before { opacity: 1; }
+
+  .kit-name {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .kit-card.selected.neb .kit-name { color: var(--accent2); }
+  .kit-card.selected.ligon .kit-name { color: var(--accent); }
+  .kit-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .kit-spec {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  /* FRAGMENT SELECTOR */
+  .frag-selector {
+    display: flex;
+    gap: 10px;
+  }
+  .frag-btn {
+    flex: 1;
+    height: 52px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .frag-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .frag-btn.active {
+    border-color: var(--accent);
+    background: rgba(57, 211, 83, 0.08);
+    color: var(--accent);
+  }
+  .frag-label { font-size: 11px; color: var(--text-dim); font-family: var(--sans); font-weight: 400; }
+
+  /* INPUTS SECTION */
+  .inputs-section {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .inputs-section.locked {
+    opacity: 0.35;
+    pointer-events: none;
+    filter: blur(0.5px);
+  }
+  .section-bar {
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+  }
+  .dot.blue { background: var(--accent2); }
+  .dot.orange { background: var(--accent3); }
+
+  .fragment-row {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    gap: 12px;
+    align-items: center;
+    transition: background var(--transition);
+  }
+  .fragment-row:last-child { border-bottom: none; }
+  .fragment-row:hover { background: rgba(255,255,255,0.01); }
+
+  .frag-row-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .frag-row-label.insert { color: var(--accent2); }
+  .frag-row-label.vector { color: var(--accent3); }
+  .frag-row-sublabel {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-weight: 400;
+    margin-top: 1px;
+  }
+
+  .input-group { position: relative; }
+  .input-group label {
+    display: block;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+  }
+  .input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-wrap input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 44px 8px 12px;
+    outline: none;
+    transition: border-color var(--transition);
+    -moz-appearance: textfield;
+  }
+  .input-wrap input::-webkit-inner-spin-button,
+  .input-wrap input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .input-wrap input:focus { border-color: var(--accent); }
+  .input-wrap input::placeholder { color: var(--text-dim); }
+  .unit {
+    position: absolute;
+    right: 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* RESULTS */
+  .results {
+    margin-top: 24px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+    transition: opacity var(--transition);
+  }
+  .results.hidden { opacity: 0; pointer-events: none; }
+
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  .result-cell {
+    padding: 18px 20px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transition: background var(--transition);
+  }
+  .result-cell:hover { background: rgba(255,255,255,0.015); }
+  .result-cell:last-child { border-right: none; }
+  .result-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .result-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .result-value.insert { color: var(--accent2); }
+  .result-value.vector { color: var(--accent3); }
+  .result-value.mix { color: var(--accent); }
+  .result-value.water { color: #a5d6ff; }
+  .result-value.warn { color: #f0883e; }
+  .result-unit {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+  }
+
+  .summary-bar {
+    padding: 12px 20px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .summary-total {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+  }
+  .summary-total strong { color: var(--accent); }
+  .warn-msg {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #f0883e;
+    background: rgba(240, 136, 62, 0.1);
+    border: 1px solid rgba(240, 136, 62, 0.3);
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+
+  /* PROTOCOL BOX */
+  .protocol-box {
+    margin-top: 24px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .protocol-steps {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .proto-step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .proto-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 20px;
+    padding-top: 1px;
+  }
+  .proto-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .proto-text strong { color: var(--text); font-weight: 500; }
+  .proto-text em { color: var(--accent2); font-style: normal; }
+
+  /* DIVIDER */
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+
+  /* ANIMATIONS */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-in {
+    animation: fadeUp 0.3s ease both;
+  }
+
+  /* RESET BUTTON */
+  .reset-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all var(--transition);
+    letter-spacing: 0.05em;
+  }
+  .reset-btn:hover {
+    border-color: var(--accent3);
+    color: var(--accent3);
+  }
+
+  @media (max-width: 600px) {
+    .kit-selector { grid-template-columns: 1fr; }
+    .fragment-row { grid-template-columns: 1fr; }
+    .results-grid { grid-template-columns: repeat(2, 1fr); }
+    .frag-btn { height: 60px; flex-direction: column; gap: 2px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="header-label">// molecular biology tool</div>
+    <h1>Gibson <span>Assembly</span> Calculator</h1>
+    <p class="subtitle">Volume calculator for isothermal DNA assembly reactions — NEB Gibson Assembly &amp; LigON Kit</p>
+  </header>
+
+  <!-- STEP 1: KIT -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-num">01</span>
+      <span class="step-title">Select Kit</span>
+      <div class="step-line"></div>
+    </div>
+    <div class="kit-selector">
+      <div class="kit-card neb selected" id="kit-neb" onclick="selectKit('neb')">
+        <div class="kit-name">NEB Gibson Assembly</div>
+        <div class="kit-desc">Gibson Assembly Master Mix (E2611). Standard isothermal cloning method.</div>
+        <div class="kit-spec">
+          <span class="badge">10 µL rxn</span>
+          <span class="badge">5 µL master mix</span>
+          <span class="badge">50°C / 15–60 min</span>
+        </div>
+      </div>
+      <div class="kit-card ligon" id="kit-ligon" onclick="selectKit('ligon')">
+        <div class="kit-name">LigON Kit</div>
+        <div class="kit-desc">EURx LigON Master Mix (E1050). Sequence-independent isothermal assembly.</div>
+        <div class="kit-spec">
+          <span class="badge">20 µL rxn</span>
+          <span class="badge">10 µL master mix</span>
+          <span class="badge">50°C / 30–60 min</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: FRAGMENTS -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-num">02</span>
+      <span class="step-title">Number of Insert Fragments</span>
+      <div class="step-line"></div>
+    </div>
+    <div class="frag-selector">
+      <button class="frag-btn" id="frag-1" onclick="selectFragments(1)">
+        <span>1</span>
+        <span class="frag-label">insert</span>
+      </button>
+      <button class="frag-btn" id="frag-2" onclick="selectFragments(2)">
+        <span>2</span>
+        <span class="frag-label">inserts</span>
+      </button>
+      <button class="frag-btn" id="frag-3" onclick="selectFragments(3)">
+        <span>3</span>
+        <span class="frag-label">inserts</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- STEP 3: INPUT DATA -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-num">03</span>
+      <span class="step-title">Fragment Data</span>
+      <div class="step-line"></div>
+      <button class="reset-btn" onclick="resetInputs()">clear</button>
+    </div>
+    <div class="inputs-section locked" id="inputs-section">
+      <div class="section-bar">
+        <span class="dot blue"></span> Insert Fragments — enter length &amp; concentration
+      </div>
+      <div id="insert-rows"></div>
+
+      <div class="section-bar" style="border-top: 1px solid var(--border);">
+        <span class="dot orange"></span> Linearized Vector
+      </div>
+      <div class="fragment-row">
+        <div>
+          <div class="frag-row-label vector">Vector</div>
+          <div class="frag-row-sublabel">Linearized backbone</div>
+        </div>
+        <div class="input-group">
+          <label>Concentration</label>
+          <div class="input-wrap">
+            <input type="number" id="vec-conc" placeholder="0.0" min="0" step="0.1" oninput="calculate()">
+            <span class="unit">ng/µL</span>
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Amount to use</label>
+          <div class="input-wrap">
+            <input type="number" id="vec-ng" value="50" min="0" step="1" oninput="calculate()">
+            <span class="unit">ng</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: RESULTS -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-num">04</span>
+      <span class="step-title">Reaction Setup</span>
+      <div class="step-line"></div>
+    </div>
+    <div class="results hidden" id="results">
+      <div class="section-bar">
+        <span class="dot"></span> Volumes — pipette in this order
+      </div>
+      <div class="results-grid" id="results-grid"></div>
+      <div class="summary-bar" id="summary-bar"></div>
+    </div>
+  </div>
+
+  <!-- PROTOCOL -->
+  <div class="step" id="protocol-step" style="display:none;">
+    <div class="step-header">
+      <span class="step-num">05</span>
+      <span class="step-title">Protocol Notes</span>
+      <div class="step-line"></div>
+    </div>
+    <div class="protocol-box">
+      <div class="protocol-steps" id="protocol-steps"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // STATE
+  let selectedKit = 'neb';
+  let selectedFragments = 0;
+
+  // KIT CONFIG
+  const KIT = {
+    neb: {
+      masterMixVol: 5,
+      totalVol: 10,
+      label: 'Gibson MM (2X)',
+      incubation: '50°C / 15 min (2–3 frags) or 60 min (4–6 frags)',
+    },
+    ligon: {
+      masterMixVol: 10,
+      totalVol: 20,
+      label: 'LigON MM (2X)',
+      incubation: '50°C / 30 min (2–3 frags) or 60 min (4–6 frags)',
+    }
+  };
+
+  // PMOL targets per insert by number of inserts
+  function getInsertPmol(numInserts) {
+    if (numInserts <= 2) return 0.2;
+    return 0.1;
+  }
+
+  function selectKit(kit) {
+    selectedKit = kit;
+    document.getElementById('kit-neb').className = 'kit-card neb' + (kit === 'neb' ? ' selected' : '');
+    document.getElementById('kit-ligon').className = 'kit-card ligon' + (kit === 'ligon' ? ' selected' : '');
+    calculate();
+  }
+
+  function selectFragments(n) {
+    selectedFragments = n;
+    document.querySelectorAll('.frag-btn').forEach((b, i) => {
+      b.classList.toggle('active', i + 1 === n);
+    });
+
+    // Unlock inputs
+    const section = document.getElementById('inputs-section');
+    section.classList.remove('locked');
+
+    // Build insert rows
+    const container = document.getElementById('insert-rows');
+    container.innerHTML = '';
+    for (let i = 1; i <= n; i++) {
+      const row = document.createElement('div');
+      row.className = 'fragment-row slide-in';
+      row.style.animationDelay = `${(i - 1) * 0.05}s`;
+      row.innerHTML = `
+        <div>
+          <div class="frag-row-label insert">Insert ${n > 1 ? i : ''}</div>
+          <div class="frag-row-sublabel">PCR fragment</div>
+        </div>
+        <div class="input-group">
+          <label>Length</label>
+          <div class="input-wrap">
+            <input type="number" id="ins${i}-len" placeholder="0" min="0" step="1" oninput="calculate()">
+            <span class="unit">bp</span>
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Concentration</label>
+          <div class="input-wrap">
+            <input type="number" id="ins${i}-conc" placeholder="0.0" min="0" step="0.1" oninput="calculate()">
+            <span class="unit">ng/µL</span>
+          </div>
+        </div>
+      `;
+      container.appendChild(row);
+    }
+    calculate();
+  }
+
+  function calcPmolPerUL(conc, len) {
+    // pmol/µL = ng/µL × 1000 / (bp × 650 Da/bp)
+    return (conc * 1000) / (len * 650);
+  }
+
+  function fmt(v) {
+    if (!isFinite(v) || isNaN(v)) return '—';
+    return v.toFixed(3);
+  }
+
+  function calculate() {
+    if (selectedFragments === 0) return;
+
+    const kit = KIT[selectedKit];
+    const targetPmol = getInsertPmol(selectedFragments);
+    const vecConc = parseFloat(document.getElementById('vec-conc')?.value) || 0;
+
+    const inserts = [];
+    let allValid = true;
+
+    for (let i = 1; i <= selectedFragments; i++) {
+      const len = parseFloat(document.getElementById(`ins${i}-len`)?.value) || 0;
+      const conc = parseFloat(document.getElementById(`ins${i}-conc`)?.value) || 0;
+      const pmolPerUL = (len > 0 && conc > 0) ? calcPmolPerUL(conc, len) : 0;
+      const vol = pmolPerUL > 0 ? targetPmol / pmolPerUL : null;
+      if (vol === null) allValid = false;
+      inserts.push({ len, conc, pmolPerUL, vol, label: selectedFragments > 1 ? `Insert ${i}` : 'Insert' });
+    }
+
+    const vecNg = parseFloat(document.getElementById('vec-ng')?.value) || 50;
+    const vecVol = vecConc > 0 ? (vecNg / vecConc) : null;
+    if (vecVol === null) allValid = false;
+
+    const totalInsertVol = inserts.reduce((s, ins) => s + (ins.vol || 0), 0);
+    const totalFragVol = totalInsertVol + (vecVol || 0);
+    const waterVol = kit.totalVol - kit.masterMixVol - totalFragVol;
+
+    // BUILD RESULTS
+    const resultsDiv = document.getElementById('results');
+    const grid = document.getElementById('results-grid');
+    const summaryBar = document.getElementById('summary-bar');
+
+    // Show results section
+    resultsDiv.classList.remove('hidden');
+    document.getElementById('protocol-step').style.display = '';
+
+    // Build grid cells
+    const cells = [];
+
+    // Inserts
+    inserts.forEach(ins => {
+      cells.push({
+        label: ins.label,
+        value: ins.vol !== null ? fmt(ins.vol) : '—',
+        unit: ins.vol !== null ? 'µL' : 'enter data',
+        cssClass: 'insert',
+      });
+    });
+
+    // Vector
+    cells.push({
+      label: 'Vector',
+      value: vecVol !== null ? fmt(vecVol) : '—',
+      unit: vecVol !== null ? 'µL' : 'enter conc.',
+      cssClass: 'vector',
+    });
+
+    // Master Mix
+    cells.push({
+      label: kit.label,
+      value: kit.masterMixVol.toFixed(1),
+      unit: 'µL',
+      cssClass: 'mix',
+    });
+
+    // Water
+    const waterOk = waterVol >= -0.001;
+    cells.push({
+      label: 'Nuclease-free H₂O',
+      value: allValid ? (waterVol < 0 ? '0 ⚠' : fmt(Math.max(0, waterVol))) : '—',
+      unit: allValid ? 'µL' : '',
+      cssClass: waterOk ? 'water' : 'warn',
+    });
+
+    grid.innerHTML = cells.map(c => `
+      <div class="result-cell">
+        <div class="result-label">${c.label}</div>
+        <div class="result-value ${c.cssClass}">${c.value}</div>
+        <div class="result-unit">${c.unit}</div>
+      </div>
+    `).join('');
+
+    // Summary bar
+    const overshoot = waterVol < -0.001 && allValid;
+    summaryBar.innerHTML = `
+      <div class="summary-total">
+        Total reaction volume: <strong>${kit.totalVol} µL</strong>
+        &nbsp;·&nbsp; Master mix: <strong>${kit.masterMixVol} µL (2X)</strong>
+        ${allValid ? `&nbsp;·&nbsp; Insert target: <strong>${targetPmol} pmol</strong> each` : ''}
+      </div>
+      ${overshoot ? `<div class="warn-msg">⚠ DNA volume exceeds reaction capacity — dilute fragments</div>` : ''}
+    `;
+
+    // Protocol
+    buildProtocol(kit, allValid, overshoot);
+  }
+
+  function buildProtocol(kit, allValid, overshoot) {
+    const steps = selectedKit === 'neb' ? [
+      `Add all DNA fragments to the tube first: inserts, then linearized vector.`,
+      `Add <strong>${kit.masterMixVol} µL</strong> of <em>Gibson Assembly Master Mix (2X)</em>.`,
+      `Top up with nuclease-free water to <strong>${kit.totalVol} µL</strong> final volume.`,
+      `Incubate at <strong>50°C for 15 minutes</strong> (2–3 fragments) or <strong>60 minutes</strong> (4–6 fragments) in a thermocycler.`,
+      `Place immediately on ice. Store at <strong>−20°C</strong> or proceed to transformation.`,
+      `For chemical transformation: use <strong>2 µL</strong> of reaction. For electroporation: dilute 3-fold (add 20 µL H₂O), then use <strong>1 µL</strong>.`,
+    ] : [
+      `Add all DNA fragments to the tube: inserts, then linearized vector.`,
+      `Add <strong>${kit.masterMixVol} µL</strong> of <em>LigON Master Mix (2X)</em>. No water is needed for 4–6 fragment assemblies.`,
+      `Top up with nuclease-free water to <strong>${kit.totalVol} µL</strong> final volume.`,
+      `Incubate at <strong>50°C for 30 minutes</strong> (2–3 fragments) or up to <strong>60 minutes</strong> (4–6 fragments).`,
+      `Stop reaction on ice. Store at <strong>−20°C</strong> or proceed to transformation.`,
+      `Dilute reaction <strong>1:3</strong> with deionized water (20 µL rxn + 40 µL H₂O). Use <strong>1 µL</strong> of diluted reaction for transformation.`,
+    ];
+
+    document.getElementById('protocol-steps').innerHTML = steps.map((s, i) => `
+      <div class="proto-step">
+        <span class="proto-num">${String(i + 1).padStart(2, '0')}</span>
+        <span class="proto-text">${s}</span>
+      </div>
+    `).join('');
+  }
+
+  function resetInputs() {
+    document.querySelectorAll('.inputs-section input').forEach(el => el.value = '');
+    calculate();
+  }
+</script>
+</body>
+</html>

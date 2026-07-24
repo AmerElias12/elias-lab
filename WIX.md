@@ -1,8 +1,8 @@
 # Putting this site on Wix
 
-Braude uses Wix, so this project now ships a **Wix-ready build**. Wix runs custom
-code inside a sandboxed iframe with no file system, so relative paths like
-`css/site.css` never resolve. Everything therefore has to be in **one file**.
+Braude uses Wix, so this project ships a **Wix-ready build**. Wix runs custom code
+inside a sandboxed iframe with no file system, so relative paths like `css/site.css`
+never resolve — everything has to be in **one file**.
 
 Run this any time you change the site:
 
@@ -14,79 +14,141 @@ It regenerates two files from `index.html` + `css/` + `js/`:
 
 | File | What it's for |
 |------|---------------|
-| `wix/elias-lab-wix.html` | the **whole site** in one self-contained file (~61 KB) |
-| `wix/scanner-embed.html` | just the **att-site scanner** widget (~7 KB) |
+| `wix/elias-lab-wix.html` | the **whole site** in one self-contained file (~67 KB) |
+| `wix/scanner-embed.html` | just the **att-site scanner** widget (~9 KB) |
 
-> Don't hand-edit files in `wix/` — they're generated. Edit `index.html` / `css/` /
+> Never hand-edit files in `wix/` — they're generated. Edit `index.html` / `css/` /
 > `js/` and re-run the script.
 
 ---
 
-## Two ways to do this — pick one
+# The recommended split
 
-### Option A (recommended): build the page natively in Wix, embed only the scanner
+**Build the page natively in Wix. Embed only the scanner.**
 
-Rebuild the sections (hero, research, publications, team, services…) using Wix's
-own editor, then drop in the scanner as a small embed.
+This is the important decision, so here's the reasoning plainly:
 
-**Why this is better:** Wix indexes your text for SEO, the page is responsive the
-way Wix expects, and you can edit copy yourself without touching code. The only
-thing Wix genuinely *can't* do is the interactive scanner — so that's the only
-piece that needs to be custom code.
+An embedded HTML block is an **iframe**. Google indexes the *page*, not the iframe's
+contents — so if the whole site is one embed, Wix serves a nearly empty page and
+**none of your research text, publications, or the Braude affiliation gets indexed**.
+For a new lab that needs to be findable by name, that's a real cost. Iframes also
+don't resize with the page, can't contribute to Wix's mobile layout, and are awkward
+for screen readers.
 
-To add the scanner:
-1. In the Wix editor: **Add → Embed Code → Embed HTML**.
-2. Choose **Code** and paste the entire contents of `wix/scanner-embed.html`.
-3. Resize the element to roughly **620 × 420 px** (it's responsive; give it room
-   for the result box to appear).
+The scanner is different: it's an *application*, not content. There's nothing to
+index, and Wix has no native way to build it. That's exactly what embeds are for.
 
-Use `index.html` as your visual reference for colors, fonts and wording. The
-brand values are in `css/tokens.css` (teal `#0c4a44`, emerald `#10b07e`, bright
-`#1fd197`, paper `#f4f1e8`; fonts Fraunces + IBM Plex Sans + IBM Plex Mono).
+So:
 
-### Option B (fastest): embed the whole site as one block
-
-1. **Add → Embed Code → Embed HTML → Code**.
-2. Paste the entire contents of `wix/elias-lab-wix.html`.
-3. Stretch the element to full width and give it a tall fixed height.
-
-**Trade-offs, honestly:** the page lives in an iframe, so Wix won't index its text
-for search, you'll get an inner scrollbar unless the height is generous, and the
-in-page anchor links (Research, Team…) scroll *within* the iframe rather than the
-Wix page. Fine for getting online quickly; not ideal long-term.
+| Part of the page | How to build it | Why |
+|---|---|---|
+| Hero, Research, Aims, Applications, Publications, News, Team, Services, Collaborations, Join, Contact | **Native Wix sections** | SEO, mobile, editable by you without code |
+| att-site scanner | **Embed** (`wix/scanner-embed.html`) | it's an app; Wix can't build it |
+| Lab Notebook | **Separate host** (see below) | needs its own login + Supabase |
 
 ---
 
-## Things to set after you paste
+## Step 1 — Rebuild the page sections in Wix
 
-**Images.** The generated file still points at `assets/…` paths, which won't
-resolve inside Wix. Every image falls back to a styled text badge, so nothing
-looks broken — but to show the real ones: upload each image to **Wix Media**,
-copy its URL, and replace the matching `src="assets/…"` in the pasted code.
-That applies to:
-- `assets/logos/braude-college.png` — Braude College logo (footer affiliation)
-- `assets/logos/*.png` — the five collaborator logos
-- `assets/team-photo.jpg` — your portrait (the 4 cm circle)
+In the Wix Editor, add a section per block below. Everything you need (text, colors,
+fonts, images) is listed so you can copy it across without reading any code.
 
-**The Lab Notebook.** Wix can't host it — it's a separate app with its own login
-and Supabase backend. Keep deploying `notebook.html` somewhere static (GitHub
-Pages, Netlify — see `DEPLOY.md`) and point the nav button at it by editing
-`NOTEBOOK_URL` near the top of `build-wix.py`, then rebuilding:
+### Brand settings (do these once)
+- **Fonts** — Wix has both in its font list:
+  - Headings: **Fraunces** (semi-bold, 600)
+  - Body & labels: **IBM Plex Sans**
+  - Small mono labels: **IBM Plex Mono**
+- **Colors** — add these as your site palette:
 
-```python
-NOTEBOOK_URL = "https://your-notebook-host.example/notebook.html"
-```
+  | Name | Hex | Used for |
+  |---|---|---|
+  | Paper | `#f4f1e8` | page background |
+  | Paper 2 | `#ece7d9` | alternating section background |
+  | Ink | `#16241f` | body text |
+  | Ink soft | `#4a5a52` | secondary text |
+  | Teal | `#0c4a44` | headings, buttons |
+  | Teal deep | `#072e2a` | dark sections, footer |
+  | Emerald | `#10b07e` | accents |
+  | Emerald bright | `#1fd197` | highlights on dark |
+  | Blue | `#1d5fd4` | gradient accent |
 
-**Scanner numbers.** The scanner only ever shows a site count when it has a real
-one — see `js/scan-widget.js`, the `GENE_SITES` table:
+- **Logos** — upload to Wix Media:
+  - the Elias Lab mark (it's an inline SVG in `index.html`; export it or ask me for a PNG)
+  - `assets/logos/braude-college.png` — put it in the **header, beside the lab logo**
+  - the five partner logos from `assets/logos/` for the Collaborations strip
+  - `assets/team-photo.jpg` — Team section, set as a **circle, ~151 px (4 cm)**
 
-```js
-var GENE_SITES = {
-  'BRCA1': 128,
-  'TP53':  96,
-};
-```
+### Section-by-section
 
-Add gene symbols with the real counts from your GenomeScan runs. Genes not in the
-table show a "let's scan it for you" invitation instead of an invented number.
-Pasting an actual DNA sequence always computes a real count live in the browser.
+1. **Header** — Elias Lab logo · vertical divider · Braude logo. Menu: Research,
+   Publications, Team, Join, Contact, plus a **Lab Notebook** button (links out — see Step 3).
+2. **Hero** — H1 *"Engineering Integrases for Gene Therapy"* (with "Integrases" in the
+   teal→emerald→blue gradient), the lead paragraph, two buttons, and the three stats
+   (~40,000 / 0 / Multi-kb). The animated DNA background is decorative — either use a
+   still image export or skip it; the page works fine without it.
+3. **Research Overview** — Paper-2 background, "The Challenge" (red-tinted box) and
+   "Our Solution" (green-tinted box), plus the Key Advantages list.
+4. **Research Aims** — 5 cards, numbered badges.
+5. **Therapeutic Applications** — dark teal background, 5 cards.
+6. **Publications** — 5 entries, each: year + journal on the left, title/authors/DOI on the right.
+7. **News** — 3 dated entries as a vertical timeline.
+8. **Team** — circular photo + bio.
+9. **Collaborations** — 5 logo cards.
+10. **Lab Services** — 5 cards.
+11. **Join the Lab** — 3 cards + "Apply / Enquire" mail button.
+12. **Contact** — dark panel, the scanner embed (Step 2), email, and CTA.
+13. **Footer** — Braude logo on a light plate + "Biotechnology Engineering Department ·
+    Braude College of Engineering · Karmiel, Israel", contact, © year.
+
+> Copy all the wording straight out of `index.html` — open it in any text editor, or
+> open the site locally and copy from the rendered page.
+
+## Step 2 — Embed the scanner
+
+1. In the Wix Editor: **Add → Embed Code → Embed HTML**.
+2. Choose **Code** (not "Website address").
+3. Open `wix/scanner-embed.html`, select all, paste it in.
+4. Size the box roughly **620 × 480 px**; tick "Scroll" if content is taller.
+5. Place it inside the Contact / "Ready to Collaborate?" section.
+
+It needs no configuration — it calls NCBI directly from the visitor's browser.
+
+**One thing to confirm after publishing:** the scanner fetches from
+`eutils.ncbi.nlm.nih.gov`. That works from a normal browser, but test it once on the
+live Wix URL. If it's blocked, tell me and I'll move the lookup to a small proxy.
+
+## Step 3 — The Lab Notebook (can't live on Wix)
+
+The notebook needs its own login, its own page, and Supabase. Wix embeds can't host it.
+Host it free somewhere else and point the Wix button at it:
+
+- **Netlify** — drag the whole `EliasLab website` folder onto <https://app.netlify.com/drop>
+- **GitHub Pages** — see [`DEPLOY.md`](DEPLOY.md)
+
+Then set `NOTEBOOK_URL` near the top of `build-wix.py` to that address and re-run the
+build, so the generated files link to the right place.
+
+---
+
+## If you'd rather not rebuild by hand (Option B)
+
+Paste `wix/elias-lab-wix.html` into a single full-width **Embed HTML** block on a blank
+Wix page. It will look exactly like the local site immediately.
+
+Accept the trade-offs: **weak SEO** (content sits in an iframe), an inner scrollbar,
+and edits must happen in this project + a re-paste rather than in the Wix editor.
+
+Reasonable middle ground: launch with Option B so the site is live, then migrate
+section by section to native Wix.
+
+---
+
+## Checklist after publishing
+
+- [ ] Braude logo appears in the header and footer
+- [ ] All five partner logos load
+- [ ] Team photo is circular
+- [ ] Publication DOI links open correctly
+- [ ] Scanner returns a number for `TP53` (should be **1**) and `BRCA1` (**9**)
+- [ ] Lab Notebook button opens the separately-hosted notebook
+- [ ] Page looks right on a phone
