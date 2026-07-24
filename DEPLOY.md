@@ -57,29 +57,84 @@ in the User Management tab to push that browser's data into the shared database.
 
 ---
 
-## 2 · Publish the site
+## 2 · Publish the Lab Notebook on GitHub Pages
 
-### Option A — GitHub Pages
+The public site goes on **Wix** (see [`WIX.md`](WIX.md)). The **Lab Notebook**
+can't live on Wix — it needs its own page, its own login, and Supabase — so it
+gets hosted here instead. The lab tools ride along at the same URL.
+
+The repository is already prepared: git is initialised on branch `main` and
+everything is committed. Two steps remain, and both need your GitHub account.
+
+### Step 1 — create the empty repo (in your browser)
+
+1. Go to <https://github.com/new>
+2. **Repository name:** `elias-lab` (any name works — it becomes part of the URL)
+3. **Visibility: Public.** GitHub Pages on a free account only works for public
+   repos. This is fine: the notebook holds no secrets — the Supabase anon key is
+   designed to be public, and Row-Level Security is what protects the data.
+4. **Do not** tick "Add a README", ".gitignore", or a licence — the repo already
+   has commits, and an extra file causes a conflict on first push.
+5. Click **Create repository**.
+
+### Step 2 — connect and push (in Terminal)
+
+Replace `YOUR-USERNAME` with your GitHub username:
+
 ```bash
-# from inside the "EliasLab website" folder
-git init
-git add -A
-git commit -m "Elias Lab website"
-gh repo create elias-lab-website --public --source=. --push
-# enable Pages on the default branch:
-gh api -X POST repos/:owner/elias-lab-website/pages -f source.branch=main -f source.path=/ || \
-  echo "If that fails, enable Pages in the repo: Settings → Pages → Branch: main / root"
+cd "/Users/amerelias/Library/CloudStorage/GoogleDrive-amerelias02@gmail.com/Other computers/USB and External Devices/AMER BACKUP/BRAUDE/Elias Lab/EliasLab website"
+git remote add origin https://github.com/YOUR-USERNAME/elias-lab.git
+git push -u origin main
 ```
-Your site will be at `https://<your-user>.github.io/elias-lab-website/`.
 
-> **Google Drive note:** this folder lives in Google Drive. Git works there but
+Git will ask for your username and a **password** — GitHub no longer accepts your
+account password here. Create a token instead: **GitHub → Settings → Developer
+settings → Personal access tokens → Tokens (classic) → Generate new token**, tick
+the **`repo`** scope, and paste that token as the password.
+
+> Set your commit identity first if git complains:
+> ```bash
+> git config --global user.name "Amer Elias"
+> git config --global user.email "amerelias02@gmail.com"
+> ```
+
+### Step 3 — turn on Pages
+
+In the repo: **Settings → Pages → Source: Deploy from a branch → Branch: `main`,
+folder `/ (root)` → Save.** Give it a minute, then your notebook is at:
+
+```
+https://YOUR-USERNAME.github.io/elias-lab/notebook.html
+```
+
+Point the Wix "Lab Notebook" button at that URL, and set `NOTEBOOK_URL` near the
+top of `build-wix.py` to it as well, then re-run `python3 build-wix.py`.
+
+### What's published, and what isn't
+
+`robots.txt` tells search engines to skip this copy, so it won't compete with the
+Wix site for your lab's name. The notebook page also carries `noindex`.
+
+Until you configure Supabase the notebook runs in **local mode**: each visitor
+gets an empty notebook stored only in their own browser, and no lab data exists
+on the server at all. The demo PI password is only ever displayed when running
+locally — never on the published URL.
+
+> **Google Drive note:** this folder lives in Google Drive. Git works there, but
 > Drive can fight with the `.git` folder during sync. Treat **GitHub as the
-> source of truth** — once pushed, prefer editing via the repo, or pause Drive
-> sync while running git commands.
+> source of truth**, and avoid editing the same file on two machines at once.
 
-### Option B — Netlify / Cloudflare Pages (no git needed)
+### Updating later
+```bash
+git add -A
+git commit -m "describe the change"
+git push
+```
+Pages redeploys within a minute or two.
+
+### Alternative — Netlify (no GitHub account needed)
 Drag-and-drop the whole `EliasLab website` folder onto
-<https://app.netlify.com/drop>. Done. (Re-drop to update.)
+<https://app.netlify.com/drop>. Instant URL; re-drop to update.
 
 ### After deploying
 - Add your production URL to **Supabase → Authentication → URL Configuration →
