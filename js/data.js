@@ -99,7 +99,13 @@
         localSeedAdmin();
         if (banner) {
           banner.className = 'local';
-          banner.innerHTML = 'Local mode — data is saved only in this browser and is not shared. <a href="https://github.com" onclick="return false;" title="See DEPLOY.md">Configure Supabase</a> to enable the shared lab notebook. &nbsp;(Demo PI login: ' + ADMIN_EMAIL + ' / eliaslab)';
+          // Only reveal the demo credentials when running locally — never on a
+          // public URL, where they would be visible to anyone.
+          var isLocal = location.protocol === 'file:' ||
+            /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$/i.test(location.hostname);
+          banner.innerHTML = 'Local mode — data is saved only in this browser and is not shared. ' +
+            'Configure Supabase (see DEPLOY.md) to enable the shared lab notebook.' +
+            (isLocal ? ' &nbsp;(Demo PI login: ' + ADMIN_EMAIL + ' / eliaslab)' : '');
         }
         return this.restoreSession();
       }

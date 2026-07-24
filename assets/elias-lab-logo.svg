@@ -1,0 +1,18 @@
+<svg width="254" height="60" viewBox="0 0 254 60" xmlns="http://www.w3.org/2000/svg" aria-label="Elias Lab" role="img">
+  <defs>
+    <linearGradient id="elx1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0c4a44"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
+    <linearGradient id="elx2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d5fd4"/><stop offset="1" stop-color="#1fd197"/></linearGradient>
+  </defs>
+  <g transform="translate(2,2)" fill="none" stroke-linecap="round">
+    <path d="M5 9 C 16 9 16 28 28 28 C 40 28 40 47 51 47" stroke="url(#elx1)" stroke-width="3.4"/>
+    <path d="M11 5 C 23 5 21 26 28 28 C 35 30 33 51 45 51" stroke="url(#elx1)" stroke-width="3.4" opacity=".5"/>
+    <path d="M51 9 C 40 9 40 28 28 28 C 16 28 16 47 5 47" stroke="url(#elx2)" stroke-width="3.4"/>
+    <path d="M45 5 C 33 5 35 26 28 28 C 21 30 23 51 11 51" stroke="url(#elx2)" stroke-width="3.4" opacity=".5"/>
+    <g stroke="#0c4a44" stroke-width="1.6" opacity=".45"><line x1="8" y1="8" x2="13" y2="6"/><line x1="9" y1="48" x2="13" y2="50"/></g>
+    <g stroke="#1d5fd4" stroke-width="1.6" opacity=".45"><line x1="48" y1="8" x2="43" y2="6"/><line x1="47" y1="48" x2="43" y2="50"/></g>
+  </g>
+  <circle cx="30" cy="30" r="8.5" fill="#f4f1e8" stroke="url(#elx1)" stroke-width="2.8"/>
+  <circle cx="30" cy="30" r="3.4" fill="#1fd197"/>
+  <text x="72" y="33" font-family="'Fraunces', Georgia, serif" font-size="25" font-weight="600" fill="#16241f" letter-spacing="-0.5">Elias <tspan font-style="italic" fill="#0c4a44">Lab</tspan></text>
+  <text x="73" y="46" font-family="monospace" font-size="7" letter-spacing="1.4" fill="#10b07e">PRECISION GENOME INTEGRATION</text>
+</svg>

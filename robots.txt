@@ -1,0 +1,5 @@
+# This GitHub Pages copy exists to host the Lab Notebook and the lab tools.
+# The public lab website lives on Wix — keep search engines pointed there so the
+# two copies don't compete for the same search results (duplicate content).
+User-agent: *
+Disallow: /
