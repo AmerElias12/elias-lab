@@ -77,20 +77,20 @@ everything is committed. Two steps remain, and both need your GitHub account.
    has commits, and an extra file causes a conflict on first push.
 5. Click **Create repository**.
 
-### Step 2 — connect and push (in Terminal)
+### Step 2 — push (in Terminal)
 
-Replace `YOUR-USERNAME` with your GitHub username:
+The `origin` remote is **already configured** to
+`https://github.com/AmerElias12/elias-lab.git`, so this is all that's left:
 
 ```bash
 cd "/Users/amerelias/Library/CloudStorage/GoogleDrive-amerelias02@gmail.com/Other computers/USB and External Devices/AMER BACKUP/BRAUDE/Elias Lab/EliasLab website"
-git remote add origin https://github.com/YOUR-USERNAME/elias-lab.git
 git push -u origin main
 ```
 
-Git will ask for your username and a **password** — GitHub no longer accepts your
-account password here. Create a token instead: **GitHub → Settings → Developer
-settings → Personal access tokens → Tokens (classic) → Generate new token**, tick
-the **`repo`** scope, and paste that token as the password.
+Git will ask for a username (`AmerElias12`) and a **password** — GitHub no longer
+accepts your account password here. Create a token instead: **GitHub → Settings →
+Developer settings → Personal access tokens → Tokens (classic) → Generate new
+token**, tick the **`repo`** scope, and paste that token as the password.
 
 > Set your commit identity first if git complains:
 > ```bash
@@ -101,14 +101,22 @@ the **`repo`** scope, and paste that token as the password.
 ### Step 3 — turn on Pages
 
 In the repo: **Settings → Pages → Source: Deploy from a branch → Branch: `main`,
-folder `/ (root)` → Save.** Give it a minute, then your notebook is at:
+folder `/ (root)` → Save.** Give it a minute, then your notebook is live at:
 
 ```
-https://YOUR-USERNAME.github.io/elias-lab/notebook.html
+https://amerelias12.github.io/elias-lab/notebook.html
 ```
 
-Point the Wix "Lab Notebook" button at that URL, and set `NOTEBOOK_URL` near the
-top of `build-wix.py` to it as well, then re-run `python3 build-wix.py`.
+The lab tools ride along at the same host:
+
+| Tool | URL |
+|------|-----|
+| Primer Generator | `https://amerelias12.github.io/elias-lab/tools/grna-primer-generator.html` |
+| Gibson Calculator | `https://amerelias12.github.io/elias-lab/tools/gibson-calculator.html` |
+| GenomeScan | `https://amerelias12.github.io/elias-lab/tools/genome-scan.html` |
+
+`build-wix.py` already points the Wix "Lab Notebook" button at the notebook URL,
+so the generated files in `wix/` are correct — just point the Wix button there too.
 
 ### What's published, and what isn't
 

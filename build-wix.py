@@ -22,7 +22,7 @@ OUT_FILE = OUT_DIR / "elias-lab-wix.html"
 
 # Where the Lab Notebook is hosted. Wix can't run the notebook itself (it needs
 # its own page + Supabase), so point this at wherever you deploy notebook.html.
-NOTEBOOK_URL = "https://REPLACE-WITH-YOUR-NOTEBOOK-URL/notebook.html"
+NOTEBOOK_URL = "https://amerelias12.github.io/elias-lab/notebook.html"
 
 
 def read(rel: str) -> str:
