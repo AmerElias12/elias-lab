@@ -12,3 +12,19 @@ Icon?
 
 # Misc
 Thumbs.db
+
+# ── Secrets — never commit these ─────────────────────────────
+# This repo is PUBLIC. Anything committed here is visible to everyone and
+# stays in git history even after deletion, so keep credentials out entirely.
+*token*
+*Token*
+*TOKEN*
+*secret*
+*Secret*
+*credential*
+*.pem
+*.key
+.env
+.env.*
+# (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
+#  to be public and is protected by Row-Level Security.)
