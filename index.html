@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Elias Lab — Gene Therapy & Tyrosine Integrase Engineering</title>
-    <meta name="description" content="The Elias Lab engineers tyrosine site-specific recombinases (HK022) for precise, large-scale, double-strand-break-free DNA integration into native human genomic sites — a new platform for gene therapy.">
+    <title>Elias Lab — Gene Therapy &amp; Integrase Engineering | Braude College</title>
+    <meta name="description" content="The Elias Lab — Biotechnology Engineering Department, Braude College of Engineering, Karmiel — engineers site-specific recombinases (HK022) for precise, large-scale, double-strand-break-free DNA integration into native human genomic sites.">
     <meta name="author" content="Dr. Amer Elias">
     <link rel="canonical" href="https://eliaslab.org/">
 
@@ -23,12 +23,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-    <link rel="stylesheet" href="css/tokens.css">
-    <link rel="stylesheet" href="css/site.css">
+    <!-- bump ?v= when you change these files, so browsers pick up the new version -->
+    <link rel="stylesheet" href="css/tokens.css?v=2">
+    <link rel="stylesheet" href="css/site.css?v=2">
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <nav class="nav">
+      <div class="nav-brand">
         <a class="logo" href="#" aria-label="Elias Lab home"><svg style="height:46px;width:auto;display:block;" width="254" height="60" viewBox="0 0 254 60" xmlns="http://www.w3.org/2000/svg" aria-label="Elias Lab" role="img">
   <defs>
     <linearGradient id="elx1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0c4a44"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
@@ -47,6 +49,8 @@
   <text x="72" y="33" font-family="'Fraunces', Georgia, serif" font-size="25" font-weight="600" fill="#16241f" letter-spacing="-0.5">Elias <tspan font-style="italic" fill="#0c4a44">Lab</tspan></text>
   <text x="73" y="46" font-family="monospace" font-size="7" letter-spacing="1.4" fill="#10b07e">PRECISION GENOME INTEGRATION</text>
 </svg></a>
+        <a class="nav-braude" href="https://www.braude.ac.il/en/" target="_blank" rel="noopener" aria-label="Braude College of Engineering, Karmiel" title="Biotechnology Engineering Department · Braude College of Engineering, Karmiel"><img class="nav-braude-logo" src="assets/logos/braude-college.png" alt="Braude College of Engineering, Karmiel" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'nav-braude-logo nav-braude-fallback',textContent:'BRAUDE'}))"></a>
+      </div>
         <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">☰</button>
         <div class="nav-links" id="nav-links">
             <a href="#overview">Research</a>
@@ -60,10 +64,41 @@
 
   <main id="main">
     <section class="hero">
+        <div class="hero-anim" aria-hidden="true">
+          <svg viewBox="0 0 1200 640" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="haTeal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0c4a44"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
+              <linearGradient id="haBlue" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d5fd4"/><stop offset="1" stop-color="#1fd197"/></linearGradient>
+            </defs>
+            <!-- attP genomic strand (blue): bottom-left → top-right, crossing the synapse -->
+            <g class="ha-strand ha-blue" fill="none" stroke="url(#haBlue)" stroke-linecap="round">
+              <path stroke-width="3" d="M100,500 C 360,500 470,326 600,326 S 840,152 1100,152"/>
+              <path stroke-width="3" d="M100,516 C 360,516 486,340 600,340 S 840,168 1100,168"/>
+              <g class="ha-rungs" stroke-width="2" opacity=".5">
+                <line x1="176" y1="504" x2="176" y2="520"/><line x1="300" y1="470" x2="300" y2="486"/><line x1="452" y1="392" x2="452" y2="408"/><line x1="760" y1="250" x2="760" y2="266"/><line x1="900" y1="206" x2="900" y2="222"/><line x1="1020" y1="176" x2="1020" y2="192"/>
+              </g>
+            </g>
+            <!-- attB donor strand (teal): top-left → bottom-right, crossing the synapse -->
+            <g class="ha-strand ha-teal" fill="none" stroke="url(#haTeal)" stroke-linecap="round">
+              <path stroke-width="3" d="M100,152 C 360,152 470,326 600,326 S 840,500 1100,500"/>
+              <path stroke-width="3" d="M100,168 C 360,168 486,340 600,340 S 840,516 1100,516"/>
+              <g class="ha-rungs" stroke-width="2" opacity=".5">
+                <line x1="176" y1="156" x2="176" y2="172"/><line x1="300" y1="190" x2="300" y2="206"/><line x1="452" y1="268" x2="452" y2="284"/><line x1="760" y1="410" x2="760" y2="426"/><line x1="900" y1="454" x2="900" y2="470"/><line x1="1020" y1="484" x2="1020" y2="500"/>
+              </g>
+            </g>
+            <!-- integrase tetramer at the synapse -->
+            <g class="ha-integrase" transform="translate(600,333)">
+              <circle class="ha-halo" r="66" fill="none" stroke="#10b07e" stroke-width="1.2" opacity=".25"/>
+              <g class="ha-ring">
+                <circle cx="0" cy="-40" r="11" fill="#0c4a44"/><circle cx="40" cy="0" r="11" fill="#1d5fd4"/><circle cx="0" cy="40" r="11" fill="#0c4a44"/><circle cx="-40" cy="0" r="11" fill="#1d5fd4"/>
+              </g>
+              <circle r="6" fill="#1fd197"/>
+            </g>
+          </svg>
+        </div>
         <div class="hero-content">
             <div class="hero-text">
-                <p class="subtitle">Molecular Biology &amp; Biochemistry Research</p>
-                <h1>Engineering <span class="accent">Tyrosine Integrases</span> for Gene Therapy</h1>
+                <h1>Engineering <span class="accent">Integrases</span> for Gene Therapy</h1>
                 <p class="lead">Developing novel site-specific recombinases to enable precise, large-scale DNA insertion into native genomic sites without double-strand breaks—transforming the landscape of gene therapy and genetic medicine.</p>
                 <div class="cta-buttons">
                     <a href="#overview" class="btn btn-primary">Explore Research</a>
@@ -114,12 +149,11 @@
         <span class="section-kicker">What We're Building</span>
         <h2>Research Aims &amp; Objectives</h2>
         <div class="research-aims">
-            <div class="aim-card reveal"><div class="aim-number">1</div><h3>Discovery &amp; Engineering</h3><p>Discover and engineer novel tyrosine recombinase variants through metagenomic analysis, phage-assisted continuous evolution (PACE), and AlphaFold3-guided protein engineering to optimize specificity for native human genomic sites.</p></div>
-            <div class="aim-card reveal"><div class="aim-number">2</div><h3>HK022 Optimization</h3><p>Engineer HK022 integrase through directed and random mutagenesis to develop highly active variants with minimal off-target effects. Demonstrate proof-of-concept across three therapeutic models.</p></div>
-            <div class="aim-card reveal"><div class="aim-number">3</div><h3>Genomic Safety</h3><p>Establish comprehensive safety profiles through whole-genome next-generation sequencing to detect and characterize unintended genomic changes and off-target integrations.</p></div>
-            <div class="aim-card reveal"><div class="aim-number">4</div><h3>CRISPR-Recombinase Fusion</h3><p>Design and optimize chimeric proteins fusing CRISPR-dCas variants with tyrosine recombinases to enhance targeting efficiency and enable multiplexed genome engineering.</p></div>
-            <div class="aim-card reveal"><div class="aim-number">5</div><h3>Multiplexed Integration</h3><p>Demonstrate simultaneous integration of multiple distinct genetic payloads at different genomic loci in a single transfection event for complex gene circuit engineering.</p></div>
-            <div class="aim-card reveal"><div class="aim-number">6</div><h3>Delivery Optimization</h3><p>Evaluate clinical delivery systems including lipid nanoparticles, exosomes, and AAV vectors for efficient and safe in vivo therapeutic payload integration.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">1</div><h3>Recombinase Discovery, Engineering &amp; Optimization</h3><p>Discover, engineer, and optimize novel tyrosine site-specific recombinases — with the HK022 integrase as our leading model — through metagenomic mining, phage-assisted continuous evolution (PACE), directed and random mutagenesis, and AlphaFold3-guided design to maximize activity and specificity at native human genomic sites.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">2</div><h3>Gene Therapy for Hereditary Diseases</h3><p>Develop precise, double-strand-break-free integration tools to treat a broad range of inherited disorders — restoring gene function through safe-harbor insertion, promoter-trap, and RMCE strategies that work across diverse patient mutations in the same gene.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">3</div><h3>Gene Therapy for Cancer</h3><p>Design recombinase-based approaches for oncology — from tumor-suppressor gene correction to engineered immune-cell therapies — enabling targeted delivery of large, multi-gene payloads for next-generation cancer treatment.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">4</div><h3>Cell Line Engineering &amp; Development</h3><p>Build engineered and stable cell-line models by integrating defined genetic payloads at chosen loci — supporting reporter systems, therapeutic protein production, and functional research models.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">5</div><h3>Multiplexed Integration</h3><p>Demonstrate simultaneous integration of multiple distinct genetic payloads at different genomic loci in a single event, enabling complex gene-circuit and multi-transgene engineering.</p></div>
         </div>
     </section>
 
@@ -130,7 +164,6 @@
         <p class="section-intro">One precise-integration platform, applied across loss-of-function disease, cancer, and complex cell engineering.</p>
         <div class="app-grid">
             <div class="app-card reveal"><div class="app-label">Safe-Harbor Integration</div><h4>Stable Transgene Expression</h4><p>Targeting well-characterized safe loci (Rosa26, CLYBL, H11) for stable, predictable gene expression in therapeutic applications. Ideal for restoring gene function in loss-of-function diseases.</p></div>
-            <div class="app-card reveal"><div class="app-label">Promoter-Trap Therapy</div><h4>Alpha-1 Antitrypsin Deficiency (AATD)</h4><p>Inserting SERPINA1 cDNA at the APLP2 locus to leverage native promoters for disease-independent therapy. A single treatment applicable to all AATD patients regardless of their specific mutation.</p></div>
             <div class="app-card reveal"><div class="app-label">RMCE Technology</div><h4>Tumor Suppressor Gene Correction</h4><p>Precise replacement of mutated BRCA1 and TP53 sequences with healthy wild-type donor DNA. Enables "pan-mutation" therapeutics that correct disease-causing variants across patient populations.</p></div>
             <div class="app-card reveal"><div class="app-label">Neurodevelopmental Disorders</div><h4>Haploinsufficiency Correction</h4><p>Targeting genes like GRIN2B and SHANK3 to restore normal gene dosage in autism spectrum disorders and other neurodevelopmental conditions through safe-harbor integration.</p></div>
             <div class="app-card reveal"><div class="app-label">Cancer Immunotherapy</div><h4>Enhanced CAR-T Engineering</h4><p>Multiplexed integration of multi-gene constructs for advanced immunotherapies. Enables complex gene circuit installation for more effective cancer immunotherapy production.</p></div>
@@ -139,54 +172,52 @@
       </div>
     </section>
 
-    <section class="methodology full-bleed">
-      <div style="max-width:1200px;margin:0 auto;">
-        <span class="section-kicker">How We Work</span>
-        <h2>Methodology &amp; Technical Approach</h2>
-        <div class="methodology-content">
-            <div class="tech-box reveal"><h4>🧬 Metagenomic Discovery &amp; Bioinformatic Mining</h4><p>Comprehensive screening of prokaryotic and archaeal databases to identify candidate tyrosine recombinase subtypes containing the conserved R-H-R-Y catalytic tetrad. Bioinformatic analysis identifies native attB sites within human genomic safe harbors and disease-associated genes.</p></div>
-            <div class="tech-box reveal"><h4>🔬 Phage-Assisted Continuous Evolution (PACE)</h4><p>High-throughput directed evolution using progressively shorter landing pads (34 bp → &lt;25 bp) as selection pressure. Generates one-directional recombinase variants with improved activity and genome targeting specificity.</p></div>
-            <div class="tech-box reveal"><h4>🔍 AlphaFold3-Guided Protein Engineering</h4><p>Structural modeling identifies mutational hotspots at the protein-DNA interface. Strategic stacking of mutations enhances specificity for native human recombination sites and optimizes catalytic efficiency.</p></div>
-            <div class="tech-box reveal"><h4>🧪 Directed &amp; Random Mutagenesis</h4><p>Molecular evolution of HK022 integrase through systematic and random mutagenesis to discover variants with enhanced activity, reduced off-target binding, and improved tolerance for diverse genomic targets.</p></div>
-            <div class="tech-box reveal"><h4>⚡ Fluorescent Promoter-Trap Reporter Assays</h4><p>Functional validation in human cells (HEK293) using GFP/mCherry/BFP reporters. Quantifies integration efficiency and measures off-target activity through FACS, qRT-PCR, NGS, and immunostaining.</p></div>
-            <div class="tech-box reveal"><h4>📊 Whole-Genome Next-Generation Sequencing</h4><p>Unbiased genomic profiling through bulk and single-cell NGS of recombination junctions. Comprehensive analysis of off-target integrations and chromosomal alterations to establish safety profiles.</p></div>
-            <div class="tech-box reveal"><h4>🔗 CRISPR-dCas &amp; Recombinase Fusion Engineering</h4><p>Design of chimeric proteins combining programmable DNA-binding (CRISPR-dCas9, CasMINI, AsCas12f) with tyrosine recombinase catalytic domains. Flexible linker optimization and dual-targeting capability testing.</p></div>
-            <div class="tech-box reveal"><h4>🚚 Delivery System Evaluation</h4><p>Assessment of clinical delivery platforms: lipid nanoparticles (LNPs), exosomes, and adeno-associated viruses (AAV). Evaluation of efficiency, safety, and in vivo integration outcomes across delivery systems.</p></div>
-        </div>
-      </div>
-    </section>
-
     <!-- =================================================================
-         PUBLICATIONS  —  REPLACE the placeholder entries below with real
-         papers/preprints. Duplicate a .pub-card block per publication.
+         PUBLICATIONS  —  add a new .pub-card (newest first) per paper.
          ================================================================= -->
     <section class="publications" id="publications">
         <span class="section-kicker">Selected Work</span>
-        <h2>Publications &amp; Preprints</h2>
-        <p class="section-intro">Peer-reviewed papers, preprints, and patents from the lab. <em>(Placeholder entries — to be replaced with your real publication list.)</em></p>
+        <h2>Publications</h2>
+        <p class="section-intro">Peer-reviewed research on HK022 integrase engineering and its therapeutic applications.</p>
         <div class="pub-list">
             <article class="pub-card reveal">
-                <div><div class="pub-year">2026</div><div class="pub-venue">Preprint · bioRxiv</div></div>
+                <div><div class="pub-year">2026</div><div class="pub-venue">Cells</div></div>
                 <div>
-                    <div class="pub-title">[Publication title goes here]</div>
-                    <div class="pub-authors">Elias A., Author B., Author C. <em>— add author list</em></div>
-                    <div class="pub-links"><a href="#">DOI</a><a href="#">PDF</a></div>
+                    <div class="pub-title">Gene Editing Strategies for Neurological and Mental Disorders: Advances in Delivery, Methodology, and Clinical Translation</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Stern S — Cells 15(8):720</div>
+                    <div class="pub-links"><a href="https://doi.org/10.3390/cells15080720" target="_blank" rel="noopener">DOI</a></div>
                 </div>
             </article>
             <article class="pub-card reveal">
-                <div><div class="pub-year">2025</div><div class="pub-venue">Journal name</div></div>
+                <div><div class="pub-year">2020</div><div class="pub-venue">Nucleic Acids Research</div></div>
                 <div>
-                    <div class="pub-title">[Publication title goes here]</div>
-                    <div class="pub-authors">Author list — <em>add details</em></div>
-                    <div class="pub-links"><a href="#">DOI</a></div>
+                    <div class="pub-title">HK022 bacteriophage Integrase-mediated RMCE as a potential tool for human gene therapy</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Kassis H, Abu Elkader S, Gritsenko N, Nahmad A, Shir H, Younis L, Shannan A, Aihara H, Prag G, Yagil E, Kolot M — Nucleic Acids Res 48(22):12804–12816</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1093/nar/gkaa1140" target="_blank" rel="noopener">DOI</a></div>
                 </div>
             </article>
             <article class="pub-card reveal">
-                <div><div class="pub-year">2024</div><div class="pub-venue">Journal name</div></div>
+                <div><div class="pub-year">2018</div><div class="pub-venue">Oncotarget</div></div>
                 <div>
-                    <div class="pub-title">[Publication title goes here]</div>
-                    <div class="pub-authors">Author list — <em>add details</em></div>
-                    <div class="pub-links"><a href="#">DOI</a></div>
+                    <div class="pub-title">Anti-cancer binary system activated by bacteriophage HK022 Integrase</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Gritsenko N, Gorovits R, Spector I, Prag G, Yagil E, Kolot M — Oncotarget 9:27487–27501</div>
+                    <div class="pub-links"><a href="https://doi.org/10.18632/oncotarget.25512" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2016</div><div class="pub-venue">Scientific Reports</div></div>
+                <div>
+                    <div class="pub-title">Cancer-specific binary expression system activated in mice by bacteriophage HK022 Integrase</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Spector I, Sogolovsky-Bard I, Gritsenko N, Rask L, Mainbakh Y, Zilberstein Y, Yagil E, Kolot M — Sci Rep 6:24971</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1038/srep24971" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2015</div><div class="pub-venue">Gene Therapy</div></div>
+                <div>
+                    <div class="pub-title">Site promiscuity of coliphage HK022 integrase as a tool for gene therapy</div>
+                    <div class="pub-authors">Kolot M, Malchin N, <strong>Elias A</strong>, Gritsenko N, Yagil E — Gene Therapy</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1038/gt.2015.9" target="_blank" rel="noopener">DOI</a></div>
                 </div>
             </article>
         </div>
@@ -199,11 +230,10 @@
       <div style="max-width:1200px;margin:0 auto;">
         <span class="section-kicker">Lab Updates</span>
         <h2>News</h2>
-        <p class="section-intro"><em>Placeholder timeline — replace with real lab news (grants, papers, talks, new members).</em></p>
+        <p class="section-intro">Recent milestones from the lab.</p>
         <div class="news-list">
-            <div class="news-item reveal"><div class="news-date">Jun 2026</div><h4>[Headline of recent update]</h4><p>Short description of the news item — a grant award, a new preprint, a conference talk, or a new lab member.</p></div>
-            <div class="news-item reveal"><div class="news-date">Apr 2026</div><h4>[Headline of recent update]</h4><p>Short description goes here.</p></div>
-            <div class="news-item reveal"><div class="news-date">Jan 2026</div><h4>Lab established</h4><p>The Elias Lab opens, focused on engineering tyrosine integrases for double-strand-break-free gene therapy.</p></div>
+            <div class="news-item reveal"><div class="news-date">19 Apr 2026</div><h4>Review published in <em>Cells</em></h4><p>Our review, "Gene Editing Strategies for Neurological and Mental Disorders: Advances in Delivery, Methodology, and Clinical Translation," was published in <em>Cells</em>.</p></div>
+            <div class="news-item reveal"><div class="news-date">1 Oct 2025</div><h4>The lab opens its doors</h4><p>The Elias Lab was established, focused on engineering site-specific recombinases for double-strand-break-free gene therapy and cell engineering.</p></div>
         </div>
       </div>
     </section>
@@ -216,49 +246,50 @@
         <span class="section-kicker">Who We Are</span>
         <h2>The Team</h2>
         <div class="team-pi">
+            <div class="pi-photo reveal">
+                <img class="pi-avatar" src="assets/team-photo.jpg" alt="Portrait of Dr. Amer Elias" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'pi-avatar pi-avatar-fallback',textContent:'AE'}))">
+            </div>
             <div class="team-bio reveal">
                 <h3>Dr. Amer Elias</h3>
                 <p class="team-title">Principal Investigator &amp; Founder</p>
-                <p>Dr. Amer Elias is establishing a molecular biology and biochemistry laboratory dedicated to engineering tyrosine site-specific recombinases for biotechnological and therapeutic innovation.</p>
+                <p>Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.</p>
                 <p>With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.</p>
                 <p>The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies.</p>
             </div>
-            <div class="team-photo reveal">
-                <img src="assets/team-photo.jpg" alt="Portrait of Dr. Amer Elias" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'team-photo-fallback',textContent:'AE'}))">
-            </div>
         </div>
 
-        <!-- Add a .member-card per lab member. Replace initials/photo + details. -->
-        <div class="team-grid">
-            <div class="member-card reveal"><div class="member-avatar">+</div><h4>Open Position</h4><div class="member-role">PhD / MSc Student</div><p>We're recruiting — see <a href="#join">Join the Lab</a>.</p></div>
-            <div class="member-card reveal"><div class="member-avatar">+</div><h4>Open Position</h4><div class="member-role">Research Assistant</div><p>We're recruiting — see <a href="#join">Join the Lab</a>.</p></div>
-        </div>
+        <!-- Add a .member-card per member as people join the lab. -->
     </section>
 
     <section class="collaborations full-bleed" id="collaborations">
       <div style="max-width:1200px;margin:0 auto;">
         <span class="section-kicker">Partners</span>
         <h2>Institutional Collaborations</h2>
+        <!-- Drop official logo files into assets/logos/ (see assets/logos/README.txt).
+             Until then each card shows a clean monogram badge. -->
         <div class="collab-grid">
-            <div class="collab-card reveal"><h4>Tel Aviv University</h4><p>Collaborative research in molecular biology, genome editing, and therapeutic development</p></div>
-            <div class="collab-card reveal"><h4>University of Haifa</h4><p>Partnership in biochemical engineering and protein structure-function studies</p></div>
-            <div class="collab-card reveal"><h4>Emendo Bio</h4><p>Industry collaboration on translational genome editing and gene therapy applications</p></div>
-            <div class="collab-card reveal"><h4>Rabin Medical Center</h4><p>Clinical partnership for therapeutic validation and patient-derived cell studies</p></div>
-            <div class="collab-card reveal"><h4>Galilee Medical Center</h4><p>Regional partnership for clinical research and therapeutic implementation</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/tel-aviv-university.png" alt="Tel Aviv University logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'TAU'}))"></div><h4>Tel Aviv University</h4><p>Collaborative research in molecular biology, genome editing, and therapeutic development</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/university-of-haifa.png" alt="University of Haifa logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'UoH'}))"></div><h4>University of Haifa</h4><p>Partnership in biochemical engineering and protein structure-function studies</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/emendo-bio.png" alt="Emendo Bio logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'EB'}))"></div><h4>Emendo Bio</h4><p>Industry collaboration on translational genome editing and gene therapy applications</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/rabin-medical-center.png" alt="Rabin Medical Center logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'RMC'}))"></div><h4>Rabin Medical Center</h4><p>Clinical partnership for therapeutic validation and patient-derived cell studies</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/galilee-medical-center.png" alt="Galilee Medical Center logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'GMC'}))"></div><h4>Galilee Medical Center</h4><p>Regional partnership for clinical research and therapeutic implementation</p></div>
         </div>
       </div>
     </section>
 
-    <section class="features">
-        <span class="section-kicker">Expertise</span>
-        <h2>Core Competencies</h2>
+    <!-- =================================================================
+         LAB SERVICES  —  what we offer to partners. Edit cards as needed.
+         ================================================================= -->
+    <section class="features" id="services">
+        <span class="section-kicker">What We Offer</span>
+        <h2>Lab Services</h2>
+        <p class="section-intro">Services we provide to academic and industry collaborators.</p>
         <div class="features-list">
-            <div class="feature-item reveal"><h4>🧬 Protein Engineering</h4><p>Design and optimization of engineered recombinases with enhanced catalytic efficiency and genomic specificity</p></div>
-            <div class="feature-item reveal"><h4>🔬 Structural Biology</h4><p>AlphaFold-guided design and protein-DNA interface optimization for improved target recognition</p></div>
-            <div class="feature-item reveal"><h4>🧪 Molecular Evolution</h4><p>PACE and directed mutagenesis for rapid discovery and optimization of novel integrase variants</p></div>
-            <div class="feature-item reveal"><h4>📊 Genomic Safety Assessment</h4><p>Whole-genome sequencing and bioinformatic analysis for comprehensive off-target profiling</p></div>
-            <div class="feature-item reveal"><h4>🔗 CRISPR-Fusion Technology</h4><p>Engineering chimeric CRISPR-dCas-recombinase proteins for enhanced targeting and multiplexing</p></div>
-            <div class="feature-item reveal"><h4>🚚 Delivery Optimization</h4><p>Evaluation of LNPs, exosomes, and AAV vectors for clinical-grade in vivo delivery</p></div>
+            <div class="feature-item reveal"><h4>🧫 Cell Line Models, Engineering &amp; Production</h4><p>Design, engineering, and production of custom and stable cell-line models for research and therapeutic use.</p></div>
+            <div class="feature-item reveal"><h4>🧬 Plasmid Cloning</h4><p>Custom molecular cloning and expression-vector construction, from single constructs to complex assemblies.</p></div>
+            <div class="feature-item reveal"><h4>🔬 CRISPR Libraries</h4><p>Design and construction of pooled and arrayed CRISPR guide libraries for screening applications.</p></div>
+            <div class="feature-item reveal"><h4>🧪 Epigenetic Modifications</h4><p>Targeted epigenetic editing to modulate gene expression without altering the underlying DNA sequence.</p></div>
+            <div class="feature-item reveal"><h4>📊 Molecular Assay Development</h4><p>Development and validation of custom molecular assays — reporter systems, qPCR, and functional readouts.</p></div>
         </div>
     </section>
 
@@ -285,7 +316,19 @@
         <div class="contact-section">
             <h3>Ready to Collaborate?</h3>
             <p>Join us in advancing the frontiers of precision genome editing and transformative gene therapy.</p>
-            <p style="font-size:14px;margin-top:1.5rem;color:rgba(244,241,232,.7);">Contact Dr. Amer Elias to discuss research opportunities, clinical partnerships, or collaborative projects in tyrosine integrase engineering and therapeutic development.</p>
+
+            <div class="scan-teaser">
+                <div class="scan-teaser-head">🔍 Try our att-site scanner</div>
+                <p class="scan-teaser-sub">Curious whether your gene of interest could be a target? Enter a <strong>human gene symbol</strong> and we'll run it through our GenomeScan pipeline live — retrieving the locus from NCBI and scanning both strands for <strong>active attB-like integration sites</strong>. You get the count; the site map is what we build together.</p>
+                <div class="scan-row">
+                    <input id="scan-input" type="text" placeholder="Enter a human gene symbol — e.g. BRCA1" aria-label="Human gene symbol">
+                    <button id="scan-btn" class="btn btn-primary" type="button">Scan</button>
+                </div>
+                <div id="scan-result" class="scan-result" hidden aria-live="polite"></div>
+                <p class="scan-disclaimer">Live preview of our GenomeScan pipeline · gene coordinates and sequence retrieved from NCBI. Exact site maps, scores, and targeting strategy are shared with collaborators.</p>
+            </div>
+
+            <p style="font-size:14px;margin-top:2rem;color:rgba(244,241,232,.7);">Contact Dr. Amer Elias to discuss research opportunities, clinical partnerships, or collaborative projects in integrase engineering and therapeutic development.</p>
             <p style="margin-top:1rem;font-size:15px;"><a href="mailto:amerelias02@gmail.com">amerelias02@gmail.com</a></p>
             <a href="mailto:amerelias02@gmail.com" class="btn btn-primary" style="margin-top:1.5rem;">Get in Touch</a>
         </div>
@@ -293,12 +336,22 @@
   </main>
 
     <footer>
-        <p><strong>Elias Lab</strong> — Molecular Biology &amp; Gene Therapy Research</p>
-        <p>Engineering tyrosine site-specific recombinases for precision genome editing and therapeutic innovation</p>
+        <!-- Braude affiliation. Drop assets/logos/braude-college.png to show the real logo. -->
+        <div class="footer-affiliation">
+            <img class="braude-logo" src="assets/logos/braude-college.png" alt="Braude College of Engineering, Karmiel" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'braude-logo braude-logo-fallback',textContent:'BRAUDE'}))">
+            <div class="footer-affiliation-text">
+                <strong>Biotechnology Engineering Department</strong>
+                <span>Braude College of Engineering &middot; Karmiel, Israel</span>
+            </div>
+        </div>
+        <p><strong>Elias Lab</strong> — Gene Therapy &amp; Cell Engineering</p>
+        <p>Engineering site-specific recombinases for precision genome integration and therapeutic innovation</p>
         <p style="margin-top:1rem;font-size:13px;"><a href="mailto:amerelias02@gmail.com">amerelias02@gmail.com</a></p>
         <p style="margin-top:1rem;font-size:12px;color:rgba(244,241,232,.45);">© <span id="year">2026</span> Elias Lab. All rights reserved.</p>
     </footer>
 
-    <script src="js/site.js"></script>
+    <!-- bump ?v= when you change these files, so browsers pick up the new version -->
+    <script src="js/site.js?v=2"></script>
+    <script src="js/scan-widget.js?v=2"></script>
 </body>
 </html>

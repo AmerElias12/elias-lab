@@ -26,11 +26,23 @@ EliasLab website/
 │   └── site.js           # public-site interactions
 ├── tools/
 │   └── genome-scan.html  # bundled GenomeScan tool (consensus / att finder)
-├── assets/               # team-photo.jpg, og-image.png
+├── assets/               # team-photo.jpg, logos/, og-image.png
 ├── supabase/schema.sql   # run once in your Supabase project
-├── DEPLOY.md             # full setup & hosting guide
+├── build-wix.py          # generates the Wix-ready single-file builds
+├── wix/                  # GENERATED — do not edit by hand
+│   ├── elias-lab-wix.html  # whole site, self-contained (paste into Wix)
+│   └── scanner-embed.html  # just the att-site scanner widget
+├── DEPLOY.md             # Supabase + static hosting guide
+├── WIX.md                # how to publish on Wix
 └── README.md
 ```
+
+## Publishing on Wix
+
+The lab sits in the **Biotechnology Engineering Department, Braude College of
+Engineering (Karmiel)**, and Braude uses Wix. Run `python3 build-wix.py` to
+regenerate the self-contained files in `wix/`, then follow [`WIX.md`](WIX.md).
+The multi-file site here stays the single source of truth.
 
 ## Public site
 

@@ -5,10 +5,55 @@
    (Supabase) mode transparently.
    ============================================================ */
 
+// ── REMEMBERED LOGIN EMAILS ────────────────────────────────
+// Emails that have signed in on this device (most recent first).
+// Only addresses — passwords are never stored.
+var LN_EMAILS_KEY = 'elias_ln_known_emails';
+
+function getKnownEmails() {
+  try { return JSON.parse(localStorage.getItem(LN_EMAILS_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function rememberEmail(email) {
+  if (!email) return;
+  email = email.toLowerCase().trim();
+  var list = getKnownEmails().filter(function (e) { return e !== email; });
+  list.unshift(email);
+  try { localStorage.setItem(LN_EMAILS_KEY, JSON.stringify(list.slice(0, 5))); } catch (e) { }
+}
+function forgetEmail(email) {
+  var list = getKnownEmails().filter(function (e) { return e !== email; });
+  try { localStorage.setItem(LN_EMAILS_KEY, JSON.stringify(list)); } catch (e) { }
+  renderKnownEmails();
+}
+function renderKnownEmails() {
+  var list = getKnownEmails();
+  var dl = document.getElementById('ln-known-emails');
+  if (dl) dl.innerHTML = list.map(function (e) { return '<option value="' + esc(e) + '">'; }).join('');
+
+  var chips = document.getElementById('ln-email-chips');
+  if (!chips) return;
+  if (!list.length) { chips.innerHTML = ''; return; }
+  chips.innerHTML = list.map(function (e) {
+    return '<span class="ln-email-chip"><button type="button" class="ln-chip-use" onclick="useKnownEmail(\'' + esc(e) + '\')">' + esc(e) + '</button>' +
+      '<button type="button" class="ln-chip-x" title="Forget this email" aria-label="Forget ' + esc(e) + '" onclick="forgetEmail(\'' + esc(e) + '\')">×</button></span>';
+  }).join('');
+}
+function useKnownEmail(email) {
+  var f = document.getElementById('ln-email');
+  if (f) f.value = email;
+  var pw = document.getElementById('ln-password');
+  if (pw) pw.focus();
+}
+
 // ── AUTH SCREENS ───────────────────────────────────────────
 function showLoginScreen() {
   document.getElementById('ln-login-screen').style.display = 'flex';
   document.getElementById('ln-app').style.display = 'none';
+  renderKnownEmails();
+  var last = getKnownEmails()[0];
+  var f = document.getElementById('ln-email');
+  if (last && f && !f.value) f.value = last;
 }
 function lnMsg(txt, type) {
   var el = document.getElementById('ln-login-msg');
@@ -40,11 +85,12 @@ async function lnPrimary() {
   lnMsg('Signing in…', 'info');
   var res = await DB.signIn(email, pw);
   if (!res.ok) { lnMsg(res.error, 'error'); return; }
+  rememberEmail(email);
   lnShowApp(res.user);
 }
 async function lnLogout() {
   await DB.signOut();
-  document.getElementById('ln-email').value = '';
+  // Keep the email so signing back in is one field; clear only the password.
   document.getElementById('ln-password').value = '';
   document.getElementById('ln-login-msg').style.display = 'none';
   showLoginScreen();

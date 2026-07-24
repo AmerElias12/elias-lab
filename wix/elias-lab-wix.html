@@ -1,0 +1,976 @@
+<!--
+  GENERATED FILE — do not edit by hand.
+  Built from index.html + css/ + js/ by build-wix.py.
+  Paste the whole file into Wix: Add > Embed Code > Embed HTML > Code.
+  Images still use relative assets/ paths: upload them to Wix Media and
+  replace the src="assets/..." URLs, or leave them — each one falls back
+  to a styled text badge so nothing renders broken.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Elias Lab — Gene Therapy &amp; Integrase Engineering | Braude College</title>
+    <meta name="description" content="The Elias Lab — Biotechnology Engineering Department, Braude College of Engineering, Karmiel — engineers site-specific recombinases (HK022) for precise, large-scale, double-strand-break-free DNA integration into native human genomic sites.">
+    <meta name="author" content="Dr. Amer Elias">
+    <link rel="canonical" href="https://eliaslab.org/">
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Elias Lab — Precision Genome Integration">
+    <meta property="og:description" content="Engineering tyrosine integrases for DSB-free, large-payload gene therapy.">
+    <meta property="og:image" content="assets/og-image.png">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <!-- Inline SVG favicon (the lab mark) -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' rx='12' fill='%23072e2a'/%3E%3Ccircle cx='30' cy='30' r='9' fill='none' stroke='%231fd197' stroke-width='3'/%3E%3Ccircle cx='30' cy='30' r='3.5' fill='%231fd197'/%3E%3C/svg%3E">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- bump ?v= when you change these files, so browsers pick up the new version -->
+    <style>
+/* ---- css/tokens.css?v=2 ---- */
+/* ============================================================
+   Elias Lab — shared design tokens
+   Single source of truth for brand colors, type, shadows.
+   Imported by both the public site and the Lab Notebook.
+   ============================================================ */
+:root{
+  /* palette */
+  --paper:#f4f1e8;
+  --paper-2:#ece7d9;
+  --ink:#16241f;
+  --ink-soft:#4a5a52;
+  --teal:#0c4a44;
+  --teal-deep:#072e2a;
+  --emerald:#10b07e;
+  --emerald-bright:#1fd197;
+  --blue:#1d5fd4;
+  --danger:#c13a3a;
+
+  /* lines & surfaces */
+  --line:rgba(22,36,31,.12);
+  --line-soft:rgba(22,36,31,.07);
+  --card:#fbfaf5;
+
+  /* elevation */
+  --shadow-sm:0 1px 2px rgba(7,46,42,.06);
+  --shadow:0 18px 40px -18px rgba(7,46,42,.32);
+  --shadow-lg:0 40px 80px -30px rgba(7,46,42,.45);
+
+  /* focus ring (accessibility) */
+  --focus:0 0 0 3px rgba(16,176,126,.45);
+
+  /* type */
+  --serif:'Fraunces',Georgia,'Times New Roman',serif;
+  --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+
+  /* motion */
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+
+/* Global accessible focus state — applies across both pages */
+*:focus-visible{outline:none;box-shadow:var(--focus);border-radius:6px;}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+</style>
+    <style>
+/* ---- css/site.css?v=2 ---- */
+/* ============================================================
+   Elias Lab — public marketing site
+   Depends on css/tokens.css (load that first).
+   ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  font-family:var(--sans);
+  color:var(--ink);
+  background-color:var(--paper);
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(31,209,151,.10), transparent 38%),
+    radial-gradient(circle at 88% 8%, rgba(29,95,212,.08), transparent 40%),
+    radial-gradient(rgba(22,36,31,.045) 1px, transparent 1px);
+  background-size:auto,auto,22px 22px;
+  font-size:17px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:.005em;
+}
+::selection{background:var(--emerald-bright);color:var(--teal-deep);}
+a{color:var(--teal);}
+img{max-width:100%;display:block;}
+
+/* Skip link (a11y) */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:200;background:var(--teal);color:var(--paper);padding:.7rem 1.2rem;border-radius:0 0 10px 0;font-size:13px;font-weight:600;}
+.skip-link:focus{left:0;}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:100;background:rgba(244,241,232,.82);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line);padding:1.05rem 2.5rem;display:flex;justify-content:space-between;align-items:center;}
+.nav-links{display:flex;gap:2.2rem;align-items:center;}
+.nav a{position:relative;color:var(--ink);text-decoration:none;font-size:13px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;transition:color .25s;}
+.nav a:hover{color:var(--emerald);}
+.nav a::after{content:'';position:absolute;left:0;bottom:-6px;width:0;height:1.5px;background:var(--emerald);transition:width .28s ease;}
+.nav a:hover::after{width:100%;}
+.nav a.nav-cta::after{display:none;}
+.nav-cta{background:var(--teal);color:var(--paper)!important;padding:.5rem 1.2rem;border-radius:100px;font-weight:600;}
+.nav-cta:hover{background:var(--teal-deep);color:var(--paper)!important;}
+/* co-branding: lab logo + host college logo, side by side */
+.nav-brand{display:flex;align-items:center;gap:1rem;}
+.nav-braude{display:flex;align-items:center;padding-left:1rem;border-left:1px solid var(--line);text-decoration:none;}
+.nav-braude-logo{height:40px;width:auto;max-width:170px;object-fit:contain;display:block;transition:opacity .25s;}
+.nav-braude:hover .nav-braude-logo{opacity:.75;}
+.nav-braude-fallback{display:flex;align-items:center;font-family:var(--serif);font-weight:600;font-size:1rem;letter-spacing:.05em;color:var(--teal-deep);height:auto;}
+.logo{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;text-decoration:none;}
+.logo img{transition:transform .4s var(--ease);}
+.logo:hover img{transform:scale(1.04) rotate(-1deg);}
+/* mobile menu toggle (hidden on desktop) */
+.nav-toggle{display:none;background:none;border:1.5px solid var(--line);border-radius:10px;padding:.45rem .6rem;cursor:pointer;font-size:18px;line-height:1;color:var(--teal);}
+
+/* HERO */
+.hero{position:relative;min-height:92vh;display:flex;align-items:center;justify-content:center;padding:6rem 2.5rem 5rem;overflow:hidden;}
+.hero::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle at 78% 32%, rgba(16,176,126,.14), transparent 45%);pointer-events:none;}
+.hero::after{content:'ATCG · HK022 · attB · RMCE · PACE · INTEGRASE · ';position:absolute;top:0;left:0;font-family:var(--mono);font-size:11px;letter-spacing:.45em;color:rgba(12,74,68,.10);white-space:nowrap;padding:.6rem 0;width:200%;animation:marquee 40s linear infinite;}
+@keyframes marquee{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+/* animated recombinase synapse behind the hero */
+.hero-anim{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.5;}
+.hero-anim svg{width:100%;height:100%;animation:ha-float 11s ease-in-out infinite alternate;}
+.ha-strand path{stroke-dasharray:26 14;}
+.ha-teal path{animation:ha-flow 5.5s linear infinite;}
+.ha-blue path{animation:ha-flow 5.5s linear infinite reverse;}
+.ha-rungs{animation:ha-pulse 3.2s ease-in-out infinite;}
+.ha-ring{transform-box:fill-box;transform-origin:center;animation:ha-spin 16s linear infinite;}
+.ha-halo{transform-box:fill-box;transform-origin:center;animation:ha-breathe 4s ease-in-out infinite;}
+@keyframes ha-flow{to{stroke-dashoffset:-80;}}
+@keyframes ha-spin{to{transform:rotate(360deg);}}
+@keyframes ha-pulse{0%,100%{opacity:.3;}50%{opacity:.7;}}
+@keyframes ha-breathe{0%,100%{transform:scale(1);opacity:.25;}50%{transform:scale(1.12);opacity:.45;}}
+@keyframes ha-float{from{transform:translateY(-10px);}to{transform:translateY(10px);}}
+@media(max-width:860px){.hero-anim{opacity:.32;}}
+
+.hero-content{position:relative;z-index:2;max-width:1180px;width:100%;}
+.hero-text{max-width:880px;}
+.hero-text .subtitle{display:inline-flex;align-items:center;gap:.6rem;font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);background:rgba(16,176,126,.12);border:1px solid rgba(16,176,126,.28);padding:.45rem 1rem;border-radius:100px;margin-bottom:2rem;}
+.hero-text .subtitle::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--emerald-bright);box-shadow:0 0 0 4px rgba(31,209,151,.25);}
+.hero-text h1{font-family:var(--serif);font-size:clamp(2.6rem,6.5vw,5.3rem);font-weight:600;line-height:1.02;letter-spacing:-.022em;margin-bottom:1.8rem;font-optical-sizing:auto;}
+.accent{font-style:italic;background:linear-gradient(105deg,var(--teal) 0%,var(--emerald) 55%,var(--blue) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero-text p.lead{font-size:1.18rem;color:var(--ink-soft);max-width:620px;line-height:1.62;margin-bottom:1rem;}
+.hero-stats{display:flex;gap:2.5rem;flex-wrap:wrap;margin-top:2.6rem;}
+.hero-stat .n{font-family:var(--serif);font-size:2rem;font-weight:600;color:var(--teal);line-height:1;}
+.hero-stat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-top:.35rem;}
+.cta-buttons{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.4rem;}
+.btn{font-family:var(--sans);padding:.95rem 2rem;border-radius:100px;border:none;font-size:14px;font-weight:600;letter-spacing:.02em;cursor:pointer;transition:all .3s var(--ease);text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;}
+.btn-primary{background:var(--teal);color:#f4f1e8;}
+.btn-primary:hover{background:var(--teal-deep);transform:translateY(-3px);box-shadow:var(--shadow);}
+.btn-secondary{background:transparent;color:var(--teal);border:1.5px solid var(--teal);}
+.btn-secondary:hover{background:var(--teal);color:var(--paper);transform:translateY(-3px);}
+
+/* SECTIONS */
+section{padding:7rem 2.5rem;max-width:1200px;margin:0 auto;position:relative;}
+section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight:600;letter-spacing:-.02em;margin-bottom:1rem;text-align:center;line-height:1.08;}
+.section-kicker{display:block;text-align:center;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--emerald);margin-bottom:1rem;}
+.section-intro{text-align:center;max-width:680px;margin:0 auto 3.5rem;color:var(--ink-soft);font-size:1.02rem;}
+.full-bleed{max-width:none;}
+/* center headings inside full-bleed sections (their h2 isn't a direct child of <section>) */
+.full-bleed h2{text-align:center;}
+.overview-section{background:var(--paper-2);border-block:1px solid var(--line);}
+.overview-content{display:grid;grid-template-columns:1fr 1fr;gap:3.5rem;align-items:start;max-width:1200px;margin:0 auto;}
+.overview-text h3{font-family:var(--serif);font-size:1.7rem;font-weight:600;color:var(--teal);margin-bottom:1.5rem;letter-spacing:-.01em;}
+.overview-text p{color:var(--ink-soft);line-height:1.75;margin-bottom:1.2rem;font-size:1rem;}
+.challenge-box{background:rgba(193,58,58,.06);padding:1.6rem;border-radius:14px;border-left:3px solid var(--danger);margin-bottom:1.5rem;}
+.challenge-box h4{font-family:var(--sans);color:#a82f2f;font-weight:600;margin-bottom:.6rem;font-size:.95rem;letter-spacing:.01em;}
+.challenge-box p{font-size:.96rem;color:var(--ink-soft);line-height:1.7;}
+.solution-box{background:rgba(16,176,126,.09);padding:1.6rem;border-radius:14px;border-left:3px solid var(--emerald);}
+.solution-box h4{font-family:var(--sans);color:var(--teal);font-weight:600;margin-bottom:.6rem;font-size:.95rem;letter-spacing:.01em;}
+.solution-box p{color:var(--ink-soft);line-height:1.7;font-size:.96rem;}
+.key-list{list-style:none;padding:0;}
+.key-list li{padding:.75rem 0;border-bottom:1px solid var(--line);color:var(--ink-soft);}
+.key-list li:last-child{border-bottom:none;}
+.key-list li strong{color:var(--teal);}
+
+/* RESEARCH AIMS */
+.research-aims{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:1.5rem;}
+.aim-card{position:relative;padding:2.2rem;background:var(--card);border-radius:18px;border:1px solid var(--line);transition:all .4s var(--ease);overflow:hidden;}
+.aim-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(16,176,126,.06));opacity:0;transition:opacity .4s;}
+.aim-card:hover{transform:translateY(-6px);border-color:rgba(16,176,126,.5);box-shadow:var(--shadow);}
+.aim-card:hover::before{opacity:1;}
+.aim-number{display:inline-flex;font-family:var(--mono);background:var(--teal);color:var(--emerald-bright);width:44px;height:44px;border-radius:12px;align-items:center;justify-content:center;font-weight:600;font-size:1.05rem;margin-bottom:1.2rem;}
+.aim-card h3{font-family:var(--serif);font-size:1.32rem;font-weight:600;margin-bottom:.9rem;color:var(--teal);letter-spacing:-.01em;}
+.aim-card p{color:var(--ink-soft);line-height:1.68;font-size:.93rem;}
+
+/* APPLICATIONS */
+.applications-section{background:var(--teal-deep);color:var(--paper);border-block:1px solid var(--teal-deep);}
+.applications-section>h2{color:var(--paper);}
+.applications-section .section-kicker{color:var(--emerald-bright);}
+.applications-section .section-intro{color:rgba(244,241,232,.72);}
+.app-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1.5rem;max-width:1200px;margin:0 auto;}
+.app-card{padding:2.1rem;background:rgba(255,255,255,.04);border-radius:18px;border:1px solid rgba(255,255,255,.1);transition:all .4s var(--ease);}
+.app-card:hover{background:rgba(255,255,255,.07);border-color:rgba(31,209,151,.45);transform:translateY(-6px);}
+.app-card h4{font-family:var(--serif);font-size:1.28rem;font-weight:600;color:var(--paper);margin-bottom:.6rem;letter-spacing:-.01em;}
+.app-label{font-family:var(--mono);font-size:11px;color:var(--emerald-bright);font-weight:500;text-transform:uppercase;letter-spacing:.16em;margin-bottom:.9rem;}
+.app-card p{color:rgba(244,241,232,.72);line-height:1.65;font-size:.93rem;}
+
+/* METHODOLOGY */
+.methodology{background:var(--paper-2);border-block:1px solid var(--line);}
+.methodology-content{max-width:920px;margin:0 auto;}
+.tech-box{padding:1.9rem;background:var(--card);border-radius:16px;border:1px solid var(--line);border-left:3px solid var(--emerald);margin-bottom:1.1rem;transition:all .35s;}
+.tech-box:hover{transform:translateX(6px);box-shadow:var(--shadow-sm);border-left-color:var(--blue);}
+.tech-box h4{font-family:var(--serif);color:var(--teal);font-weight:600;margin-bottom:.7rem;font-size:1.2rem;letter-spacing:-.01em;}
+.tech-box p{color:var(--ink-soft);line-height:1.7;font-size:.95rem;}
+
+/* PUBLICATIONS */
+.publications{background:var(--paper);}
+.pub-list{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:1.1rem;}
+.pub-card{display:grid;grid-template-columns:96px 1fr;gap:1.5rem;align-items:start;padding:1.6rem 1.8rem;background:var(--card);border:1px solid var(--line);border-radius:16px;transition:all .35s var(--ease);}
+.pub-card:hover{border-color:rgba(16,176,126,.5);box-shadow:var(--shadow-sm);transform:translateY(-3px);}
+.pub-year{font-family:var(--serif);font-size:1.6rem;font-weight:600;color:var(--teal);line-height:1;}
+.pub-venue{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--emerald);margin-top:.35rem;}
+.pub-title{font-family:var(--serif);font-size:1.12rem;font-weight:600;color:var(--ink);letter-spacing:-.01em;margin-bottom:.4rem;}
+.pub-authors{font-size:.9rem;color:var(--ink-soft);line-height:1.55;}
+.pub-links{margin-top:.6rem;display:flex;gap:.8rem;flex-wrap:wrap;}
+.pub-links a{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:500;text-decoration:none;color:var(--teal);border:1px solid var(--line);padding:.25rem .7rem;border-radius:100px;transition:all .2s;}
+.pub-links a:hover{background:var(--teal);color:var(--paper);border-color:var(--teal);}
+
+/* NEWS */
+.news{background:var(--paper-2);border-block:1px solid var(--line);}
+.news-list{max-width:760px;margin:0 auto;position:relative;padding-left:1.6rem;}
+.news-list::before{content:'';position:absolute;left:5px;top:.4rem;bottom:.4rem;width:2px;background:var(--line);}
+.news-item{position:relative;padding:0 0 1.8rem 1.4rem;}
+.news-item::before{content:'';position:absolute;left:-1.6rem;top:.35rem;width:12px;height:12px;border-radius:50%;background:var(--emerald-bright);border:3px solid var(--paper-2);box-shadow:0 0 0 1px var(--emerald);}
+.news-date{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--emerald);}
+.news-item h4{font-family:var(--serif);font-size:1.12rem;font-weight:600;color:var(--ink);margin:.25rem 0 .35rem;letter-spacing:-.01em;}
+.news-item p{font-size:.93rem;color:var(--ink-soft);line-height:1.65;}
+
+/* TEAM */
+.team-section{background:var(--paper);}
+.team-pi{display:grid;grid-template-columns:auto 1fr;gap:2.6rem;align-items:center;max-width:900px;margin:0 auto 3.5rem;}
+/* PI portrait as a ~4 cm circle */
+.pi-avatar{width:151px;height:151px;border-radius:50%;object-fit:cover;box-shadow:var(--shadow);border:3px solid var(--card);outline:2px solid var(--emerald);outline-offset:2px;}
+.pi-avatar-fallback{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:3rem;font-weight:600;color:var(--paper);background:linear-gradient(140deg,var(--teal),var(--teal-deep));}
+.team-bio h3{font-family:var(--serif);font-size:2.2rem;font-weight:600;margin-bottom:.4rem;color:var(--ink);letter-spacing:-.02em;}
+.team-title{font-family:var(--mono);font-size:13px;color:var(--emerald);font-weight:500;letter-spacing:.06em;text-transform:uppercase;margin-bottom:1.8rem;}
+.team-bio p{color:var(--ink-soft);line-height:1.78;margin-bottom:1.1rem;font-size:1rem;}
+.team-photo{position:relative;}
+.team-photo::before{content:'';position:absolute;inset:-14px -14px 14px 14px;border:1.5px solid var(--emerald);border-radius:20px;z-index:0;}
+.team-photo img{position:relative;z-index:1;width:100%;border-radius:18px;box-shadow:var(--shadow-lg);filter:grayscale(.15) contrast(1.02);}
+.team-photo-fallback{position:relative;z-index:1;width:100%;aspect-ratio:3/4;border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:5rem;font-weight:600;color:#f4f1e8;background:linear-gradient(140deg,var(--teal),var(--teal-deep));box-shadow:var(--shadow-lg);}
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.5rem;max-width:1100px;margin:0 auto;}
+.member-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.6rem;text-align:center;transition:all .35s var(--ease);}
+.member-card:hover{border-color:rgba(16,176,126,.5);box-shadow:var(--shadow-sm);transform:translateY(-4px);}
+.member-avatar{width:84px;height:84px;border-radius:50%;margin:0 auto .9rem;object-fit:cover;background:linear-gradient(140deg,var(--teal),var(--teal-deep));color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:1.6rem;font-weight:600;}
+.member-card h4{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--ink);margin-bottom:.2rem;}
+.member-role{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--emerald);margin-bottom:.6rem;}
+.member-card p{font-size:.86rem;color:var(--ink-soft);line-height:1.55;}
+
+/* COLLABORATIONS */
+.collaborations{background:var(--paper-2);border-block:1px solid var(--line);}
+.collab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1.2rem;max-width:1200px;margin:0 auto;}
+.collab-card{padding:2rem;background:var(--card);border-radius:16px;border:1px solid var(--line);text-align:center;transition:all .4s var(--ease);}
+.collab-card:hover{transform:translateY(-6px);border-color:rgba(16,176,126,.5);box-shadow:var(--shadow);}
+.collab-card h4{font-family:var(--serif);font-size:1.18rem;font-weight:600;color:var(--teal);margin-bottom:.5rem;letter-spacing:-.01em;}
+.collab-card p{font-size:.9rem;color:var(--ink-soft);line-height:1.6;}
+.collab-logo{height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:1rem;}
+.collab-logo img{max-height:64px;max-width:100%;object-fit:contain;}
+.collab-logo-fallback{height:56px;min-width:56px;padding:0 1rem;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;font-size:1.1rem;letter-spacing:.04em;color:var(--teal);background:rgba(16,176,126,.1);border:1px solid rgba(16,176,126,.25);}
+
+/* FEATURES */
+.features{background:var(--paper);}
+.features-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:1.2rem;max-width:1200px;margin:0 auto;}
+.feature-item{padding:1.8rem;background:var(--card);border-radius:16px;border:1px solid var(--line);transition:all .35s;}
+.feature-item:hover{border-color:rgba(16,176,126,.5);transform:translateY(-4px);box-shadow:var(--shadow-sm);}
+.feature-item h4{font-family:var(--serif);display:inline;font-weight:600;margin-left:.4rem;font-size:1.12rem;color:var(--teal);}
+.feature-item p{font-size:.92rem;color:var(--ink-soft);margin-top:.6rem;line-height:1.65;}
+
+/* JOIN */
+.join{background:var(--paper-2);border-block:1px solid var(--line);}
+.join-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.3rem;max-width:1000px;margin:0 auto 2.5rem;}
+.join-card{padding:2rem;background:var(--card);border:1px solid var(--line);border-radius:16px;border-top:3px solid var(--emerald);transition:all .35s var(--ease);}
+.join-card:hover{transform:translateY(-5px);box-shadow:var(--shadow);}
+.join-card h4{font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--teal);margin-bottom:.5rem;}
+.join-card .tag{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--emerald);}
+.join-card p{font-size:.92rem;color:var(--ink-soft);line-height:1.65;margin-top:.6rem;}
+.join-cta{text-align:center;}
+
+/* CONTACT */
+.contact-section{text-align:center;background:linear-gradient(140deg,var(--teal) 0%,var(--teal-deep) 100%);color:var(--paper);border-radius:28px;padding:5rem 2rem;position:relative;overflow:hidden;}
+.contact-section::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle at 20% 80%,rgba(31,209,151,.25),transparent 45%),radial-gradient(circle at 85% 20%,rgba(29,95,212,.22),transparent 45%);}
+.contact-section>*{position:relative;z-index:1;}
+.contact-section h3{font-family:var(--serif);font-size:clamp(1.8rem,4vw,2.7rem);font-weight:600;margin-bottom:1rem;letter-spacing:-.02em;color:var(--paper);}
+.contact-section p{font-size:1.05rem;color:rgba(244,241,232,.82);margin-bottom:.5rem;max-width:600px;margin-inline:auto;}
+.contact-section .btn-primary{background:var(--emerald-bright);color:var(--teal-deep);}
+.contact-section .btn-primary:hover{background:#fff;}
+.contact-section a[href^="mailto"]{color:var(--emerald-bright);font-weight:600;}
+
+/* att-site scanner teaser (inside the dark contact panel) */
+.scan-teaser{max-width:620px;margin:2.4rem auto 1rem;padding:1.8rem;background:rgba(244,241,232,.07);border:1px solid rgba(31,209,151,.28);border-radius:18px;text-align:left;backdrop-filter:blur(4px);}
+.scan-teaser-head{font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--paper);margin-bottom:.5rem;}
+.scan-teaser-sub{font-size:.9rem !important;color:rgba(244,241,232,.8) !important;line-height:1.6;margin-bottom:1.1rem !important;max-width:none !important;}
+.scan-teaser-sub strong{color:var(--emerald-bright);}
+.scan-row{display:flex;gap:.6rem;flex-wrap:wrap;}
+.scan-row input{flex:1;min-width:200px;padding:.8rem 1rem;border-radius:100px;border:1.5px solid rgba(244,241,232,.25);background:rgba(7,46,42,.35);color:var(--paper);font-family:var(--mono);font-size:13px;outline:none;transition:all .2s;}
+.scan-row input::placeholder{color:rgba(244,241,232,.5);}
+.scan-row input:focus{border-color:var(--emerald-bright);box-shadow:0 0 0 3px rgba(31,209,151,.25);}
+.scan-row .btn{flex:0 0 auto;}
+.scan-result{margin-top:1.2rem;padding:1.2rem 1.4rem;border-radius:14px;background:rgba(7,46,42,.4);border:1px solid rgba(31,209,151,.22);}
+.scan-result.info{text-align:left;}
+.scan-num{font-family:var(--serif);font-size:2.6rem;font-weight:600;color:var(--emerald-bright);line-height:1;animation:scan-pop .45s var(--ease) both;}
+@keyframes scan-pop{from{opacity:0;transform:translateY(8px) scale(.94);}to{opacity:1;transform:none;}}
+.scan-cap{font-size:.9rem;color:rgba(244,241,232,.85);margin-top:.3rem;}
+.scan-cap strong{color:var(--paper);}
+.scan-sub{color:rgba(244,241,232,.55);font-family:var(--mono);font-size:11px;}
+/* working state */
+.scan-result.busy{display:flex;align-items:center;gap:.85rem;}
+.scan-spinner{width:20px;height:20px;flex:0 0 auto;border-radius:50%;border:2px solid rgba(31,209,151,.25);border-top-color:var(--emerald-bright);animation:scan-spin .8s linear infinite;}
+@keyframes scan-spin{to{transform:rotate(360deg);}}
+.scan-status{font-size:.9rem;color:rgba(244,241,232,.85);}
+.scan-row .btn[disabled]{opacity:.55;cursor:progress;transform:none;}
+.scan-note{font-size:.86rem !important;color:rgba(244,241,232,.8) !important;line-height:1.6;margin:.7rem 0 0 !important;max-width:none !important;}
+.scan-note strong{color:var(--paper);}
+.scan-disclaimer{font-size:11px !important;color:rgba(244,241,232,.45) !important;margin:1rem 0 0 !important;max-width:none !important;}
+
+/* FOOTER */
+footer{background:var(--teal-deep);padding:3.5rem 2.5rem;text-align:center;color:rgba(244,241,232,.6);}
+/* Braude College affiliation lockup */
+.footer-affiliation{display:inline-flex;align-items:center;gap:1.1rem;padding:1rem 1.6rem;margin-bottom:2rem;background:rgba(244,241,232,.06);border:1px solid rgba(244,241,232,.14);border-radius:16px;text-align:left;}
+/* The official Braude mark is dark navy, so it sits on a light plate to stay
+   legible against the dark-teal footer. */
+.braude-logo{height:58px;width:auto;max-width:210px;object-fit:contain;flex-shrink:0;background:var(--paper);padding:.45rem .7rem;border-radius:10px;}
+.braude-logo-fallback{display:flex;align-items:center;justify-content:center;min-width:110px;color:var(--teal-deep);font-family:var(--serif);font-weight:600;font-size:1.15rem;letter-spacing:.06em;}
+.footer-affiliation-text{display:flex;flex-direction:column;line-height:1.4;}
+.footer-affiliation-text strong{font-family:var(--sans);font-size:.92rem;font-weight:600;color:var(--paper);}
+.footer-affiliation-text span{font-size:.82rem;color:rgba(244,241,232,.62);}
+@media(max-width:520px){.footer-affiliation{flex-direction:column;text-align:center;gap:.8rem;}.footer-affiliation-text{align-items:center;}}
+footer p{margin:.5rem 0;font-size:.9rem;}
+footer strong{font-family:var(--serif);color:var(--paper);font-weight:600;font-size:1.1rem;}
+footer a{color:var(--emerald-bright);}
+
+/* SCROLL REVEAL */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s var(--ease),transform .7s var(--ease);}
+.reveal.in{opacity:1;transform:none;}
+
+/* RESPONSIVE */
+@media(max-width:1024px){
+  section{padding:5.5rem 2rem;}
+  .team-pi{gap:2.5rem;}
+}
+@media(max-width:860px){
+  .nav{padding:1rem 1.3rem;}
+  .nav-braude-logo{height:34px;max-width:130px;}
+  .nav-toggle{display:block;}
+  .nav-links{display:none;position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:flex-start;gap:1.2rem;background:rgba(244,241,232,.97);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
+  .nav-links.open{display:flex;}
+  .nav-cta{align-self:stretch;text-align:center;}
+  .overview-content{grid-template-columns:1fr;gap:2.5rem;}
+  .team-pi{grid-template-columns:1fr;gap:1.6rem;justify-items:center;text-align:center;}
+  .pub-card{grid-template-columns:1fr;gap:.5rem;}
+  section{padding:4.5rem 1.3rem;}
+  .hero{padding:4rem 1.3rem;min-height:auto;}
+  .hero-stats{gap:1.8rem;}
+}
+@media(max-width:560px){
+  .nav-braude{padding-left:.7rem;}
+  .nav-braude-logo{height:30px;max-width:104px;}
+}
+@media(max-width:480px){
+  body{font-size:16px;}
+  .hero-stat .n{font-size:1.6rem;}
+}
+
+</style>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <nav class="nav">
+      <div class="nav-brand">
+        <a class="logo" href="#" aria-label="Elias Lab home"><svg style="height:46px;width:auto;display:block;" width="254" height="60" viewBox="0 0 254 60" xmlns="http://www.w3.org/2000/svg" aria-label="Elias Lab" role="img">
+  <defs>
+    <linearGradient id="elx1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0c4a44"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
+    <linearGradient id="elx2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d5fd4"/><stop offset="1" stop-color="#1fd197"/></linearGradient>
+  </defs>
+  <g transform="translate(2,2)" fill="none" stroke-linecap="round">
+    <path d="M5 9 C 16 9 16 28 28 28 C 40 28 40 47 51 47" stroke="url(#elx1)" stroke-width="3.4"/>
+    <path d="M11 5 C 23 5 21 26 28 28 C 35 30 33 51 45 51" stroke="url(#elx1)" stroke-width="3.4" opacity=".5"/>
+    <path d="M51 9 C 40 9 40 28 28 28 C 16 28 16 47 5 47" stroke="url(#elx2)" stroke-width="3.4"/>
+    <path d="M45 5 C 33 5 35 26 28 28 C 21 30 23 51 11 51" stroke="url(#elx2)" stroke-width="3.4" opacity=".5"/>
+    <g stroke="#0c4a44" stroke-width="1.6" opacity=".45"><line x1="8" y1="8" x2="13" y2="6"/><line x1="9" y1="48" x2="13" y2="50"/></g>
+    <g stroke="#1d5fd4" stroke-width="1.6" opacity=".45"><line x1="48" y1="8" x2="43" y2="6"/><line x1="47" y1="48" x2="43" y2="50"/></g>
+  </g>
+  <circle cx="30" cy="30" r="8.5" fill="#f4f1e8" stroke="url(#elx1)" stroke-width="2.8"/>
+  <circle cx="30" cy="30" r="3.4" fill="#1fd197"/>
+  <text x="72" y="33" font-family="'Fraunces', Georgia, serif" font-size="25" font-weight="600" fill="#16241f" letter-spacing="-0.5">Elias <tspan font-style="italic" fill="#0c4a44">Lab</tspan></text>
+  <text x="73" y="46" font-family="monospace" font-size="7" letter-spacing="1.4" fill="#10b07e">PRECISION GENOME INTEGRATION</text>
+</svg></a>
+        <a class="nav-braude" href="https://www.braude.ac.il/en/" target="_blank" rel="noopener" aria-label="Braude College of Engineering, Karmiel" title="Biotechnology Engineering Department · Braude College of Engineering, Karmiel"><img class="nav-braude-logo" src="assets/logos/braude-college.png" alt="Braude College of Engineering, Karmiel" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'nav-braude-logo nav-braude-fallback',textContent:'BRAUDE'}))"></a>
+      </div>
+        <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">☰</button>
+        <div class="nav-links" id="nav-links">
+            <a href="#overview">Research</a>
+            <a href="#publications">Publications</a>
+            <a href="#team">Team</a>
+            <a href="#join">Join</a>
+            <a href="#contact">Contact</a>
+            <a class="nav-cta" href="https://REPLACE-WITH-YOUR-NOTEBOOK-URL/notebook.html" target="_blank" rel="noopener">Lab Notebook</a>
+        </div>
+    </nav>
+
+  <main id="main">
+    <section class="hero">
+        <div class="hero-anim" aria-hidden="true">
+          <svg viewBox="0 0 1200 640" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="haTeal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0c4a44"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
+              <linearGradient id="haBlue" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d5fd4"/><stop offset="1" stop-color="#1fd197"/></linearGradient>
+            </defs>
+            <!-- attP genomic strand (blue): bottom-left → top-right, crossing the synapse -->
+            <g class="ha-strand ha-blue" fill="none" stroke="url(#haBlue)" stroke-linecap="round">
+              <path stroke-width="3" d="M100,500 C 360,500 470,326 600,326 S 840,152 1100,152"/>
+              <path stroke-width="3" d="M100,516 C 360,516 486,340 600,340 S 840,168 1100,168"/>
+              <g class="ha-rungs" stroke-width="2" opacity=".5">
+                <line x1="176" y1="504" x2="176" y2="520"/><line x1="300" y1="470" x2="300" y2="486"/><line x1="452" y1="392" x2="452" y2="408"/><line x1="760" y1="250" x2="760" y2="266"/><line x1="900" y1="206" x2="900" y2="222"/><line x1="1020" y1="176" x2="1020" y2="192"/>
+              </g>
+            </g>
+            <!-- attB donor strand (teal): top-left → bottom-right, crossing the synapse -->
+            <g class="ha-strand ha-teal" fill="none" stroke="url(#haTeal)" stroke-linecap="round">
+              <path stroke-width="3" d="M100,152 C 360,152 470,326 600,326 S 840,500 1100,500"/>
+              <path stroke-width="3" d="M100,168 C 360,168 486,340 600,340 S 840,516 1100,516"/>
+              <g class="ha-rungs" stroke-width="2" opacity=".5">
+                <line x1="176" y1="156" x2="176" y2="172"/><line x1="300" y1="190" x2="300" y2="206"/><line x1="452" y1="268" x2="452" y2="284"/><line x1="760" y1="410" x2="760" y2="426"/><line x1="900" y1="454" x2="900" y2="470"/><line x1="1020" y1="484" x2="1020" y2="500"/>
+              </g>
+            </g>
+            <!-- integrase tetramer at the synapse -->
+            <g class="ha-integrase" transform="translate(600,333)">
+              <circle class="ha-halo" r="66" fill="none" stroke="#10b07e" stroke-width="1.2" opacity=".25"/>
+              <g class="ha-ring">
+                <circle cx="0" cy="-40" r="11" fill="#0c4a44"/><circle cx="40" cy="0" r="11" fill="#1d5fd4"/><circle cx="0" cy="40" r="11" fill="#0c4a44"/><circle cx="-40" cy="0" r="11" fill="#1d5fd4"/>
+              </g>
+              <circle r="6" fill="#1fd197"/>
+            </g>
+          </svg>
+        </div>
+        <div class="hero-content">
+            <div class="hero-text">
+                <h1>Engineering <span class="accent">Integrases</span> for Gene Therapy</h1>
+                <p class="lead">Developing novel site-specific recombinases to enable precise, large-scale DNA insertion into native genomic sites without double-strand breaks—transforming the landscape of gene therapy and genetic medicine.</p>
+                <div class="cta-buttons">
+                    <a href="#overview" class="btn btn-primary">Explore Research</a>
+                    <a href="mailto:amerelias02@gmail.com" class="btn btn-secondary">Get in Touch</a>
+                </div>
+                <div class="hero-stats">
+                    <div class="hero-stat"><div class="n">~40,000</div><div class="l">Native attB sites mapped</div></div>
+                    <div class="hero-stat"><div class="n">0</div><div class="l">Double-strand breaks</div></div>
+                    <div class="hero-stat"><div class="n">Multi-kb</div><div class="l">Payload integration</div></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="overview-section full-bleed" id="overview">
+      <div style="max-width:1200px;margin:0 auto;">
+        <span class="section-kicker">Research Overview</span>
+        <h2>A New Route into the Genome</h2>
+        <p class="section-intro">Replacing break-and-repair editing with precise, programmable integration at the genome's own landing sites.</p>
+        <div class="overview-content">
+            <div class="overview-text reveal">
+                <h3>The Challenge</h3>
+                <div class="challenge-box">
+                    <h4>Current Limitations in Genome Editing</h4>
+                    <p>Traditional genome-editing tools like CRISPR, ZFNs, and TALENs create double-strand breaks (DSBs) to induce gene editing. However, they struggle with inserting large DNA sequences at precise genomic locations and often generate unintended modifications including indels, off-target effects, and oncogene activation.</p>
+                </div>
+                <h3>Our Solution</h3>
+                <div class="solution-box">
+                    <h4>Tyrosine Site-Specific Integrases</h4>
+                    <p>We are developing engineered tyrosine recombinases—particularly HK022—that recognize and integrate into native genomic attachment sites (attB) without creating double-strand breaks. Our discovery identified approximately 40,000 unique native attB sites across the human genome, enabling precise, large-scale DNA integration for therapeutic applications.</p>
+                </div>
+            </div>
+            <div class="overview-text reveal">
+                <h3>Key Advantages</h3>
+                <ul class="key-list">
+                    <li><strong>No Double-Strand Breaks:</strong> Eliminates risks of mosaicism and unintended modifications</li>
+                    <li><strong>Large DNA Payloads:</strong> Enables integration of multi-kilobase sequences efficiently</li>
+                    <li><strong>Mutation-Independent:</strong> Single therapy can treat patients with different mutations in the same gene</li>
+                    <li><strong>High Specificity:</strong> Targets native genomic sites with minimal off-target effects</li>
+                    <li><strong>Multiplexing Capability:</strong> Multiple genetic payloads can be integrated simultaneously at distinct loci</li>
+                </ul>
+            </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="research-aims">
+        <span class="section-kicker">What We're Building</span>
+        <h2>Research Aims &amp; Objectives</h2>
+        <div class="research-aims">
+            <div class="aim-card reveal"><div class="aim-number">1</div><h3>Recombinase Discovery, Engineering &amp; Optimization</h3><p>Discover, engineer, and optimize novel tyrosine site-specific recombinases — with the HK022 integrase as our leading model — through metagenomic mining, phage-assisted continuous evolution (PACE), directed and random mutagenesis, and AlphaFold3-guided design to maximize activity and specificity at native human genomic sites.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">2</div><h3>Gene Therapy for Hereditary Diseases</h3><p>Develop precise, double-strand-break-free integration tools to treat a broad range of inherited disorders — restoring gene function through safe-harbor insertion, promoter-trap, and RMCE strategies that work across diverse patient mutations in the same gene.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">3</div><h3>Gene Therapy for Cancer</h3><p>Design recombinase-based approaches for oncology — from tumor-suppressor gene correction to engineered immune-cell therapies — enabling targeted delivery of large, multi-gene payloads for next-generation cancer treatment.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">4</div><h3>Cell Line Engineering &amp; Development</h3><p>Build engineered and stable cell-line models by integrating defined genetic payloads at chosen loci — supporting reporter systems, therapeutic protein production, and functional research models.</p></div>
+            <div class="aim-card reveal"><div class="aim-number">5</div><h3>Multiplexed Integration</h3><p>Demonstrate simultaneous integration of multiple distinct genetic payloads at different genomic loci in a single event, enabling complex gene-circuit and multi-transgene engineering.</p></div>
+        </div>
+    </section>
+
+    <section class="applications-section full-bleed">
+      <div style="max-width:1200px;margin:0 auto;">
+        <span class="section-kicker">Where It Leads</span>
+        <h2>Therapeutic Applications</h2>
+        <p class="section-intro">One precise-integration platform, applied across loss-of-function disease, cancer, and complex cell engineering.</p>
+        <div class="app-grid">
+            <div class="app-card reveal"><div class="app-label">Safe-Harbor Integration</div><h4>Stable Transgene Expression</h4><p>Targeting well-characterized safe loci (Rosa26, CLYBL, H11) for stable, predictable gene expression in therapeutic applications. Ideal for restoring gene function in loss-of-function diseases.</p></div>
+            <div class="app-card reveal"><div class="app-label">RMCE Technology</div><h4>Tumor Suppressor Gene Correction</h4><p>Precise replacement of mutated BRCA1 and TP53 sequences with healthy wild-type donor DNA. Enables "pan-mutation" therapeutics that correct disease-causing variants across patient populations.</p></div>
+            <div class="app-card reveal"><div class="app-label">Neurodevelopmental Disorders</div><h4>Haploinsufficiency Correction</h4><p>Targeting genes like GRIN2B and SHANK3 to restore normal gene dosage in autism spectrum disorders and other neurodevelopmental conditions through safe-harbor integration.</p></div>
+            <div class="app-card reveal"><div class="app-label">Cancer Immunotherapy</div><h4>Enhanced CAR-T Engineering</h4><p>Multiplexed integration of multi-gene constructs for advanced immunotherapies. Enables complex gene circuit installation for more effective cancer immunotherapy production.</p></div>
+            <div class="app-card reveal"><div class="app-label">Genetic Disease</div><h4>Cystic Fibrosis &amp; Duchenne Muscular Dystrophy</h4><p>Large-scale DNA insertion approaches for diseases caused by heterogeneous mutations. One therapeutic approach beneficial to patients with diverse mutations in the same gene.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         PUBLICATIONS  —  add a new .pub-card (newest first) per paper.
+         ================================================================= -->
+    <section class="publications" id="publications">
+        <span class="section-kicker">Selected Work</span>
+        <h2>Publications</h2>
+        <p class="section-intro">Peer-reviewed research on HK022 integrase engineering and its therapeutic applications.</p>
+        <div class="pub-list">
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2026</div><div class="pub-venue">Cells</div></div>
+                <div>
+                    <div class="pub-title">Gene Editing Strategies for Neurological and Mental Disorders: Advances in Delivery, Methodology, and Clinical Translation</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Stern S — Cells 15(8):720</div>
+                    <div class="pub-links"><a href="https://doi.org/10.3390/cells15080720" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2020</div><div class="pub-venue">Nucleic Acids Research</div></div>
+                <div>
+                    <div class="pub-title">HK022 bacteriophage Integrase-mediated RMCE as a potential tool for human gene therapy</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Kassis H, Abu Elkader S, Gritsenko N, Nahmad A, Shir H, Younis L, Shannan A, Aihara H, Prag G, Yagil E, Kolot M — Nucleic Acids Res 48(22):12804–12816</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1093/nar/gkaa1140" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2018</div><div class="pub-venue">Oncotarget</div></div>
+                <div>
+                    <div class="pub-title">Anti-cancer binary system activated by bacteriophage HK022 Integrase</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Gritsenko N, Gorovits R, Spector I, Prag G, Yagil E, Kolot M — Oncotarget 9:27487–27501</div>
+                    <div class="pub-links"><a href="https://doi.org/10.18632/oncotarget.25512" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2016</div><div class="pub-venue">Scientific Reports</div></div>
+                <div>
+                    <div class="pub-title">Cancer-specific binary expression system activated in mice by bacteriophage HK022 Integrase</div>
+                    <div class="pub-authors"><strong>Elias A</strong>, Spector I, Sogolovsky-Bard I, Gritsenko N, Rask L, Mainbakh Y, Zilberstein Y, Yagil E, Kolot M — Sci Rep 6:24971</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1038/srep24971" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+            <article class="pub-card reveal">
+                <div><div class="pub-year">2015</div><div class="pub-venue">Gene Therapy</div></div>
+                <div>
+                    <div class="pub-title">Site promiscuity of coliphage HK022 integrase as a tool for gene therapy</div>
+                    <div class="pub-authors">Kolot M, Malchin N, <strong>Elias A</strong>, Gritsenko N, Yagil E — Gene Therapy</div>
+                    <div class="pub-links"><a href="https://doi.org/10.1038/gt.2015.9" target="_blank" rel="noopener">DOI</a></div>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <!-- =================================================================
+         NEWS  —  REPLACE with real updates. Newest first.
+         ================================================================= -->
+    <section class="news full-bleed" id="news">
+      <div style="max-width:1200px;margin:0 auto;">
+        <span class="section-kicker">Lab Updates</span>
+        <h2>News</h2>
+        <p class="section-intro">Recent milestones from the lab.</p>
+        <div class="news-list">
+            <div class="news-item reveal"><div class="news-date">19 Apr 2026</div><h4>Review published in <em>Cells</em></h4><p>Our review, "Gene Editing Strategies for Neurological and Mental Disorders: Advances in Delivery, Methodology, and Clinical Translation," was published in <em>Cells</em>.</p></div>
+            <div class="news-item reveal"><div class="news-date">1 Oct 2025</div><h4>The lab opens its doors</h4><p>The Elias Lab was established, focused on engineering site-specific recombinases for double-strand-break-free gene therapy and cell engineering.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         TEAM  —  PI block is real. Add member cards as people join.
+         Drop assets/team-photo.jpg for the PI portrait.
+         ================================================================= -->
+    <section class="team-section" id="team">
+        <span class="section-kicker">Who We Are</span>
+        <h2>The Team</h2>
+        <div class="team-pi">
+            <div class="pi-photo reveal">
+                <img class="pi-avatar" src="assets/team-photo.jpg" alt="Portrait of Dr. Amer Elias" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'pi-avatar pi-avatar-fallback',textContent:'AE'}))">
+            </div>
+            <div class="team-bio reveal">
+                <h3>Dr. Amer Elias</h3>
+                <p class="team-title">Principal Investigator &amp; Founder</p>
+                <p>Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.</p>
+                <p>With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.</p>
+                <p>The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies.</p>
+            </div>
+        </div>
+
+        <!-- Add a .member-card per member as people join the lab. -->
+    </section>
+
+    <section class="collaborations full-bleed" id="collaborations">
+      <div style="max-width:1200px;margin:0 auto;">
+        <span class="section-kicker">Partners</span>
+        <h2>Institutional Collaborations</h2>
+        <!-- Drop official logo files into assets/logos/ (see assets/logos/README.txt).
+             Until then each card shows a clean monogram badge. -->
+        <div class="collab-grid">
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/tel-aviv-university.png" alt="Tel Aviv University logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'TAU'}))"></div><h4>Tel Aviv University</h4><p>Collaborative research in molecular biology, genome editing, and therapeutic development</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/university-of-haifa.png" alt="University of Haifa logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'UoH'}))"></div><h4>University of Haifa</h4><p>Partnership in biochemical engineering and protein structure-function studies</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/emendo-bio.png" alt="Emendo Bio logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'EB'}))"></div><h4>Emendo Bio</h4><p>Industry collaboration on translational genome editing and gene therapy applications</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/rabin-medical-center.png" alt="Rabin Medical Center logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'RMC'}))"></div><h4>Rabin Medical Center</h4><p>Clinical partnership for therapeutic validation and patient-derived cell studies</p></div>
+            <div class="collab-card reveal"><div class="collab-logo"><img src="assets/logos/galilee-medical-center.png" alt="Galilee Medical Center logo" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'collab-logo-fallback',textContent:'GMC'}))"></div><h4>Galilee Medical Center</h4><p>Regional partnership for clinical research and therapeutic implementation</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         LAB SERVICES  —  what we offer to partners. Edit cards as needed.
+         ================================================================= -->
+    <section class="features" id="services">
+        <span class="section-kicker">What We Offer</span>
+        <h2>Lab Services</h2>
+        <p class="section-intro">Services we provide to academic and industry collaborators.</p>
+        <div class="features-list">
+            <div class="feature-item reveal"><h4>🧫 Cell Line Models, Engineering &amp; Production</h4><p>Design, engineering, and production of custom and stable cell-line models for research and therapeutic use.</p></div>
+            <div class="feature-item reveal"><h4>🧬 Plasmid Cloning</h4><p>Custom molecular cloning and expression-vector construction, from single constructs to complex assemblies.</p></div>
+            <div class="feature-item reveal"><h4>🔬 CRISPR Libraries</h4><p>Design and construction of pooled and arrayed CRISPR guide libraries for screening applications.</p></div>
+            <div class="feature-item reveal"><h4>🧪 Epigenetic Modifications</h4><p>Targeted epigenetic editing to modulate gene expression without altering the underlying DNA sequence.</p></div>
+            <div class="feature-item reveal"><h4>📊 Molecular Assay Development</h4><p>Development and validation of custom molecular assays — reporter systems, qPCR, and functional readouts.</p></div>
+        </div>
+    </section>
+
+    <!-- =================================================================
+         JOIN  —  edit positions / blurbs as openings change.
+         ================================================================= -->
+    <section class="join full-bleed" id="join">
+      <div style="max-width:1200px;margin:0 auto;">
+        <span class="section-kicker">Opportunities</span>
+        <h2>Join the Lab</h2>
+        <p class="section-intro">We're looking for curious, rigorous scientists excited about protein engineering and gene therapy. Open to students, research staff, and collaborators.</p>
+        <div class="join-grid">
+            <div class="join-card reveal"><div class="tag">Graduate</div><h4>PhD &amp; MSc Students</h4><p>Projects span directed evolution, structural design, and mammalian cell validation of engineered integrases. Background in molecular biology, biochemistry, or bioinformatics welcome.</p></div>
+            <div class="join-card reveal"><div class="tag">Staff</div><h4>Research Assistants</h4><p>Hands-on roles in cloning, cell culture, reporter assays, and NGS sample prep. Strong wet-lab fundamentals and attention to detail.</p></div>
+            <div class="join-card reveal"><div class="tag">Visiting / Collab</div><h4>Postdocs &amp; Collaborators</h4><p>Interested in PACE, CRISPR-recombinase fusions, or delivery? Reach out to discuss joint projects and funding.</p></div>
+        </div>
+        <div class="join-cta">
+            <a href="mailto:amerelias02@gmail.com?subject=Joining%20the%20Elias%20Lab" class="btn btn-primary">Apply / Enquire</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact">
+        <div class="contact-section">
+            <h3>Ready to Collaborate?</h3>
+            <p>Join us in advancing the frontiers of precision genome editing and transformative gene therapy.</p>
+
+            <div class="scan-teaser">
+                <div class="scan-teaser-head">🔍 Try our att-site scanner</div>
+                <p class="scan-teaser-sub">Curious whether your gene of interest could be a target? Enter a <strong>human gene symbol</strong> and we'll run it through our GenomeScan pipeline live — retrieving the locus from NCBI and scanning both strands for <strong>active attB-like integration sites</strong>. You get the count; the site map is what we build together.</p>
+                <div class="scan-row">
+                    <input id="scan-input" type="text" placeholder="Enter a human gene symbol — e.g. BRCA1" aria-label="Human gene symbol">
+                    <button id="scan-btn" class="btn btn-primary" type="button">Scan</button>
+                </div>
+                <div id="scan-result" class="scan-result" hidden aria-live="polite"></div>
+                <p class="scan-disclaimer">Live preview of our GenomeScan pipeline · gene coordinates and sequence retrieved from NCBI. Exact site maps, scores, and targeting strategy are shared with collaborators.</p>
+            </div>
+
+            <p style="font-size:14px;margin-top:2rem;color:rgba(244,241,232,.7);">Contact Dr. Amer Elias to discuss research opportunities, clinical partnerships, or collaborative projects in integrase engineering and therapeutic development.</p>
+            <p style="margin-top:1rem;font-size:15px;"><a href="mailto:amerelias02@gmail.com">amerelias02@gmail.com</a></p>
+            <a href="mailto:amerelias02@gmail.com" class="btn btn-primary" style="margin-top:1.5rem;">Get in Touch</a>
+        </div>
+    </section>
+  </main>
+
+    <footer>
+        <!-- Braude affiliation. Drop assets/logos/braude-college.png to show the real logo. -->
+        <div class="footer-affiliation">
+            <img class="braude-logo" src="assets/logos/braude-college.png" alt="Braude College of Engineering, Karmiel" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'braude-logo braude-logo-fallback',textContent:'BRAUDE'}))">
+            <div class="footer-affiliation-text">
+                <strong>Biotechnology Engineering Department</strong>
+                <span>Braude College of Engineering &middot; Karmiel, Israel</span>
+            </div>
+        </div>
+        <p><strong>Elias Lab</strong> — Gene Therapy &amp; Cell Engineering</p>
+        <p>Engineering site-specific recombinases for precision genome integration and therapeutic innovation</p>
+        <p style="margin-top:1rem;font-size:13px;"><a href="mailto:amerelias02@gmail.com">amerelias02@gmail.com</a></p>
+        <p style="margin-top:1rem;font-size:12px;color:rgba(244,241,232,.45);">© <span id="year">2026</span> Elias Lab. All rights reserved.</p>
+    </footer>
+
+    <!-- bump ?v= when you change these files, so browsers pick up the new version -->
+    <script>
+/* ---- js/site.js?v=2 ---- */
+/* ============================================================
+   Elias Lab — public site interactions
+   ============================================================ */
+(function () {
+  'use strict';
+
+  // Dynamic copyright year
+  var yearEl = document.getElementById('year');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+  // Mobile nav toggle
+  var toggle = document.querySelector('.nav-toggle');
+  var links = document.getElementById('nav-links');
+  if (toggle && links) {
+    toggle.addEventListener('click', function () {
+      var open = links.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    // Close the menu after picking a link (mobile)
+    links.addEventListener('click', function (e) {
+      if (e.target.tagName === 'A') {
+        links.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  // Scroll reveal — progressive enhancement; respects reduced-motion
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var revealEls = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    revealEls.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    revealEls.forEach(function (el) { io.observe(el); });
+  }
+})();
+
+</script>
+    <script>
+/* ---- js/scan-widget.js?v=2 ---- */
+/* ============================================================
+   Elias Lab — public att-site scanner
+   ------------------------------------------------------------
+   Runs a REAL scan, in the visitor's browser, using the same
+   pipeline as our internal GenomeScan tool:
+
+     1. NCBI Gene  esearch  → gene ID
+     2. NCBI Gene  esummary → chromosome + genomic coordinates
+     3. NCBI nuccore efetch → the gene's genomic sequence
+     4. IUPAC consensus scan (both strands) → attB-like sites
+
+   The visitor is shown ONLY the number of sites. Sequences,
+   positions, and scores are deliberately never rendered — those
+   are what we share with collaborators.
+
+   Consensus + geometry are kept identical to GenomeScan so the
+   public count matches the lab's own number.
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var EMAIL = 'amerelias02@gmail.com';
+  var CONSENSUS = 'NNDCTTWNNNNNNNAAAGBNN';   // GenomeScan DEFAULT_CONSENSUS
+  var MAX_MISMATCH = 0;                       // GenomeScan default (exact consensus match)
+  var TAXID = '9606';                         // human
+  var MAX_BP = 1200000;                       // guard: skip enormous loci
+
+  var IUPAC = {
+    A: 'A', T: 'T', C: 'C', G: 'G',
+    R: 'AG', Y: 'CT', S: 'GC', W: 'AT', K: 'GT', M: 'AC',
+    B: 'CGT', D: 'AGT', H: 'ACT', V: 'ACG', N: 'ATCG'
+  };
+
+  function matches(sub, cons, maxMM) {
+    var mm = 0;
+    for (var i = 0; i < cons.length; i++) {
+      var allowed = IUPAC[cons[i]] || '';
+      if (allowed.indexOf(sub[i]) === -1) { if (++mm > maxMM) return false; }
+    }
+    return true;
+  }
+  function revComp(s) {
+    var c = { A: 'T', T: 'A', C: 'G', G: 'C', N: 'N' }, o = '';
+    for (var i = s.length - 1; i >= 0; i--) o += (c[s[i]] || 'N');
+    return o;
+  }
+  function countSites(seq) {
+    var L = CONSENSUS.length, n = 0;
+    function scan(s) {
+      for (var i = 0; i <= s.length - L; i++) {
+        if (matches(s.substring(i, i + L), CONSENSUS, MAX_MISMATCH)) n++;
+      }
+    }
+    scan(seq);
+    scan(revComp(seq));
+    return n;
+  }
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function mailto(subject) { return 'mailto:' + EMAIL + '?subject=' + encodeURIComponent(subject); }
+
+  var out, input, btn, busy = false;
+
+  function setStatus(msg) {
+    out.hidden = false;
+    out.className = 'scan-result busy';
+    out.innerHTML = '<div class="scan-spinner" aria-hidden="true"></div><div class="scan-status">' + esc(msg) + '</div>';
+  }
+  function setInfo(html) { out.hidden = false; out.className = 'scan-result info'; out.innerHTML = html; }
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* NCBI throttles unauthenticated callers (~3 requests/sec) and occasionally
+     drops one outright, so retry with backoff before giving up. */
+  async function fetchRetry(url, tries) {
+    tries = tries || 3;
+    var lastErr;
+    for (var i = 0; i < tries; i++) {
+      if (i) await sleep(400 * Math.pow(2, i - 1));
+      try {
+        var r = await fetch(url);
+        if (r.status === 429 || r.status >= 500) { lastErr = new Error('NCBI is busy (' + r.status + ').'); continue; }
+        if (!r.ok) throw new Error('NCBI request failed (' + r.status + ').');
+        return r;
+      } catch (e) { lastErr = e; }
+    }
+    throw new Error((lastErr && lastErr.message ? lastErr.message + ' ' : '') + 'Please try again in a moment.');
+  }
+
+  async function jget(url) {
+    var r = await fetchRetry(url);
+    return r.json();
+  }
+
+  async function lookupGene(gene) {
+    var base = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+    var term = gene + '[Gene Name] AND ' + TAXID + '[Taxonomy ID] AND alive[property]';
+    var d = await jget(base + 'esearch.fcgi?db=gene&term=' + encodeURIComponent(term) + '&retmode=json&retmax=5');
+    var ids = (d.esearchresult && d.esearchresult.idlist) || [];
+    if (!ids.length) {
+      d = await jget(base + 'esearch.fcgi?db=gene&term=' + encodeURIComponent(gene + '[Gene Name] AND ' + TAXID + '[Taxonomy ID]') + '&retmode=json&retmax=5');
+      ids = (d.esearchresult && d.esearchresult.idlist) || [];
+    }
+    if (!ids.length) return null;
+
+    var sd = await jget(base + 'esummary.fcgi?db=gene&id=' + ids[0] + '&retmode=json');
+    var s = sd.result && sd.result[ids[0]];
+    if (!s) return null;
+    var loc = s.genomicinfo && s.genomicinfo[0];
+    if (!loc || !loc.chraccver) return null;
+
+    var a = Math.min(loc.chrstart, loc.chrstop) + 1;
+    var b = Math.max(loc.chrstart, loc.chrstop) + 1;
+    return {
+      symbol: s.name || gene,
+      description: s.description || '',
+      chrom: s.chromosome ? 'chr' + s.chromosome : '',
+      acc: loc.chraccver,
+      start: a,
+      stop: b,
+      length: b - a + 1
+    };
+  }
+
+  async function fetchSequence(acc, start, stop) {
+    var url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=' +
+      encodeURIComponent(acc) + '&rettype=fasta&retmode=text&seq_start=' + start + '&seq_stop=' + stop;
+    var r = await fetchRetry(url);
+    var txt = await r.text();
+    return txt.replace(/^>[^\n]*\n/, '').replace(/[^ACGTNacgtn]/g, '').toUpperCase();
+  }
+
+  function showResult(gene, sites, bp) {
+    var density = bp ? (sites / (bp / 1000)) : 0;
+    out.hidden = false;
+    out.className = 'scan-result ok';
+    out.innerHTML =
+      '<div class="scan-num">' + sites.toLocaleString() + '</div>' +
+      '<div class="scan-cap">active attB-like site' + (sites === 1 ? '' : 's') + ' in <strong>' + esc(gene) + '</strong>' +
+      (bp ? ' <span class="scan-sub">· ' + (bp / 1000).toFixed(1) + ' kb scanned · ~' + density.toFixed(1) + ' sites/kb</span>' : '') +
+      '</div>' +
+      '<p class="scan-note">Positions, sequences, and integration scores are withheld in this public preview. ' +
+      'We share the full site map — plus a targeting and feasibility assessment — with collaborators. ' +
+      '<a href="' + mailto('attB-like site analysis for ' + gene + ' — collaboration enquiry') + '">Let’s collaborate →</a></p>';
+  }
+
+  async function run() {
+    if (busy) return;
+    var raw = input.value.trim();
+    if (!raw) { setInfo('<p class="scan-note">Enter a human gene symbol (e.g. BRCA1) to scan.</p>'); return; }
+
+    // A pasted DNA sequence is scanned directly, no network needed.
+    var seqOnly = raw.toUpperCase().replace(/\s+/g, '');
+    if (seqOnly.length >= 40 && /^[ACGTN]+$/.test(seqOnly)) {
+      setStatus('Scanning your sequence…');
+      setTimeout(function () { showResult('your sequence', countSites(seqOnly), seqOnly.length); }, 150);
+      return;
+    }
+
+    var gene = raw.replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9._-]{2,20}$/.test(gene)) {
+      setInfo('<p class="scan-note">That doesn’t look like a gene symbol. Try something like <strong>BRCA1</strong>, <strong>TP53</strong>, or <strong>CFTR</strong>.</p>');
+      return;
+    }
+
+    busy = true; btn.disabled = true;
+    try {
+      setStatus('Looking up ' + gene + ' in NCBI Gene…');
+      var info = await lookupGene(gene);
+      if (!info) {
+        setInfo('<p class="scan-note">We couldn’t find a human gene called <strong>' + esc(gene) + '</strong>. ' +
+          'Check the official symbol (try <strong>BRCA1</strong>, <strong>TP53</strong>, <strong>CFTR</strong>), or ' +
+          '<a href="' + mailto('attB-like scan request: ' + gene) + '">ask us to look into it →</a></p>');
+        return;
+      }
+      if (info.length > MAX_BP) {
+        setInfo('<p class="scan-note"><strong>' + esc(info.symbol) + '</strong> spans ' + (info.length / 1e6).toFixed(1) +
+          ' Mb — too large for this in-browser preview. We scan loci of any size on our full GenomeScan pipeline. ' +
+          '<a href="' + mailto('attB-like scan request: ' + info.symbol) + '">Ask us to scan ' + esc(info.symbol) + ' →</a></p>');
+        return;
+      }
+
+      setStatus('Retrieving ' + info.symbol + ' (' + info.chrom + ', ' + (info.length / 1000).toFixed(1) + ' kb)…');
+      var seq = await fetchSequence(info.acc, info.start, info.stop);
+      if (seq.length < CONSENSUS.length) throw new Error('The retrieved sequence was empty. Please try again.');
+
+      setStatus('Scanning ' + (seq.length / 1000).toFixed(1) + ' kb for attB-like sites…');
+      await new Promise(function (r) { setTimeout(r, 30); });   // let the status paint
+      showResult(info.symbol, countSites(seq), seq.length);
+    } catch (err) {
+      setInfo('<p class="scan-note">' + esc(err.message || 'Something went wrong.') + '<br>' +
+        'You can also <a href="' + mailto('attB-like scan request: ' + gene) + '">ask us to run this scan for you →</a></p>');
+    } finally {
+      busy = false; btn.disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    input = document.getElementById('scan-input');
+    btn = document.getElementById('scan-btn');
+    out = document.getElementById('scan-result');
+    if (!input || !btn || !out) return;
+    btn.addEventListener('click', run);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
+  });
+})();
+
+</script>
+</body>
+</html>

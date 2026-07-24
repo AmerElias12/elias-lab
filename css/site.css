@@ -36,6 +36,12 @@ img{max-width:100%;display:block;}
 .nav a.nav-cta::after{display:none;}
 .nav-cta{background:var(--teal);color:var(--paper)!important;padding:.5rem 1.2rem;border-radius:100px;font-weight:600;}
 .nav-cta:hover{background:var(--teal-deep);color:var(--paper)!important;}
+/* co-branding: lab logo + host college logo, side by side */
+.nav-brand{display:flex;align-items:center;gap:1rem;}
+.nav-braude{display:flex;align-items:center;padding-left:1rem;border-left:1px solid var(--line);text-decoration:none;}
+.nav-braude-logo{height:40px;width:auto;max-width:170px;object-fit:contain;display:block;transition:opacity .25s;}
+.nav-braude:hover .nav-braude-logo{opacity:.75;}
+.nav-braude-fallback{display:flex;align-items:center;font-family:var(--serif);font-weight:600;font-size:1rem;letter-spacing:.05em;color:var(--teal-deep);height:auto;}
 .logo{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;text-decoration:none;}
 .logo img{transition:transform .4s var(--ease);}
 .logo:hover img{transform:scale(1.04) rotate(-1deg);}
@@ -47,6 +53,22 @@ img{max-width:100%;display:block;}
 .hero::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle at 78% 32%, rgba(16,176,126,.14), transparent 45%);pointer-events:none;}
 .hero::after{content:'ATCG · HK022 · attB · RMCE · PACE · INTEGRASE · ';position:absolute;top:0;left:0;font-family:var(--mono);font-size:11px;letter-spacing:.45em;color:rgba(12,74,68,.10);white-space:nowrap;padding:.6rem 0;width:200%;animation:marquee 40s linear infinite;}
 @keyframes marquee{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+/* animated recombinase synapse behind the hero */
+.hero-anim{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.5;}
+.hero-anim svg{width:100%;height:100%;animation:ha-float 11s ease-in-out infinite alternate;}
+.ha-strand path{stroke-dasharray:26 14;}
+.ha-teal path{animation:ha-flow 5.5s linear infinite;}
+.ha-blue path{animation:ha-flow 5.5s linear infinite reverse;}
+.ha-rungs{animation:ha-pulse 3.2s ease-in-out infinite;}
+.ha-ring{transform-box:fill-box;transform-origin:center;animation:ha-spin 16s linear infinite;}
+.ha-halo{transform-box:fill-box;transform-origin:center;animation:ha-breathe 4s ease-in-out infinite;}
+@keyframes ha-flow{to{stroke-dashoffset:-80;}}
+@keyframes ha-spin{to{transform:rotate(360deg);}}
+@keyframes ha-pulse{0%,100%{opacity:.3;}50%{opacity:.7;}}
+@keyframes ha-breathe{0%,100%{transform:scale(1);opacity:.25;}50%{transform:scale(1.12);opacity:.45;}}
+@keyframes ha-float{from{transform:translateY(-10px);}to{transform:translateY(10px);}}
+@media(max-width:860px){.hero-anim{opacity:.32;}}
+
 .hero-content{position:relative;z-index:2;max-width:1180px;width:100%;}
 .hero-text{max-width:880px;}
 .hero-text .subtitle{display:inline-flex;align-items:center;gap:.6rem;font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);background:rgba(16,176,126,.12);border:1px solid rgba(16,176,126,.28);padding:.45rem 1rem;border-radius:100px;margin-bottom:2rem;}
@@ -70,6 +92,8 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .section-kicker{display:block;text-align:center;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--emerald);margin-bottom:1rem;}
 .section-intro{text-align:center;max-width:680px;margin:0 auto 3.5rem;color:var(--ink-soft);font-size:1.02rem;}
 .full-bleed{max-width:none;}
+/* center headings inside full-bleed sections (their h2 isn't a direct child of <section>) */
+.full-bleed h2{text-align:center;}
 .overview-section{background:var(--paper-2);border-block:1px solid var(--line);}
 .overview-content{display:grid;grid-template-columns:1fr 1fr;gap:3.5rem;align-items:start;max-width:1200px;margin:0 auto;}
 .overview-text h3{font-family:var(--serif);font-size:1.7rem;font-weight:600;color:var(--teal);margin-bottom:1.5rem;letter-spacing:-.01em;}
@@ -140,7 +164,10 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 
 /* TEAM */
 .team-section{background:var(--paper);}
-.team-pi{display:grid;grid-template-columns:1.1fr .9fr;gap:4rem;align-items:center;max-width:1100px;margin:0 auto 3.5rem;}
+.team-pi{display:grid;grid-template-columns:auto 1fr;gap:2.6rem;align-items:center;max-width:900px;margin:0 auto 3.5rem;}
+/* PI portrait as a ~4 cm circle */
+.pi-avatar{width:151px;height:151px;border-radius:50%;object-fit:cover;box-shadow:var(--shadow);border:3px solid var(--card);outline:2px solid var(--emerald);outline-offset:2px;}
+.pi-avatar-fallback{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:3rem;font-weight:600;color:var(--paper);background:linear-gradient(140deg,var(--teal),var(--teal-deep));}
 .team-bio h3{font-family:var(--serif);font-size:2.2rem;font-weight:600;margin-bottom:.4rem;color:var(--ink);letter-spacing:-.02em;}
 .team-title{font-family:var(--mono);font-size:13px;color:var(--emerald);font-weight:500;letter-spacing:.06em;text-transform:uppercase;margin-bottom:1.8rem;}
 .team-bio p{color:var(--ink-soft);line-height:1.78;margin-bottom:1.1rem;font-size:1rem;}
@@ -159,10 +186,13 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 /* COLLABORATIONS */
 .collaborations{background:var(--paper-2);border-block:1px solid var(--line);}
 .collab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1.2rem;max-width:1200px;margin:0 auto;}
-.collab-card{padding:2rem;background:var(--card);border-radius:16px;border:1px solid var(--line);text-align:left;transition:all .4s var(--ease);}
+.collab-card{padding:2rem;background:var(--card);border-radius:16px;border:1px solid var(--line);text-align:center;transition:all .4s var(--ease);}
 .collab-card:hover{transform:translateY(-6px);border-color:rgba(16,176,126,.5);box-shadow:var(--shadow);}
 .collab-card h4{font-family:var(--serif);font-size:1.18rem;font-weight:600;color:var(--teal);margin-bottom:.5rem;letter-spacing:-.01em;}
 .collab-card p{font-size:.9rem;color:var(--ink-soft);line-height:1.6;}
+.collab-logo{height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:1rem;}
+.collab-logo img{max-height:64px;max-width:100%;object-fit:contain;}
+.collab-logo-fallback{height:56px;min-width:56px;padding:0 1rem;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;font-size:1.1rem;letter-spacing:.04em;color:var(--teal);background:rgba(16,176,126,.1);border:1px solid rgba(16,176,126,.25);}
 
 /* FEATURES */
 .features{background:var(--paper);}
@@ -192,8 +222,45 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .contact-section .btn-primary:hover{background:#fff;}
 .contact-section a[href^="mailto"]{color:var(--emerald-bright);font-weight:600;}
 
+/* att-site scanner teaser (inside the dark contact panel) */
+.scan-teaser{max-width:620px;margin:2.4rem auto 1rem;padding:1.8rem;background:rgba(244,241,232,.07);border:1px solid rgba(31,209,151,.28);border-radius:18px;text-align:left;backdrop-filter:blur(4px);}
+.scan-teaser-head{font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--paper);margin-bottom:.5rem;}
+.scan-teaser-sub{font-size:.9rem !important;color:rgba(244,241,232,.8) !important;line-height:1.6;margin-bottom:1.1rem !important;max-width:none !important;}
+.scan-teaser-sub strong{color:var(--emerald-bright);}
+.scan-row{display:flex;gap:.6rem;flex-wrap:wrap;}
+.scan-row input{flex:1;min-width:200px;padding:.8rem 1rem;border-radius:100px;border:1.5px solid rgba(244,241,232,.25);background:rgba(7,46,42,.35);color:var(--paper);font-family:var(--mono);font-size:13px;outline:none;transition:all .2s;}
+.scan-row input::placeholder{color:rgba(244,241,232,.5);}
+.scan-row input:focus{border-color:var(--emerald-bright);box-shadow:0 0 0 3px rgba(31,209,151,.25);}
+.scan-row .btn{flex:0 0 auto;}
+.scan-result{margin-top:1.2rem;padding:1.2rem 1.4rem;border-radius:14px;background:rgba(7,46,42,.4);border:1px solid rgba(31,209,151,.22);}
+.scan-result.info{text-align:left;}
+.scan-num{font-family:var(--serif);font-size:2.6rem;font-weight:600;color:var(--emerald-bright);line-height:1;animation:scan-pop .45s var(--ease) both;}
+@keyframes scan-pop{from{opacity:0;transform:translateY(8px) scale(.94);}to{opacity:1;transform:none;}}
+.scan-cap{font-size:.9rem;color:rgba(244,241,232,.85);margin-top:.3rem;}
+.scan-cap strong{color:var(--paper);}
+.scan-sub{color:rgba(244,241,232,.55);font-family:var(--mono);font-size:11px;}
+/* working state */
+.scan-result.busy{display:flex;align-items:center;gap:.85rem;}
+.scan-spinner{width:20px;height:20px;flex:0 0 auto;border-radius:50%;border:2px solid rgba(31,209,151,.25);border-top-color:var(--emerald-bright);animation:scan-spin .8s linear infinite;}
+@keyframes scan-spin{to{transform:rotate(360deg);}}
+.scan-status{font-size:.9rem;color:rgba(244,241,232,.85);}
+.scan-row .btn[disabled]{opacity:.55;cursor:progress;transform:none;}
+.scan-note{font-size:.86rem !important;color:rgba(244,241,232,.8) !important;line-height:1.6;margin:.7rem 0 0 !important;max-width:none !important;}
+.scan-note strong{color:var(--paper);}
+.scan-disclaimer{font-size:11px !important;color:rgba(244,241,232,.45) !important;margin:1rem 0 0 !important;max-width:none !important;}
+
 /* FOOTER */
 footer{background:var(--teal-deep);padding:3.5rem 2.5rem;text-align:center;color:rgba(244,241,232,.6);}
+/* Braude College affiliation lockup */
+.footer-affiliation{display:inline-flex;align-items:center;gap:1.1rem;padding:1rem 1.6rem;margin-bottom:2rem;background:rgba(244,241,232,.06);border:1px solid rgba(244,241,232,.14);border-radius:16px;text-align:left;}
+/* The official Braude mark is dark navy, so it sits on a light plate to stay
+   legible against the dark-teal footer. */
+.braude-logo{height:58px;width:auto;max-width:210px;object-fit:contain;flex-shrink:0;background:var(--paper);padding:.45rem .7rem;border-radius:10px;}
+.braude-logo-fallback{display:flex;align-items:center;justify-content:center;min-width:110px;color:var(--teal-deep);font-family:var(--serif);font-weight:600;font-size:1.15rem;letter-spacing:.06em;}
+.footer-affiliation-text{display:flex;flex-direction:column;line-height:1.4;}
+.footer-affiliation-text strong{font-family:var(--sans);font-size:.92rem;font-weight:600;color:var(--paper);}
+.footer-affiliation-text span{font-size:.82rem;color:rgba(244,241,232,.62);}
+@media(max-width:520px){.footer-affiliation{flex-direction:column;text-align:center;gap:.8rem;}.footer-affiliation-text{align-items:center;}}
 footer p{margin:.5rem 0;font-size:.9rem;}
 footer strong{font-family:var(--serif);color:var(--paper);font-weight:600;font-size:1.1rem;}
 footer a{color:var(--emerald-bright);}
@@ -209,17 +276,21 @@ footer a{color:var(--emerald-bright);}
 }
 @media(max-width:860px){
   .nav{padding:1rem 1.3rem;}
+  .nav-braude-logo{height:34px;max-width:130px;}
   .nav-toggle{display:block;}
   .nav-links{display:none;position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:flex-start;gap:1.2rem;background:rgba(244,241,232,.97);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
   .nav-links.open{display:flex;}
   .nav-cta{align-self:stretch;text-align:center;}
   .overview-content{grid-template-columns:1fr;gap:2.5rem;}
-  .team-pi{grid-template-columns:1fr;gap:2.5rem;}
-  .team-photo::before{display:none;}
+  .team-pi{grid-template-columns:1fr;gap:1.6rem;justify-items:center;text-align:center;}
   .pub-card{grid-template-columns:1fr;gap:.5rem;}
   section{padding:4.5rem 1.3rem;}
   .hero{padding:4rem 1.3rem;min-height:auto;}
   .hero-stats{gap:1.8rem;}
+}
+@media(max-width:560px){
+  .nav-braude{padding-left:.7rem;}
+  .nav-braude-logo{height:30px;max-width:104px;}
 }
 @media(max-width:480px){
   body{font-size:16px;}
