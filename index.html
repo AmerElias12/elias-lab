@@ -24,8 +24,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
-    <link rel="stylesheet" href="css/tokens.css?v=2">
-    <link rel="stylesheet" href="css/site.css?v=2">
+    <link rel="stylesheet" href="css/tokens.css?v=3">
+    <link rel="stylesheet" href="css/site.css?v=3">
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -239,26 +239,15 @@
     </section>
 
     <!-- =================================================================
-         TEAM  —  PI block is real. Add member cards as people join.
-         Drop assets/team-photo.jpg for the PI portrait.
+         TEAM
+         To add or change people, edit  js/team-data.js  and put their
+         photos in  assets/team/  — this section fills itself in from there.
          ================================================================= -->
     <section class="team-section" id="team">
         <span class="section-kicker">Who We Are</span>
         <h2>The Team</h2>
-        <div class="team-pi">
-            <div class="pi-photo reveal">
-                <img class="pi-avatar" src="assets/team-photo.jpg" alt="Portrait of Dr. Amer Elias" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'pi-avatar pi-avatar-fallback',textContent:'AE'}))">
-            </div>
-            <div class="team-bio reveal">
-                <h3>Dr. Amer Elias</h3>
-                <p class="team-title">Principal Investigator &amp; Founder</p>
-                <p>Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.</p>
-                <p>With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.</p>
-                <p>The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies.</p>
-            </div>
-        </div>
-
-        <!-- Add a .member-card per member as people join the lab. -->
+        <div class="team-pi" id="team-pi"></div>
+        <div class="team-grid" id="team-grid"></div>
     </section>
 
     <section class="collaborations full-bleed" id="collaborations">
@@ -351,7 +340,10 @@
     </footer>
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
-    <script src="js/site.js?v=2"></script>
-    <script src="js/scan-widget.js?v=2"></script>
+    <script src="js/site.js?v=3"></script>
+    <script src="js/scan-widget.js?v=3"></script>
+    <!-- team-data.js holds the lab members; team.js renders them -->
+    <script src="js/team-data.js?v=3"></script>
+    <script src="js/team.js?v=3"></script>
 </body>
 </html>

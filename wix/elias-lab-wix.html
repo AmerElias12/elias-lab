@@ -33,7 +33,7 @@
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <style>
-/* ---- css/tokens.css?v=2 ---- */
+/* ---- css/tokens.css?v=3 ---- */
 /* ============================================================
    Elias Lab — shared design tokens
    Single source of truth for brand colors, type, shadows.
@@ -88,7 +88,7 @@
 
 </style>
     <style>
-/* ---- css/site.css?v=2 ---- */
+/* ---- css/site.css?v=3 ---- */
 /* ============================================================
    Elias Lab — public marketing site
    Depends on css/tokens.css (load that first).
@@ -129,8 +129,8 @@ img{max-width:100%;display:block;}
 .nav-cta:hover{background:var(--teal-deep);color:var(--paper)!important;}
 /* co-branding: lab logo + host college logo, side by side */
 .nav-brand{display:flex;align-items:center;gap:1rem;}
-.nav-braude{display:flex;align-items:center;padding-left:1rem;border-left:1px solid var(--line);text-decoration:none;}
-.nav-braude-logo{height:40px;width:auto;max-width:170px;object-fit:contain;display:block;transition:opacity .25s;}
+.nav-braude{display:flex;align-items:center;padding-left:1.15rem;border-left:1px solid var(--line);text-decoration:none;}
+.nav-braude-logo{height:54px;width:auto;max-width:250px;object-fit:contain;display:block;transition:opacity .25s;}
 .nav-braude:hover .nav-braude-logo{opacity:.75;}
 .nav-braude-fallback{display:flex;align-items:center;font-family:var(--serif);font-weight:600;font-size:1rem;letter-spacing:.05em;color:var(--teal-deep);height:auto;}
 .logo{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;text-decoration:none;}
@@ -258,7 +258,17 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .team-pi{display:grid;grid-template-columns:auto 1fr;gap:2.6rem;align-items:center;max-width:900px;margin:0 auto 3.5rem;}
 /* PI portrait as a ~4 cm circle */
 .pi-avatar{width:151px;height:151px;border-radius:50%;object-fit:cover;box-shadow:var(--shadow);border:3px solid var(--card);outline:2px solid var(--emerald);outline-offset:2px;}
-.pi-avatar-fallback{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:3rem;font-weight:600;color:var(--paper);background:linear-gradient(140deg,var(--teal),var(--teal-deep));}
+/* shown when a photo file is missing — initials on the brand gradient */
+.avatar-fallback{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-weight:600;color:var(--paper);background:linear-gradient(140deg,var(--teal),var(--teal-deep));}
+.pi-avatar.avatar-fallback{font-size:3rem;}
+.member-avatar.avatar-fallback{font-size:1.6rem;}
+
+/* LinkedIn links */
+.li-link{display:inline-flex;align-items:center;justify-content:center;color:var(--teal);transition:all .2s;text-decoration:none;}
+.li-link svg{width:100%;height:100%;fill:currentColor;display:block;}
+.li-link:hover{color:#0a66c2;transform:translateY(-1px);}
+.li-inline{width:20px;height:20px;margin-left:.6rem;vertical-align:middle;}
+.li-card{width:22px;height:22px;margin:.7rem auto 0;}
 .team-bio h3{font-family:var(--serif);font-size:2.2rem;font-weight:600;margin-bottom:.4rem;color:var(--ink);letter-spacing:-.02em;}
 .team-title{font-family:var(--mono);font-size:13px;color:var(--emerald);font-weight:500;letter-spacing:.06em;text-transform:uppercase;margin-bottom:1.8rem;}
 .team-bio p{color:var(--ink-soft);line-height:1.78;margin-bottom:1.1rem;font-size:1rem;}
@@ -269,7 +279,7 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.5rem;max-width:1100px;margin:0 auto;}
 .member-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.6rem;text-align:center;transition:all .35s var(--ease);}
 .member-card:hover{border-color:rgba(16,176,126,.5);box-shadow:var(--shadow-sm);transform:translateY(-4px);}
-.member-avatar{width:84px;height:84px;border-radius:50%;margin:0 auto .9rem;object-fit:cover;background:linear-gradient(140deg,var(--teal),var(--teal-deep));color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:1.6rem;font-weight:600;}
+.member-avatar{width:96px;height:96px;border-radius:50%;margin:0 auto .9rem;object-fit:cover;display:block;box-shadow:var(--shadow-sm);border:2px solid var(--card);outline:1.5px solid rgba(16,176,126,.5);outline-offset:2px;}
 .member-card h4{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--ink);margin-bottom:.2rem;}
 .member-role{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--emerald);margin-bottom:.6rem;}
 .member-card p{font-size:.86rem;color:var(--ink-soft);line-height:1.55;}
@@ -346,7 +356,7 @@ footer{background:var(--teal-deep);padding:3.5rem 2.5rem;text-align:center;color
 .footer-affiliation{display:inline-flex;align-items:center;gap:1.1rem;padding:1rem 1.6rem;margin-bottom:2rem;background:rgba(244,241,232,.06);border:1px solid rgba(244,241,232,.14);border-radius:16px;text-align:left;}
 /* The official Braude mark is dark navy, so it sits on a light plate to stay
    legible against the dark-teal footer. */
-.braude-logo{height:58px;width:auto;max-width:210px;object-fit:contain;flex-shrink:0;background:var(--paper);padding:.45rem .7rem;border-radius:10px;}
+.braude-logo{height:78px;width:auto;max-width:340px;object-fit:contain;flex-shrink:0;background:var(--paper);padding:.7rem 1rem;border-radius:12px;}
 .braude-logo-fallback{display:flex;align-items:center;justify-content:center;min-width:110px;color:var(--teal-deep);font-family:var(--serif);font-weight:600;font-size:1.15rem;letter-spacing:.06em;}
 .footer-affiliation-text{display:flex;flex-direction:column;line-height:1.4;}
 .footer-affiliation-text strong{font-family:var(--sans);font-size:.92rem;font-weight:600;color:var(--paper);}
@@ -367,7 +377,7 @@ footer a{color:var(--emerald-bright);}
 }
 @media(max-width:860px){
   .nav{padding:1rem 1.3rem;}
-  .nav-braude-logo{height:34px;max-width:130px;}
+  .nav-braude-logo{height:42px;max-width:180px;}
   .nav-toggle{display:block;}
   .nav-links{display:none;position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:flex-start;gap:1.2rem;background:rgba(244,241,232,.97);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:1.4rem 1.6rem;box-shadow:var(--shadow);}
   .nav-links.open{display:flex;}
@@ -381,7 +391,7 @@ footer a{color:var(--emerald-bright);}
 }
 @media(max-width:560px){
   .nav-braude{padding-left:.7rem;}
-  .nav-braude-logo{height:30px;max-width:104px;}
+  .nav-braude-logo{height:34px;max-width:140px;}
 }
 @media(max-width:480px){
   body{font-size:16px;}
@@ -602,26 +612,15 @@ footer a{color:var(--emerald-bright);}
     </section>
 
     <!-- =================================================================
-         TEAM  —  PI block is real. Add member cards as people join.
-         Drop assets/team-photo.jpg for the PI portrait.
+         TEAM
+         To add or change people, edit  js/team-data.js  and put their
+         photos in  assets/team/  — this section fills itself in from there.
          ================================================================= -->
     <section class="team-section" id="team">
         <span class="section-kicker">Who We Are</span>
         <h2>The Team</h2>
-        <div class="team-pi">
-            <div class="pi-photo reveal">
-                <img class="pi-avatar" src="assets/team-photo.jpg" alt="Portrait of Dr. Amer Elias" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'pi-avatar pi-avatar-fallback',textContent:'AE'}))">
-            </div>
-            <div class="team-bio reveal">
-                <h3>Dr. Amer Elias</h3>
-                <p class="team-title">Principal Investigator &amp; Founder</p>
-                <p>Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.</p>
-                <p>With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.</p>
-                <p>The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies.</p>
-            </div>
-        </div>
-
-        <!-- Add a .member-card per member as people join the lab. -->
+        <div class="team-pi" id="team-pi"></div>
+        <div class="team-grid" id="team-grid"></div>
     </section>
 
     <section class="collaborations full-bleed" id="collaborations">
@@ -715,7 +714,7 @@ footer a{color:var(--emerald-bright);}
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <script>
-/* ---- js/site.js?v=2 ---- */
+/* ---- js/site.js?v=3 ---- */
 /* ============================================================
    Elias Lab — public site interactions
    ============================================================ */
@@ -763,7 +762,7 @@ footer a{color:var(--emerald-bright);}
 
 </script>
     <script>
-/* ---- js/scan-widget.js?v=2 ---- */
+/* ---- js/scan-widget.js?v=3 ---- */
 /* ============================================================
    Elias Lab — public att-site scanner
    ------------------------------------------------------------
@@ -969,6 +968,158 @@ footer a{color:var(--emerald-bright);}
     btn.addEventListener('click', run);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
   });
+})();
+
+</script>
+    <!-- team-data.js holds the lab members; team.js renders them -->
+    <script>
+/* ---- js/team-data.js?v=3 ---- */
+/* ============================================================
+   ELIAS LAB — TEAM MEMBERS
+   ------------------------------------------------------------
+   THIS IS THE ONLY FILE YOU EDIT TO ADD / CHANGE LAB MEMBERS.
+
+   For each person, fill in the five lines between the { } braces.
+   To add someone, copy an entire block (from { to },) and paste it
+   below the last one. To remove someone, delete their block.
+
+   photo:    the file name of their picture, saved in  assets/team/
+             e.g. "sarah-cohen.jpg"  ->  assets/team/sarah-cohen.jpg
+             Leave it as ""  and their initials show in a circle instead.
+   linkedin: paste the full LinkedIn address, e.g.
+             "https://www.linkedin.com/in/sarah-cohen-123456/"
+             Leave it as ""  and no LinkedIn icon appears.
+
+   Keep every quote mark " and every comma exactly where they are.
+   ============================================================ */
+
+window.ELIAS_TEAM = {
+
+  /* ---- The PI (shown large, at the top) ---- */
+  pi: {
+    name: "Dr. Amer Elias",
+    role: "Principal Investigator & Founder",
+    photo: "amer-elias.jpg",
+    linkedin: "",
+    bio: [
+      "Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.",
+      "With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.",
+      "The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies."
+    ]
+  },
+
+  /* ---- Everyone else (shown as cards below the PI) ----
+     The examples below are placeholders — replace them with real
+     people, or delete the ones you don't need.                     */
+  members: [
+
+    {
+      name: "",                    // e.g. "Sarah Cohen"
+      role: "",                    // e.g. "PhD Student"
+      photo: "",                   // e.g. "sarah-cohen.jpg"
+      linkedin: "",                // e.g. "https://www.linkedin.com/in/..."
+      note: ""                     // one short line, e.g. "Directed evolution of HK022"
+    }
+
+  ]
+};
+
+</script>
+    <script>
+/* ---- js/team.js?v=3 ---- */
+/* ============================================================
+   Elias Lab — renders the Team section from js/team-data.js
+   You should not need to edit this file; edit team-data.js.
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var T = window.ELIAS_TEAM;
+  if (!T) return;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // "Dr. Sarah Cohen" -> "SC"  (titles ignored)
+  function initials(name) {
+    var parts = String(name || '').replace(/\b(Dr|Prof|Mr|Ms|Mrs)\.?\s+/gi, '').trim().split(/\s+/);
+    if (!parts[0]) return '?';
+    return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+  }
+
+  // Only allow real LinkedIn profile URLs — never inject arbitrary markup.
+  function safeLinkedIn(url) {
+    var u = String(url || '').trim();
+    if (!u) return '';
+    if (!/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(u)) return '';
+    return u;
+  }
+
+  var LI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3zM9 9h3.8v1.7h.05c.53-.95 1.83-1.95 3.77-1.95 4.03 0 4.78 2.5 4.78 5.76V21h-4v-5.6c0-1.34-.03-3.07-1.95-3.07-1.96 0-2.26 1.46-2.26 2.97V21H9z"/></svg>';
+
+  function linkedInLink(url, name, cls) {
+    var u = safeLinkedIn(url);
+    if (!u) return '';
+    return '<a class="' + cls + '" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer"' +
+      ' aria-label="' + esc(name) + ' on LinkedIn" title="' + esc(name) + ' on LinkedIn">' + LI_ICON + '</a>';
+  }
+
+  // <img> that swaps itself for an initials circle if the file is missing
+  function avatar(photo, name, cls) {
+    var ini = esc(initials(name));
+    if (!photo) return '<div class="' + cls + ' avatar-fallback">' + ini + '</div>';
+    return '<img class="' + cls + '" src="assets/team/' + esc(photo) + '" alt="' + esc(name) + '" ' +
+      'onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),' +
+      '{className:\'' + cls + ' avatar-fallback\',textContent:\'' + ini + '\'}))">';
+  }
+
+  /* ---- PI ---- */
+  var pi = T.pi || {};
+  var piEl = document.getElementById('team-pi');
+  if (piEl && pi.name) {
+    piEl.innerHTML =
+      '<div class="pi-photo reveal">' + avatar(pi.photo, pi.name, 'pi-avatar') + '</div>' +
+      '<div class="team-bio reveal">' +
+        '<h3>' + esc(pi.name) + linkedInLink(pi.linkedin, pi.name, 'li-link li-inline') + '</h3>' +
+        '<p class="team-title">' + esc(pi.role || '') + '</p>' +
+        (pi.bio || []).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') +
+      '</div>';
+  }
+
+  /* ---- Members ---- */
+  var list = (T.members || []).filter(function (m) { return m && m.name && m.name.trim(); });
+  var grid = document.getElementById('team-grid');
+  if (grid) {
+    if (!list.length) {
+      grid.style.display = 'none';           // nothing to show yet — stay tidy
+    } else {
+      grid.style.display = '';
+      grid.innerHTML = list.map(function (m) {
+        return '<div class="member-card reveal">' +
+          avatar(m.photo, m.name, 'member-avatar') +
+          '<h4>' + esc(m.name) + '</h4>' +
+          (m.role ? '<div class="member-role">' + esc(m.role) + '</div>' : '') +
+          (m.note ? '<p>' + esc(m.note) + '</p>' : '') +
+          linkedInLink(m.linkedin, m.name, 'li-link li-card') +
+          '</div>';
+      }).join('');
+    }
+  }
+
+  // Newly injected cards still need the scroll-reveal treatment.
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var fresh = document.querySelectorAll('#team-pi .reveal, #team-grid .reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    fresh.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    fresh.forEach(function (el) { io.observe(el); });
+  }
 })();
 
 </script>
