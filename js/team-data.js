@@ -27,7 +27,7 @@ window.ELIAS_TEAM = {
     name: "Dr. Amer Elias",
     role: "Principal Investigator & Founder",
     photo: "amer-elias.jpg",
-    photoHover: "amer-elias-art.jpg",
+    photoHover: "amer-elias-art.webp",
     linkedin: "linkedin.com/in/amer-elias-762a0998",
     bio: [
       "Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.",
