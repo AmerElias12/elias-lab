@@ -21,11 +21,13 @@
   }
 
   // Only allow real LinkedIn profile URLs — never inject arbitrary markup.
+  // Accepts what you'd copy from the address bar, with or without https://
   function safeLinkedIn(url) {
     var u = String(url || '').trim();
     if (!u) return '';
-    if (!/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(u)) return '';
-    return u;
+    u = u.replace(/^https?:\/\//i, '');          // drop any scheme
+    if (!/^([a-z]{2,3}\.)?linkedin\.com\/.+/i.test(u)) return '';
+    return 'https://' + u;
   }
 
   var LI_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
@@ -38,13 +40,30 @@
       ' aria-label="' + esc(name) + ' on LinkedIn" title="' + esc(name) + ' on LinkedIn">' + LI_ICON + '</a>';
   }
 
-  // <img> that swaps itself for an initials circle if the file is missing
-  function avatar(photo, name, cls) {
+  /* Avatar. With a second image supplied it becomes a hover swap: the real
+     photo sits underneath, the alternate fades in over it on hover/focus.
+     Any missing file degrades to the initials circle. */
+  function avatar(person, cls) {
+    var name = person.name;
     var ini = esc(initials(name));
+    var photo = (person.photo || '').trim();
+    var hover = (person.photoHover || '').trim();
+
+    var fallbackAttr = 'onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),' +
+      '{className:\'' + cls + ' avatar-fallback\',textContent:\'' + ini + '\'}))"';
+
     if (!photo) return '<div class="' + cls + ' avatar-fallback">' + ini + '</div>';
-    return '<img class="' + cls + '" src="assets/team/' + esc(photo) + '" alt="' + esc(name) + '" ' +
-      'onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),' +
-      '{className:\'' + cls + ' avatar-fallback\',textContent:\'' + ini + '\'}))">';
+
+    var base = '<img class="' + cls + '" src="assets/team/' + esc(photo) + '" alt="' + esc(name) + '" ' + fallbackAttr + '>';
+    if (!hover) return base;
+
+    // Two stacked images inside a sized wrapper; CSS handles the crossfade.
+    return '<span class="avatar-swap ' + cls + '-swap" tabindex="0" ' +
+      'aria-label="' + esc(name) + ' — hover to see the illustrated portrait">' +
+      base +
+      '<img class="' + cls + ' avatar-alt" src="assets/team/' + esc(hover) + '" alt="" aria-hidden="true" ' +
+      'onerror="this.remove()">' +
+      '</span>';
   }
 
   /* ---- PI ---- */
@@ -52,7 +71,7 @@
   var piEl = document.getElementById('team-pi');
   if (piEl && pi.name) {
     piEl.innerHTML =
-      '<div class="pi-photo reveal">' + avatar(pi.photo, pi.name, 'pi-avatar') + '</div>' +
+      '<div class="pi-photo reveal">' + avatar(pi, 'pi-avatar') + '</div>' +
       '<div class="team-bio reveal">' +
         '<h3>' + esc(pi.name) + linkedInLink(pi.linkedin, pi.name, 'li-link li-inline') + '</h3>' +
         '<p class="team-title">' + esc(pi.role || '') + '</p>' +
@@ -70,7 +89,7 @@
       grid.style.display = '';
       grid.innerHTML = list.map(function (m) {
         return '<div class="member-card reveal">' +
-          avatar(m.photo, m.name, 'member-avatar') +
+          avatar(m, 'member-avatar') +
           '<h4>' + esc(m.name) + '</h4>' +
           (m.role ? '<div class="member-role">' + esc(m.role) + '</div>' : '') +
           (m.note ? '<p>' + esc(m.note) + '</p>' : '') +

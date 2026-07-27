@@ -172,6 +172,26 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .pi-avatar.avatar-fallback{font-size:3rem;}
 .member-avatar.avatar-fallback{font-size:1.6rem;}
 
+/* Hover photo swap — real portrait underneath, illustration fades in over it */
+.avatar-swap{position:relative;display:inline-block;line-height:0;border-radius:50%;cursor:pointer;outline:none;}
+.avatar-swap > img{display:block;}
+.avatar-swap .avatar-alt{position:absolute;inset:0;opacity:0;transition:opacity .45s var(--ease);}
+.avatar-swap:hover .avatar-alt,
+.avatar-swap:focus-visible .avatar-alt{opacity:1;}
+.avatar-swap:focus-visible{box-shadow:var(--focus);}
+/* the underlying photo lifts slightly, so the swap feels intentional */
+.avatar-swap > img:first-child{transition:transform .45s var(--ease);}
+.avatar-swap:hover > img:first-child{transform:scale(1.02);}
+@media (prefers-reduced-motion: reduce){
+  .avatar-swap .avatar-alt{transition:none;}
+  .avatar-swap:hover > img:first-child{transform:none;}
+}
+/* touch devices have no hover: show the illustration only while pressed */
+@media (hover:none){
+  .avatar-swap .avatar-alt{transition:opacity .2s;}
+  .avatar-swap:active .avatar-alt{opacity:1;}
+}
+
 /* LinkedIn links */
 .li-link{display:inline-flex;align-items:center;justify-content:center;color:var(--teal);transition:all .2s;text-decoration:none;}
 .li-link svg{width:100%;height:100%;fill:currentColor;display:block;}
