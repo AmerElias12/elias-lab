@@ -337,14 +337,10 @@ async function deletePresentation(id) { if (confirm('Delete this presentation?')
 function renderWebapps() {
   // In-page custom tools (no external files needed) + bundled GenomeScan
   var custom = '' +
-    // Full standalone apps (latest versions, opened in their own tab)
+    // Full standalone apps, opened in their own tab
     appCard('tools/grna-primer-generator.html', '🧬', 'Primer Generator', 'Dual system: gRNA cloning primers (PRg) and regular primers (PR), with storage tracking, bulk CSV import and export') +
     appCard('tools/gibson-calculator.html', '⚙️', 'Gibson Assembly Calculator', 'Reaction volume calculator for NEB Gibson and EURx LigON kits, with protocol notes') +
-    appCard('tools/genome-scan.html', '🧭', 'GenomeScan', 'Consensus / att-site finder across the human genome (BLAST + Open Targets)') +
-    // Lightweight in-page versions, for a quick check without leaving the notebook
-    toolCard('🧬', 'Quick gRNA Primers', 'Fast in-page gRNA primer design for Gibson cloning', "openTool('grna')") +
-    toolCard('⚙️', 'Quick Gibson Overlaps', 'Fast in-page overlap / Tm check across fragments', "openTool('gibson')") +
-    toolCard('🔍', 'Quick att-Site Finder', 'Scan a pasted sequence for attB/attP-like sites', "openTool('att')");
+    appCard('tools/genome-scan.html', '🧭', 'GenomeScan', 'Consensus / att-site finder across the human genome (BLAST + Open Targets)');
   document.getElementById('ln-custom-tools-grid').innerHTML = custom;
 
   var TOOLS = [
@@ -370,9 +366,6 @@ function appCard(href, icon, name, desc) {
     '<div class="ln-webapp-icon">' + icon + '</div>' +
     '<div class="ln-webapp-name">' + name + '</div>' +
     '<div class="ln-webapp-desc">' + desc + '</div></a>';
-}
-function toolCard(icon, name, desc, action) {
-  return '<button type="button" class="ln-webapp-card custom quick" onclick="' + action + '"><div class="ln-webapp-custom-label">Quick tool · in page</div><div class="ln-webapp-icon">' + icon + '</div><div class="ln-webapp-name">' + name + '</div><div class="ln-webapp-desc">' + desc + '</div></button>';
 }
 
 // ── INVENTORY ──────────────────────────────────────────────
@@ -581,7 +574,6 @@ async function saveInvItem() {
 // ── BOOT ───────────────────────────────────────────────────
 document.addEventListener('click', function (e) {
   if (e.target && e.target.id === 'ln-modal-bg') closeModal();
-  if (e.target && e.target.id === 'ln-tool-modal-bg') closeTool();
 });
 document.addEventListener('DOMContentLoaded', async function () {
   lnAuthMode('signin');
