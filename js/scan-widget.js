@@ -19,7 +19,7 @@
 (function () {
   'use strict';
 
-  var EMAIL = 'amerelias02@gmail.com';
+  var EMAIL = 'amere@braude.ac.il';
   var CONSENSUS = 'NNDCTTWNNNNNNNAAAGBNN';   // GenomeScan DEFAULT_CONSENSUS
   var MAX_MISMATCH = 0;                       // GenomeScan default (exact consensus match)
   var TAXID = '9606';                         // human

@@ -409,7 +409,7 @@ function renderAdmin() {
   if (importBtn) importBtn.style.display = DB.mode === 'supabase' ? 'inline-block' : 'none';
 
   var users = getUsers();
-  var adminEmail = (window.ELIAS_CONFIG && ELIAS_CONFIG.ADMIN_EMAIL ? ELIAS_CONFIG.ADMIN_EMAIL : 'amerelias02@gmail.com').toLowerCase();
+  var adminEmail = (window.ELIAS_CONFIG && ELIAS_CONFIG.ADMIN_EMAIL ? ELIAS_CONFIG.ADMIN_EMAIL : 'amere@braude.ac.il').toLowerCase();
   document.getElementById('ln-users-tbody').innerHTML = users.map(function (u) {
     var actions = (u.email !== adminEmail) ?
       ((u.status === 'pending' ? '<button class="ln-icon-btn" onclick="approveUser(\'' + u.id + '\')">✔ Approve</button>' : '') +

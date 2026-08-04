@@ -45,7 +45,7 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > industry partners, and already work with university, clinical and industry
 > groups across Israel.
 >
-> 📩 amerelias02@gmail.com
+> 📩 amere@braude.ac.il
 >
 > #GeneTherapy #GenomeEditing #SyntheticBiology #ProteinEngineering
 > #MScPosition #Biotechnology #CellEngineering #BraudeCollege
@@ -68,7 +68,7 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > bottleneck, or where you need engineered cell lines, CRISPR libraries or
 > custom molecular assays.
 >
-> 📩 amerelias02@gmail.com
+> 📩 amere@braude.ac.il
 >
 > #GeneTherapy #GenomeEditing #MScPosition #Biotechnology #BraudeCollege
 
@@ -91,7 +91,7 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > (Keep this line only if you're happy to thank people generically; name
 >  individuals only with their agreement.)
 >
-> More soon. 📩 amerelias02@gmail.com
+> More soon. 📩 amere@braude.ac.il
 
 ---
 
@@ -118,7 +118,7 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > flawless CV.
 >
 > Send a CV and a short note on what draws you to the work.
-> 📩 amerelias02@gmail.com
+> 📩 amere@braude.ac.il
 >
 > #MScPosition #GeneTherapy #GenomeEditing #Biotechnology #BraudeCollege
 
@@ -145,7 +145,7 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > We already work with university, clinical and industry groups across Israel —
 > and we're open to new academic and industry partners.
 >
-> 📩 amerelias02@gmail.com
+> 📩 amere@braude.ac.il
 >
 > #Collaboration #GeneTherapy #CellEngineering #Biotechnology #CRISPR
 

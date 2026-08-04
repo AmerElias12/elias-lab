@@ -11,7 +11,7 @@
   'use strict';
 
   var CFG = window.ELIAS_CONFIG || {};
-  var ADMIN_EMAIL = (CFG.ADMIN_EMAIL || 'amerelias02@gmail.com').toLowerCase();
+  var ADMIN_EMAIL = (CFG.ADMIN_EMAIL || 'amere@braude.ac.il').toLowerCase();
   var hasSupabase = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY);
 
   // ---- in-memory cache (what the UI renders from) ----

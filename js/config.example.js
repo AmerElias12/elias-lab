@@ -7,5 +7,5 @@
 window.ELIAS_CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-ref.supabase.co',
   SUPABASE_ANON_KEY: 'YOUR-ANON-PUBLIC-KEY',
-  ADMIN_EMAIL: 'amerelias02@gmail.com'
+  ADMIN_EMAIL: 'amere@braude.ac.il'
 };

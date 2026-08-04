@@ -65,7 +65,7 @@ plasmids / glycerol stocks / kits), and User Management (admin).
 ### Local vs. shared mode
 - **Local mode** (default, `js/config.js` blank): all data lives in the current
   browser's `localStorage` — not shared, not backed up. A banner reminds you.
-  Demo PI login: `amerelias02@gmail.com` / `eliaslab`.
+  Demo PI login: `amere@braude.ac.il` / `eliaslab`.
 - **Shared mode** (Supabase configured): real email/password auth, a shared
   Postgres database, and file storage — data syncs across devices and is backed
   up. New members sign up and the PI approves them in User Management. See

@@ -15,5 +15,5 @@
 window.ELIAS_CONFIG = {
   SUPABASE_URL: '',        // e.g. 'https://abcdxyz.supabase.co'
   SUPABASE_ANON_KEY: '',   // e.g. 'eyJhbGciOi...'
-  ADMIN_EMAIL: 'amerelias02@gmail.com'
+  ADMIN_EMAIL: 'amere@braude.ac.il'
 };

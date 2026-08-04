@@ -34,13 +34,13 @@ your browser) until you're ready for (1).
    window.ELIAS_CONFIG = {
      SUPABASE_URL: 'https://abcdxyz.supabase.co',
      SUPABASE_ANON_KEY: 'eyJhbGciOi...',
-     ADMIN_EMAIL: 'amerelias02@gmail.com'
+     ADMIN_EMAIL: 'amere@braude.ac.il'
    };
    ```
    > The anon key is **meant to be public** — Row-Level Security in the schema
    > is what actually protects the data. It is safe to commit.
 6. **Create the PI account:** open `notebook.html`, click **Request an account**,
-   and sign up with **amerelias02@gmail.com**. The schema auto-approves that
+   and sign up with **amere@braude.ac.il**. The schema auto-approves that
    email as the admin. (Supabase may send a confirmation email — confirm it.)
    Everyone else who signs up lands in **pending** until you approve them in
    the **User Management** tab.

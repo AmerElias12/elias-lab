@@ -58,8 +58,8 @@ begin
     new.id,
     coalesce(new.raw_user_meta_data->>'name', split_part(new.email,'@',1)),
     new.email,
-    case when lower(new.email) = 'amerelias02@gmail.com' then 'admin' else 'member' end,
-    case when lower(new.email) = 'amerelias02@gmail.com' then 'approved' else 'pending' end
+    case when lower(new.email) = 'amere@braude.ac.il' then 'admin' else 'member' end,
+    case when lower(new.email) = 'amere@braude.ac.il' then 'approved' else 'pending' end
   )
   on conflict (id) do nothing;
   return new;
