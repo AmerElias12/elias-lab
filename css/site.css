@@ -159,6 +159,9 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .news-item{position:relative;padding:0 0 1.8rem 1.4rem;}
 .news-item::before{content:'';position:absolute;left:-1.6rem;top:.35rem;width:12px;height:12px;border-radius:50%;background:var(--emerald-bright);border:3px solid var(--paper-2);box-shadow:0 0 0 1px var(--emerald);}
 .news-date{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--emerald);}
+/* a forthcoming item — hollow marker so it reads as not-yet-happened */
+.news-item.upcoming::before{background:var(--paper-2);border-color:var(--paper-2);box-shadow:0 0 0 2px var(--emerald);}
+.news-item.upcoming .news-date{color:var(--blue);}
 .news-item h4{font-family:var(--serif);font-size:1.12rem;font-weight:600;color:var(--ink);margin:.25rem 0 .35rem;letter-spacing:-.01em;}
 .news-item p{font-size:.93rem;color:var(--ink-soft);line-height:1.65;}
 

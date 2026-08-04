@@ -42,8 +42,8 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > If you work on a disease where inserting a large payload is the bottleneck —
 > or you need engineered cell lines, CRISPR libraries, plasmid construction or
 > custom molecular assays — I'd like to talk. We offer these to academic and
-> industry partners, and already collaborate with Tel Aviv University, the
-> University of Haifa, Emendo Bio, Rabin Medical Center and Galilee Medical Center.
+> industry partners, and already work with university, clinical and industry
+> groups across Israel.
 >
 > 📩 amerelias02@gmail.com
 >
@@ -87,6 +87,9 @@ Ready-to-post text for the lab launch. Pair option 1 with
 >
 > Grateful to Braude College for the support in getting this started — and to
 > the collaborators and mentors who shaped the work that led here.
+>
+> (Keep this line only if you're happy to thank people generically; name
+>  individuals only with their agreement.)
 >
 > More soon. 📩 amerelias02@gmail.com
 
@@ -139,9 +142,8 @@ Ready-to-post text for the lab launch. Pair option 1 with
 > plasmid cloning · CRISPR libraries · epigenetic modification · molecular assay
 > development.
 >
-> We currently work with Tel Aviv University, the University of Haifa,
-> Emendo Bio, Rabin Medical Center and Galilee Medical Center — and we're open
-> to new academic and industry partners.
+> We already work with university, clinical and industry groups across Israel —
+> and we're open to new academic and industry partners.
 >
 > 📩 amerelias02@gmail.com
 >
