@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Elias Lab — Launch Poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     Elias Lab — launch / recruitment poster
+     Designed at 1080 x 1350 (4:5 — the tallest ratio LinkedIn
+     allows, so it occupies the most feed space). Rendered at 2x.
+     Edit the text below and re-run  poster/render.sh
+     ============================================================ */
+  :root{
+    --paper:#f4f1e8; --teal:#0c4a44; --teal-deep:#072e2a;
+    --emerald:#10b07e; --emerald-bright:#1fd197; --blue:#1d5fd4;
+    --serif:'Fraunces',Georgia,serif;
+    --sans:'IBM Plex Sans',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{background:#fff;}
+  body{width:2160px;height:2700px;overflow:hidden;}
+  .scale{transform:scale(2);transform-origin:top left;}
+
+  .poster{
+    position:relative;width:1080px;height:1350px;overflow:hidden;
+    background:
+      radial-gradient(ellipse 70% 50% at 15% 8%, rgba(31,209,151,.16), transparent 60%),
+      radial-gradient(ellipse 60% 45% at 88% 82%, rgba(29,95,212,.20), transparent 62%),
+      linear-gradient(160deg,#0c4a44 0%,#072e2a 55%,#04211e 100%);
+    color:var(--paper);font-family:var(--sans);
+    display:flex;flex-direction:column;
+    padding:74px 78px 64px;
+  }
+  /* faint dotted grid */
+  .poster::before{
+    content:'';position:absolute;inset:0;
+    background-image:radial-gradient(rgba(244,241,232,.055) 1.4px, transparent 1.4px);
+    background-size:30px 30px;pointer-events:none;
+  }
+  /* recombinase strands, decorative */
+  .strands{position:absolute;inset:0;opacity:.5;pointer-events:none;}
+  .strands svg{width:100%;height:100%;}
+
+  .inner{position:relative;z-index:2;display:flex;flex-direction:column;height:100%;}
+
+  /* ---- top: logo ---- */
+  .brandrow{display:flex;align-items:center;justify-content:space-between;}
+  .logo svg{height:82px;width:auto;display:block;}
+  .est{font-family:var(--mono);font-size:14px;letter-spacing:.24em;text-transform:uppercase;
+       color:rgba(244,241,232,.5);text-align:right;line-height:1.7;}
+
+  /* ---- hero ---- */
+  .hero{margin-top:96px;}
+  .kicker{display:inline-flex;align-items:center;gap:12px;font-family:var(--mono);font-size:15px;
+          font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--emerald-bright);
+          background:rgba(31,209,151,.1);border:1px solid rgba(31,209,151,.32);
+          padding:11px 22px;border-radius:100px;}
+  .kicker::before{content:'';width:9px;height:9px;border-radius:50%;background:var(--emerald-bright);
+                  box-shadow:0 0 0 5px rgba(31,209,151,.22);}
+  h1{font-family:var(--serif);font-size:95px;line-height:1;letter-spacing:-.028em;
+     font-weight:600;margin-top:34px;font-optical-sizing:auto;}
+  h1 .em{font-style:italic;
+    background:linear-gradient(100deg,var(--emerald-bright) 0%,#7fe3c4 45%,#8ab6ff 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+  .research{margin-top:34px;font-size:27px;line-height:1.5;color:rgba(244,241,232,.8);
+            max-width:830px;font-weight:400;}
+  .research b{color:var(--paper);font-weight:600;}
+
+  /* ---- recruitment ---- */
+  .recruit{margin-top:auto;position:relative;border-radius:26px;padding:44px 48px;
+    background:linear-gradient(140deg, rgba(244,241,232,.11), rgba(244,241,232,.05));
+    border:1px solid rgba(31,209,151,.34);
+    box-shadow:0 30px 70px -30px rgba(0,0,0,.55);}
+  .recruit-tag{font-family:var(--mono);font-size:15px;letter-spacing:.2em;text-transform:uppercase;
+               color:var(--emerald-bright);font-weight:500;}
+  .recruit h2{font-family:var(--serif);font-size:60px;line-height:1.05;font-weight:600;
+              margin-top:12px;letter-spacing:-.02em;}
+  .recruit p{margin-top:16px;font-size:22px;line-height:1.55;color:rgba(244,241,232,.76);max-width:760px;}
+  .tags{display:flex;gap:11px;flex-wrap:wrap;margin-top:26px;}
+  .tag{font-family:var(--mono);font-size:15px;letter-spacing:.05em;padding:9px 18px;border-radius:100px;
+       background:rgba(244,241,232,.09);border:1px solid rgba(244,241,232,.18);color:rgba(244,241,232,.9);}
+
+  /* ---- footer ---- */
+  .foot{margin-top:44px;display:flex;align-items:center;justify-content:space-between;gap:34px;}
+  .braude-plate{background:var(--paper);border-radius:14px;padding:16px 22px;display:flex;align-items:center;flex-shrink:0;}
+  .braude-plate img{height:62px;width:auto;display:block;}
+  .affil{font-size:19px;line-height:1.5;color:rgba(244,241,232,.72);flex:1;min-width:0;}
+  .affil b{color:var(--paper);font-weight:600;display:block;font-size:20px;}
+  .affil span{white-space:nowrap;}
+  .contact{text-align:right;font-family:var(--mono);font-size:17px;line-height:1.85;
+           color:rgba(244,241,232,.82);flex-shrink:0;white-space:nowrap;}
+  .contact .hi{color:var(--emerald-bright);}
+</style>
+</head>
+<body>
+<div class="scale">
+<div class="poster">
+
+  <div class="strands">
+    <svg viewBox="0 0 1080 1350" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="s1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#1fd197" stop-opacity=".9"/><stop offset="1" stop-color="#10b07e" stop-opacity=".25"/>
+        </linearGradient>
+        <linearGradient id="s2" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#6ea8ff" stop-opacity=".85"/><stop offset="1" stop-color="#1fd197" stop-opacity=".22"/>
+        </linearGradient>
+      </defs>
+      <g fill="none" stroke-linecap="round" stroke-dasharray="26 16">
+        <path d="M-60,300 C 240,300 330,690 540,690 S 840,1080 1140,1080" stroke="url(#s1)" stroke-width="4"/>
+        <path d="M-60,330 C 240,330 350,716 540,716 S 840,1110 1140,1110" stroke="url(#s1)" stroke-width="4" opacity=".55"/>
+        <path d="M-60,1080 C 240,1080 330,690 540,690 S 840,300 1140,300" stroke="url(#s2)" stroke-width="4"/>
+        <path d="M-60,1110 C 240,1110 350,716 540,716 S 840,330 1140,330" stroke="url(#s2)" stroke-width="4" opacity=".55"/>
+      </g>
+      <g transform="translate(540,703)" opacity=".85">
+        <circle r="86" fill="none" stroke="#1fd197" stroke-width="1.6" opacity=".28"/>
+        <circle cx="0" cy="-52" r="13" fill="#1fd197" opacity=".75"/>
+        <circle cx="52" cy="0" r="13" fill="#6ea8ff" opacity=".7"/>
+        <circle cx="0" cy="52" r="13" fill="#1fd197" opacity=".75"/>
+        <circle cx="-52" cy="0" r="13" fill="#6ea8ff" opacity=".7"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="inner">
+
+    <!-- ── brand row ────────────────────────────────────── -->
+    <div class="brandrow">
+      <div class="logo">
+        <svg width="254" height="60" viewBox="0 0 254 60" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Elias Lab">
+          <defs>
+            <linearGradient id="pl1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1fd197"/><stop offset="1" stop-color="#10b07e"/></linearGradient>
+            <linearGradient id="pl2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6ea8ff"/><stop offset="1" stop-color="#1fd197"/></linearGradient>
+          </defs>
+          <g transform="translate(2,2)" fill="none" stroke-linecap="round">
+            <path d="M5 9 C 16 9 16 28 28 28 C 40 28 40 47 51 47" stroke="url(#pl1)" stroke-width="3.4"/>
+            <path d="M11 5 C 23 5 21 26 28 28 C 35 30 33 51 45 51" stroke="url(#pl1)" stroke-width="3.4" opacity=".5"/>
+            <path d="M51 9 C 40 9 40 28 28 28 C 16 28 16 47 5 47" stroke="url(#pl2)" stroke-width="3.4"/>
+            <path d="M45 5 C 33 5 35 26 28 28 C 21 30 23 51 11 51" stroke="url(#pl2)" stroke-width="3.4" opacity=".5"/>
+          </g>
+          <circle cx="30" cy="30" r="8.5" fill="#072e2a" stroke="url(#pl1)" stroke-width="2.8"/>
+          <circle cx="30" cy="30" r="3.4" fill="#1fd197"/>
+          <text x="72" y="33" font-family="'Fraunces', Georgia, serif" font-size="25" font-weight="600" fill="#f4f1e8" letter-spacing="-0.5">Elias <tspan font-style="italic" fill="#1fd197">Lab</tspan></text>
+          <text x="73" y="46" font-family="'IBM Plex Mono', monospace" font-size="7" letter-spacing="1.4" fill="#10b07e">PRECISION GENOME INTEGRATION</text>
+        </svg>
+      </div>
+      <div class="est">Gene Therapy &amp;<br>Cell Engineering</div>
+    </div>
+
+    <!-- ── hero ─────────────────────────────────────────── -->
+    <div class="hero">
+      <div class="kicker">Opening October 2026</div>
+      <h1>A new lab for<br><span class="em">precision</span> gene therapy</h1>
+      <p class="research">
+        We engineer <b>site-specific recombinases</b> that insert large DNA payloads
+        exactly where we choose — <b>without cutting the genome</b>.
+      </p>
+    </div>
+
+    <!-- ── recruitment ──────────────────────────────────── -->
+    <div class="recruit">
+      <div class="recruit-tag">Now recruiting</div>
+      <h2>MSc Students</h2>
+      <p>
+        Join the founding team. Projects span protein engineering, directed evolution,
+        CRISPR &amp; cell-line engineering, and therapeutic genome integration.
+      </p>
+      <div class="tags">
+        <span class="tag">Molecular Biology</span>
+        <span class="tag">Protein Engineering</span>
+        <span class="tag">Genome Editing</span>
+        <span class="tag">Bioinformatics</span>
+      </div>
+    </div>
+
+    <!-- ── footer ───────────────────────────────────────── -->
+    <div class="foot">
+      <div class="braude-plate">
+        <img src="../assets/logos/braude-college.png" alt="Braude College of Engineering, Karmiel">
+      </div>
+      <div class="affil">
+        <b>Biotechnology Engineering</b>
+        <span>Braude College of Engineering, Karmiel</span>
+      </div>
+      <div class="contact">
+        <span class="hi">Dr. Amer Elias</span><br>
+        amerelias02@gmail.com
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</body>
+</html>
