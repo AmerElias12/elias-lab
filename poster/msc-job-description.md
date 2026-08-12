@@ -4,17 +4,16 @@ Two formats below. **Version A** is the LinkedIn post (what most people will rea
 **Version B** is the full structured description for a LinkedIn Job listing, an
 email reply to applicants, or the lab website.
 
-⚠️ **Before posting, fill in the four bracketed items** — see "What only you can
-fill in" at the bottom. Funding in particular is the first thing applicants look
-for, and leaving it vague costs you good candidates.
+**Position details:** 2 positions · scholarship with tuition covered ·
+applications by 15 September 2026 · start October 2026.
 
 ---
 
 # Version A · LinkedIn post (#hiring)
 
-> **🎓 Hiring: MSc Student — Gene Therapy & Genome Engineering**
+> **🎓 Hiring: 2 MSc Students — Gene Therapy & Genome Engineering**
 > **Elias Lab · Biotechnology Engineering · Braude College of Engineering, Karmiel**
-> **Starting October 2026**
+> **Scholarship + tuition covered · Starting October 2026 · Apply by 15 September**
 >
 > **The problem we work on**
 >
@@ -71,15 +70,20 @@ for, and leaving it vague costs you good candidates.
 >
 > **What you get**
 >
+> → **A scholarship, with tuition fees covered** — so you can focus on the research
 > → A thesis project you own, not a fragment of someone else's
 > → Direct, daily supervision — this is a small founding team, not a queue
 > → Training across the full stack: design → cloning → cells → analysis
 > → A brand-new lab, and a real say in how it takes shape
-> → [FUNDING — see note below]
 >
-> **To apply:** send your CV, transcript, and a short paragraph on what draws you
-> to this work to 📩 **amere@braude.ac.il**
+> **Two positions are open.**
+>
+> **To apply — by 15 September 2026:** send your CV, transcript, and a short
+> paragraph on what draws you to this work to 📩 **amere@braude.ac.il**
 > Subject line: *MSc application — [your name]*
+>
+> Admission is through Braude's research MSc in Biotechnology:
+> https://w3.braude.ac.il/bio-research/
 >
 > Questions before applying are welcome. Happy to talk it through.
 >
@@ -102,9 +106,10 @@ for, and leaving it vague costs you good candidates.
 | **Supervisor** | Dr. Amer Elias |
 | **Position** | MSc thesis research position |
 | **Start** | October 2026 |
-| **Positions available** | [NUMBER] |
-| **Funding** | [SCHOLARSHIP / STIPEND DETAILS] |
-| **Application deadline** | [DATE] |
+| **Positions available** | 2 |
+| **Funding** | Scholarship available; tuition fees covered |
+| **Application deadline** | 15 September 2026 |
+| **Degree programme** | [Research MSc in Biotechnology, Braude College](https://w3.braude.ac.il/bio-research/) |
 | **Contact** | amere@braude.ac.il |
 
 ### About the lab
@@ -175,7 +180,8 @@ purification · sequence analysis and structural modelling.
 **Essential**
 - BSc in biotechnology engineering, molecular biology, biochemistry, genetics,
   bioinformatics or a closely related field
-- Eligibility for admission to the MSc programme at Braude College
+- Eligibility for Braude's [research MSc in Biotechnology](https://w3.braude.ac.il/bio-research/)
+  — admission to the programme runs in parallel with your application to the lab
 - Working knowledge of molecular biology and genetics
 - Careful experimental record-keeping
 - Working English (our literature and much of our communication is in English)
@@ -191,15 +197,17 @@ something that has not been done before.
 
 ### What we offer
 
+- **A scholarship, with tuition fees covered**
 - An independent thesis project with real ownership
 - Close, direct supervision in a small founding team
 - Broad methodological training spanning wet lab and computational work
 - A newly equipped lab, and influence over how it develops
 - Collaboration with university, clinical and industry partners
 - Support toward publication and conference presentation
-- [FUNDING DETAILS]
 
 ### How to apply
+
+**Two positions are available. Applications close 15 September 2026.**
 
 Email **amere@braude.ac.il** with subject line *MSc application — [your name]*, attaching:
 
@@ -209,23 +217,24 @@ Email **amere@braude.ac.il** with subject line *MSc application — [your name]*
    and which of the four project directions interests you most
 4. **Contact details for one or two references** (a letter isn't needed at this stage)
 
-Applications are reviewed as they arrive. Informal questions before applying are
-welcome and encouraged.
+Applications are reviewed as they arrive, so applying early is worthwhile.
+Informal questions before applying are welcome and encouraged.
+
+Admission to the degree runs through Braude's
+[research MSc in Biotechnology](https://w3.braude.ac.il/bio-research/); apply to
+the programme in parallel with contacting the lab.
 
 ---
 
-## What only you can fill in
+## Two things to check before posting
 
-These are the details applicants look for first. The text above marks each one:
-
-| Item | Why it matters |
-|---|---|
-| **Funding / stipend** | The single biggest factor in whether strong candidates apply. Even "scholarship available on a competitive basis" beats silence. |
-| **Number of positions** | Signals how realistic their chances are. |
-| **Application deadline** | Without one, applications drift. |
-| **MSc programme details** | Whether they apply to the Braude programme in parallel, and any admission requirements (GPA threshold, etc.). |
-
-Tell me these and I'll fold them in.
+- **The deadline is written as 15 September 2026.** You said "mid-September" — a
+  specific date is much better for applicants, but change it if you meant
+  something else.
+- **The programme page is in Hebrew.** Fine for local applicants; if you want to
+  attract candidates from outside Israel, worth adding a sentence in the post
+  saying the programme is taught/supervised in [Hebrew / English] and that
+  international applicants are welcome — or not, if you'd rather keep it local.
 
 ## Posting notes
 
