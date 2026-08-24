@@ -139,7 +139,7 @@ applications.
 4. **Cell Line Engineering & Development** — Build engineered and stable cell-line models by integrating defined genetic payloads at chosen loci — supporting reporter systems, therapeutic protein production, and functional research models.
 5. **Multiplexed Integration** — Demonstrate simultaneous integration of multiple distinct genetic payloads at different genomic loci in a single event, enabling complex gene-circuit and multi-transgene engineering.
 
-## Therapeutic Applications — 5 cards *(dark background)*
+## Therapeutic Applications — 4 cards *(dark background)*
 **Kicker:** WHERE IT LEADS · **Heading:** Therapeutic Applications
 **Intro:** One precise-integration platform, applied across loss-of-function
 disease, cancer, and complex cell engineering.
@@ -149,7 +149,6 @@ disease, cancer, and complex cell engineering.
 | Safe-Harbor Integration | Stable Transgene Expression | Targeting well-characterized safe loci (Rosa26, CLYBL, H11) for stable, predictable gene expression. Ideal for restoring gene function in loss-of-function diseases. |
 | RMCE Technology | Tumor Suppressor Gene Correction | Precise replacement of mutated BRCA1 and TP53 sequences with healthy wild-type donor DNA. Enables "pan-mutation" therapeutics. |
 | Neurodevelopmental Disorders | Haploinsufficiency Correction | Targeting genes like GRIN2B and SHANK3 to restore normal gene dosage in autism spectrum disorders and other neurodevelopmental conditions. |
-| Cancer Immunotherapy | Enhanced CAR-T Engineering | Multiplexed integration of multi-gene constructs for advanced immunotherapies and complex gene circuit installation. |
 | Genetic Disease | Cystic Fibrosis & Duchenne Muscular Dystrophy | Large-scale DNA insertion for diseases caused by heterogeneous mutations. One approach benefiting patients with diverse mutations in the same gene. |
 
 ## Publications
@@ -190,14 +189,13 @@ with clinical translation, combining computational design, experimental
 validation, and collaborative partnerships to develop next-generation gene
 therapies.
 
-## Collaborations — 5 logo cards
+## Collaborations — 4 logo cards
 **Kicker:** PARTNERS · **Heading:** Institutional Collaborations
 
 | Logo | Name | Caption |
 |---|---|---|
 | tel-aviv-university.png | Tel Aviv University | Collaborative research in molecular biology, genome editing, and therapeutic development |
 | university-of-haifa.png | University of Haifa | Partnership in biochemical engineering and protein structure-function studies |
-| emendo-bio.png | Emendo Bio | Industry collaboration on translational genome editing and gene therapy applications |
 | rabin-medical-center.png | Rabin Medical Center | Clinical partnership for therapeutic validation and patient-derived cell studies |
 | galilee-medical-center.png | Galilee Medical Center | Regional partnership for clinical research and therapeutic implementation |
 
