@@ -327,7 +327,7 @@
         </div>
       </div>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
-        Cell-line dependency &amp; expression from <strong style="color:var(--accent2);">DepMap</strong>, plus baseline tissue expression — via the Open Targets Platform. Use these to pick a relevant model for the gene of interest. <span style="color:var(--text-dim);">(Human gene data only.)</span>
+        Cell-line RNA (nTPM) from the <strong style="color:var(--accent);">Human Protein Atlas</strong> — including common lab lines such as HEK293, HeLa and HaCaT — merged with CRISPR dependency &amp; expression from <strong style="color:var(--accent2);">DepMap</strong> (via Open Targets), plus baseline tissue expression. Use these to pick a relevant model for the gene of interest. <span style="color:var(--text-dim);">(Human gene data only.)</span>
       </div>
       <div class="cn-prog-wrap" id="cm-prog-wrap"><div class="cn-prog-bar" id="cm-prog-bar"></div></div>
       <div id="cm-status" style="font-size:12px;color:var(--text-dim);margin-top:8px;display:none;"></div>
@@ -335,7 +335,7 @@
 
       <!-- Tissue expression summary -->
       <div id="cm-tissues" style="display:none;margin-top:8px;margin-bottom:18px;">
-        <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Highest-expressing tissues <span style="text-transform:none;font-weight:400;">(where the gene is most active — guides primary-cell choice)</span></div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Highest-expressing tissues <span style="text-transform:none;font-weight:400;">(GTEx bulk median TPM — where the gene is most active; guides primary-cell choice)</span></div>
         <div id="cm-tissue-chips" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
       </div>
 
@@ -345,10 +345,12 @@
           <button class="dl-btn" onclick="downloadCellModelsCSV()">↓ CSV</button>
           <select id="cm-tissue-filter" onchange="renderCellModels()" style="width:auto;min-width:180px;padding:7px 12px;font-size:13px;"></select>
           <select id="cm-sort" onchange="renderCellModels()" style="width:auto;padding:7px 12px;font-size:13px;">
-            <option value="expr">Sort: highest expression</option>
+            <option value="ntpm">Sort: highest HPA nTPM</option>
+            <option value="expr">Sort: highest DepMap expr</option>
             <option value="dep">Sort: strongest dependency</option>
             <option value="name">Sort: cell line name</option>
           </select>
+          <button class="utab" id="cm-common-btn" onclick="toggleCommonModels()" title="Show only widely used lab lines (HEK293, HeLa, A549, HCT 116, …)">Common lab models</button>
           <input type="text" class="filter-input" id="cm-filter" placeholder="Filter cell lines…" oninput="renderCellModels()"/>
         </div>
         <div class="table-wrap" style="max-height:460px;overflow:auto;">
@@ -358,9 +360,11 @@
                 <th>Cell Line</th>
                 <th>Tissue</th>
                 <th>Disease / Origin</th>
-                <th title="Log2(TPM+1) — higher = gene more expressed in this line">Expression</th>
+                <th title="Human Protein Atlas cell-line RNA, nTPM — covers common lab lines such as HEK293 and HeLa">HPA nTPM</th>
+                <th title="DepMap expression, log2(TPM+1) — only for CRISPR-screened cancer lines">DepMap expr</th>
                 <th title="DepMap Chronos gene-effect: more negative = cells depend on the gene (essential); ~0 = non-essential">Dependency</th>
                 <th>Mutation</th>
+                <th title="Which dataset this row came from">Source</th>
                 <th>Links</th>
               </tr>
             </thead>
@@ -1458,12 +1462,81 @@ async function otResolveTarget(symbol){
   return (exact||hits[0]).id;
 }
 
+// NOTE: Open Targets renamed Target.expressions -> Target.baselineExpression and
+// changed its shape (paginated rows, biosampleName, median/unit, mixed datasources).
+// We pull all rows and keep GTEx (bulk tissue, TPM) for the tissue chips.
 async function otFetchModels(ensembl){
   const q=`query($id:String!){ target(ensemblId:$id){ approvedSymbol
-    expressions { tissue { label } rna { value zscore } }
+    baselineExpression(page:{index:0,size:2000}) { rows {
+      median unit datasourceId tissueBiosampleFromSource
+      tissueBiosample { biosampleName } } }
     depMapEssentiality { tissueName screens { cellLineName diseaseFromSource geneEffect expression mutation } } } }`;
   const d=await cmGraphQL(q,{id:ensembl});
   return d.target;
+}
+
+// ── Human Protein Atlas: per-cell-line RNA (nTPM) ─────────────────────────────
+// DepMap's CRISPR panel excludes common workhorse lines (HEK293, HeLa, HaCaT…),
+// so we add HPA cell-line RNA. HPA's /api/search_download.php IS CORS-enabled
+// (access-control-allow-origin:*) — the HTML cell-line page is NOT, so it must
+// not be used from the browser. Asking for the cell_RNA_<category> columns
+// returns one "Cell line RNA - <line> [nTPM]" field per individual cell line.
+const HPA_CELL_COLS=['adrenocortical_cancer','bile_duct_cancer','bladder_cancer','bone_cancer',
+ 'brain_cancer','breast_cancer','cervical_cancer','colorectal_cancer','esophageal_cancer',
+ 'gallbladder_cancer','gastric_cancer','head_and_neck_cancer','kidney_cancer','leukemia',
+ 'liver_cancer','lung_cancer','lymphoma','myeloma','neuroblastoma','non-cancerous',
+ 'ovarian_cancer','pancreatic_cancer','prostate_cancer','rhabdoid','sarcoma','skin_cancer',
+ 'testis_cancer','thyroid_cancer','uncategorized','uterine_cancer'];
+
+// Normalise cell-line names so DepMap and HPA spellings merge (K-562 vs K562).
+function cellKey(n){ return String(n||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+
+// Returns Map(cellKey -> {name, nTPM, category}) or an empty Map on failure.
+async function hpaFetchCellLines(symbol){
+  const cols='g,eg,'+HPA_CELL_COLS.map(c=>'cell_RNA_'+c).join(',');
+  const url=`https://www.proteinatlas.org/api/search_download.php?search=${encodeURIComponent(symbol)}`+
+            `&format=json&columns=${cols}&compress=no`;
+  const out=new Map();
+  try{
+    const r=await fetch(url,{signal:AbortSignal.timeout(30000)});
+    if(!r.ok) throw new Error('HPA HTTP '+r.status);
+    const arr=await r.json();
+    // Pick the record matching our gene symbol (search can return relatives)
+    const rec=arr.find(x=>String(x.Gene||'').toUpperCase()===symbol.toUpperCase())||arr[0];
+    if(!rec) return out;
+    for(const [k,v] of Object.entries(rec)){
+      const m=k.match(/^Cell line RNA - (.+) \[nTPM\]$/);
+      if(!m) continue;
+      if(v===''||v==null) continue;
+      const val=parseFloat(v);
+      if(isNaN(val)) continue;
+      out.set(cellKey(m[1]),{name:m[1],nTPM:val});
+    }
+  }catch(e){ console.warn('[HPA] cell-line fetch failed:',e); }
+  return out;
+}
+
+// Collapse baselineExpression rows into [{tissue,value}] sorted high→low.
+// Prefer GTEx bulk-tissue TPM; fall back to whatever datasource is present.
+function otTissueExpression(target){
+  const rows=(target.baselineExpression&&target.baselineExpression.rows)||[];
+  if(!rows.length) return [];
+  let use=rows.filter(r=>r.datasourceId==='gtex'&&r.median!=null);
+  let unit='TPM';
+  if(!use.length){
+    use=rows.filter(r=>r.median!=null);
+    unit=(use[0]&&use[0].unit)||'';
+  }
+  // Highest median per tissue
+  const best={};
+  use.forEach(r=>{
+    const name=(r.tissueBiosample&&r.tissueBiosample.biosampleName)||r.tissueBiosampleFromSource;
+    if(!name) return;
+    if(!(name in best)||r.median>best[name]) best[name]=r.median;
+  });
+  return Object.entries(best)
+    .map(([tissue,value])=>({tissue,value,unit}))
+    .sort((a,b)=>b.value-a.value);
 }
 
 function resetCellModelsPanel(){
@@ -1473,6 +1546,8 @@ function resetCellModelsPanel(){
   document.getElementById('cm-status').style.display='none';
   document.getElementById('cm-prog-wrap').style.display='none';
   document.getElementById('cm-error').classList.remove('visible');
+  cmCommonOnly=false;
+  const cb=document.getElementById('cm-common-btn'); if(cb) cb.classList.remove('on');
   const lbl=document.getElementById('cm-gene-label');
   const btn=document.getElementById('cm-run-btn');
   if(currentGeneSymbol){
@@ -1508,11 +1583,44 @@ async function findCellModels(){
         disease:s.diseaseFromSource||'—',
         expression:(s.expression==null?null:s.expression),
         geneEffect:(s.geneEffect==null?null:s.geneEffect),
-        mutation:s.mutation||''
+        mutation:s.mutation||'',
+        nTPM:null, source:'DepMap'
       }));
     });
-    cellTissueExpr=(t.expressions||[]).filter(e=>e.rna).map(e=>({tissue:e.tissue.label,value:e.rna.value,z:e.rna.zscore}))
-      .sort((a,b)=>b.value-a.value);
+    // DepMap can report the same cell line in several screens — collapse to one
+    // row per cell line, keeping the strongest (most negative) gene effect.
+    const byLine=new Map();
+    cellModels.forEach(m=>{
+      const k=m.cellLine+'|'+m.tissue+'|'+m.disease;
+      const prev=byLine.get(k);
+      if(!prev){ byLine.set(k,m); return; }
+      const a=m.geneEffect==null?Infinity:m.geneEffect;
+      const b=prev.geneEffect==null?Infinity:prev.geneEffect;
+      if(a<b) byLine.set(k,m);
+    });
+    cellModels=[...byLine.values()];
+
+    // Merge in HPA cell-line RNA — adds nTPM to DepMap lines and brings in the
+    // common workhorse lines DepMap's CRISPR panel omits (HEK293, HeLa, HaCaT…).
+    pb.style.width='80%';
+    status.textContent=`Adding Human Protein Atlas cell-line expression…`;
+    const hpa=await hpaFetchCellLines(t.approvedSymbol||currentGeneSymbol);
+    if(hpa.size){
+      const seen=new Set();
+      cellModels.forEach(m=>{
+        const k=cellKey(m.cellLine); seen.add(k);
+        const h=hpa.get(k);
+        if(h){ m.nTPM=h.nTPM; m.source='DepMap + HPA'; }
+      });
+      // HPA-only lines (no DepMap screen) — expression data only
+      hpa.forEach((h,k)=>{
+        if(seen.has(k)) return;
+        cellModels.push({cellLine:h.name,tissue:'—',disease:'—',
+          expression:null,geneEffect:null,mutation:'',nTPM:h.nTPM,source:'HPA'});
+      });
+    }
+
+    cellTissueExpr=otTissueExpression(t);
     pb.style.width='100%'; status.style.display='none'; pw.style.display='none';
     buildTissueFilter(); renderTissueChips(); renderCellModels();
     document.getElementById('cm-tissues').style.display=cellTissueExpr.length?'block':'none';
@@ -1546,7 +1654,7 @@ function renderTissueChips(){
     const pct=Math.round(100*t.value/max);
     return `<span style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);font-size:12px;">
       <span style="color:var(--text-bright);">${escHtml(t.tissue)}</span>
-      <span style="color:var(--text-dim);font-family:'IBM Plex Mono',monospace;">${Math.round(t.value).toLocaleString()}</span>
+      <span style="color:var(--text-dim);font-family:'IBM Plex Mono',monospace;" title="${escHtml(String(t.value))} ${escHtml(t.unit||'')}">${t.value>=10?Math.round(t.value):t.value.toFixed(1)}</span>
       <span style="width:46px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden;display:inline-block;"><span style="display:block;height:100%;width:${pct}%;background:var(--accent);"></span></span>
     </span>`;
   }).join('')||'<span style="color:var(--text-dim);font-size:12px;">No tissue expression data.</span>';
@@ -1558,6 +1666,18 @@ function cmDepText(v){
   return `<span style="color:${col};font-weight:600;">${v.toFixed(2)}</span>`;
 }
 
+// Widely used lab lines, for the "Common lab models" quick filter.
+const COMMON_MODELS=['HEK293','HEK293T','HELA','HACAT','A549','HCT116','HEPG2','K562','JURKAT',
+ 'MCF7','SHSY5Y','U2OS','A431','CACO2','U937','THP1','RAJI','HUVECTERT2','HTERTRPE1','BJ',
+ 'SKBR3','MDAMB231','PC3','LNCAP','SW480','HT29','U251MG','SKNSH','NIH3T3','CHO','VERO','HAP1'];
+let cmCommonOnly=false;
+
+function toggleCommonModels(){
+  cmCommonOnly=!cmCommonOnly;
+  document.getElementById('cm-common-btn').classList.toggle('on',cmCommonOnly);
+  renderCellModels();
+}
+
 function renderCellModels(){
   if(!cellModels.length) return;
   const tissue=document.getElementById('cm-tissue-filter').value;
@@ -1565,38 +1685,49 @@ function renderCellModels(){
   const sort=document.getElementById('cm-sort').value;
   let rows=cellModels.filter(m=>(!tissue||m.tissue===tissue)&&
     (!q||m.cellLine.toLowerCase().includes(q)||m.disease.toLowerCase().includes(q)||m.tissue.toLowerCase().includes(q)));
+  if(cmCommonOnly) rows=rows.filter(m=>COMMON_MODELS.includes(cellKey(m.cellLine)));
   rows.sort((a,b)=>{
     if(sort==='name') return a.cellLine.localeCompare(b.cellLine);
     if(sort==='dep')  return (a.geneEffect==null?1:a.geneEffect)-(b.geneEffect==null?1:b.geneEffect);
-    return (b.expression==null?-99:b.expression)-(a.expression==null?-99:a.expression);
+    if(sort==='expr') return (b.expression==null?-99:b.expression)-(a.expression==null?-99:a.expression);
+    return (b.nTPM==null?-1:b.nTPM)-(a.nTPM==null?-1:a.nTPM);
   });
   const cap=500, shown=rows.slice(0,cap);
   document.getElementById('cm-tbody').innerHTML=shown.map(m=>{
-    const expr=m.expression==null?'<span style="color:var(--text-dim)">—</span>':m.expression.toFixed(2);
-    const dep=m.geneEffect==null?'<span style="color:var(--text-dim)">—</span>':cmDepText(m.geneEffect);
-    const mut=m.mutation?`<span style="color:#ff6b35;">${escHtml(m.mutation)}</span>`:'<span style="color:var(--text-dim)">—</span>';
+    const dash='<span style="color:var(--text-dim)">—</span>';
+    const ntpm=m.nTPM==null?dash:`<span style="color:var(--accent);font-weight:600;">${m.nTPM.toFixed(1)}</span>`;
+    const expr=m.expression==null?dash:m.expression.toFixed(2);
+    const dep=m.geneEffect==null?dash:cmDepText(m.geneEffect);
+    const mut=m.mutation?`<span style="color:#ff6b35;">${escHtml(m.mutation)}</span>`:dash;
+    const srcCol=m.source==='HPA'?'#4d90fe':m.source==='DepMap'?'#7a8a9a':'#00d4aa';
     const cl=encodeURIComponent(m.cellLine);
     return `<tr>
       <td style="font-weight:600;color:var(--text-bright);">${escHtml(m.cellLine)}</td>
       <td>${escHtml(m.tissue)}</td>
       <td>${escHtml(m.disease)}</td>
+      <td class="seq-cell">${ntpm}</td>
       <td class="seq-cell">${expr}</td>
       <td class="seq-cell">${dep}</td>
       <td class="seq-cell">${mut}</td>
+      <td style="font-size:11px;color:${srcCol};white-space:nowrap;">${escHtml(m.source||'')}</td>
       <td style="white-space:nowrap;">
         <a class="check-btn" style="text-decoration:none;" target="_blank" rel="noopener" href="https://www.cellosaurus.org/search?input=${cl}">Cellosaurus↗</a>
       </td>
     </tr>`;
   }).join('');
+  const nHpa=cellModels.filter(m=>m.nTPM!=null).length;
+  const nDep=cellModels.filter(m=>m.geneEffect!=null).length;
   document.getElementById('cm-count').textContent=
     `Showing ${shown.length.toLocaleString()} of ${rows.length.toLocaleString()} cell lines`+
-    (rows.length>cap?` (capped at ${cap})`:'')+` · ${cellModels.length.toLocaleString()} total profiled in DepMap`;
+    (rows.length>cap?` (capped at ${cap})`:'')+
+    ` · ${cellModels.length.toLocaleString()} total — ${nHpa.toLocaleString()} with HPA nTPM, ${nDep.toLocaleString()} with DepMap dependency`;
 }
 
 function downloadCellModelsCSV(){
-  const hdr=['Cell_line','Tissue','Disease_or_origin','Expression_log2TPM1','Dependency_geneEffect','Mutation'];
+  const hdr=['Cell_line','Tissue','Disease_or_origin','HPA_nTPM','DepMap_expr_log2TPM1','Dependency_geneEffect','Mutation','Source'];
   const rows=cellModels.map(m=>[m.cellLine,m.tissue,m.disease,
-    m.expression==null?'':m.expression,m.geneEffect==null?'':m.geneEffect,m.mutation||'']);
+    m.nTPM==null?'':m.nTPM,
+    m.expression==null?'':m.expression,m.geneEffect==null?'':m.geneEffect,m.mutation||'',m.source||'']);
   dl(`${currentGeneSymbol||'gene'}_cell_models.csv`,'text/csv',
      [hdr,...rows].map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n'));
 }
