@@ -33,7 +33,7 @@
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <style>
-/* ---- css/tokens.css?v=4 ---- */
+/* ---- css/tokens.css?v=5 ---- */
 /* ============================================================
    Elias Lab — shared design tokens
    Single source of truth for brand colors, type, shadows.
@@ -88,7 +88,7 @@
 
 </style>
     <style>
-/* ---- css/site.css?v=4 ---- */
+/* ---- css/site.css?v=5 ---- */
 /* ============================================================
    Elias Lab — public marketing site
    Depends on css/tokens.css (load that first).
@@ -294,7 +294,7 @@ section>h2{font-family:var(--serif);font-size:clamp(2rem,4vw,3.1rem);font-weight
 .li-link svg{width:100%;height:100%;fill:currentColor;display:block;}
 .li-link:hover{color:#0a66c2;transform:translateY(-1px);}
 .li-inline{width:20px;height:20px;margin-left:.6rem;vertical-align:middle;}
-.li-card{width:22px;height:22px;margin:.9rem auto 0;flex:0 0 auto;}
+.li-card{width:28px;height:28px;margin:.9rem auto 0;flex:0 0 auto;}
 .member-card .li-card{margin-top:auto;padding-top:.9rem;}
 .team-bio h3{font-family:var(--serif);font-size:2.2rem;font-weight:600;margin-bottom:.4rem;color:var(--ink);letter-spacing:-.02em;}
 .team-title{font-family:var(--mono);font-size:13px;color:var(--emerald);font-weight:500;letter-spacing:.06em;text-transform:uppercase;margin-bottom:1.8rem;}
@@ -742,7 +742,7 @@ footer a{color:var(--emerald-bright);}
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <script>
-/* ---- js/site.js?v=4 ---- */
+/* ---- js/site.js?v=5 ---- */
 /* ============================================================
    Elias Lab — public site interactions
    ============================================================ */
@@ -790,7 +790,7 @@ footer a{color:var(--emerald-bright);}
 
 </script>
     <script>
-/* ---- js/scan-widget.js?v=4 ---- */
+/* ---- js/scan-widget.js?v=5 ---- */
 /* ============================================================
    Elias Lab — public att-site scanner
    ------------------------------------------------------------
@@ -1001,7 +1001,7 @@ footer a{color:var(--emerald-bright);}
 </script>
     <!-- team-data.js holds the lab members; team.js renders them -->
     <script>
-/* ---- js/team-data.js?v=4 ---- */
+/* ---- js/team-data.js?v=5 ---- */
 /* ============================================================
    ELIAS LAB — TEAM MEMBERS
    ------------------------------------------------------------
@@ -1073,7 +1073,7 @@ window.ELIAS_TEAM = {
 
 </script>
     <script>
-/* ---- js/team.js?v=4 ---- */
+/* ---- js/team.js?v=5 ---- */
 /* ============================================================
    Elias Lab — renders the Team section from js/team-data.js
    You should not need to edit this file; edit team-data.js.
@@ -1103,6 +1103,7 @@ window.ELIAS_TEAM = {
     if (!u) return '';
     u = u.replace(/^https?:\/\//i, '');          // drop any scheme
     if (!/^([a-z]{2,3}\.)?linkedin\.com\/.+/i.test(u)) return '';
+    if (/^linkedin\.com\//i.test(u)) u = 'www.' + u;   // skip a redirect hop
     return 'https://' + u;
   }
 
@@ -1174,6 +1175,24 @@ window.ELIAS_TEAM = {
       }).join('');
     }
   }
+
+  /* When the site is embedded in someone else's page (the Wix HTML block),
+     the surrounding frame can swallow target="_blank" and load LinkedIn in
+     place. LinkedIn refuses to be framed, so the visitor gets a browser error
+     page instead of the profile. Only when we are framed, open it ourselves:
+     a real tab if the frame permits one, otherwise the top-level window. */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a.li-link');
+    if (!a || !a.href) return;
+    var framed;
+    try { framed = window.top !== window.self; } catch (err) { framed = true; }
+    if (!framed) return;                       // standalone page — leave it alone
+    e.preventDefault();
+    var w = window.open(a.href, '_blank', 'noopener');
+    if (w) return;
+    try { window.top.location.href = a.href; }  // popups blocked — go top-level
+    catch (err) { window.location.href = a.href; }
+  });
 
   // Newly injected cards still need the scroll-reveal treatment.
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

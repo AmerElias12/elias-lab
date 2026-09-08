@@ -27,6 +27,7 @@
     if (!u) return '';
     u = u.replace(/^https?:\/\//i, '');          // drop any scheme
     if (!/^([a-z]{2,3}\.)?linkedin\.com\/.+/i.test(u)) return '';
+    if (/^linkedin\.com\//i.test(u)) u = 'www.' + u;   // skip a redirect hop
     return 'https://' + u;
   }
 
@@ -98,6 +99,24 @@
       }).join('');
     }
   }
+
+  /* When the site is embedded in someone else's page (the Wix HTML block),
+     the surrounding frame can swallow target="_blank" and load LinkedIn in
+     place. LinkedIn refuses to be framed, so the visitor gets a browser error
+     page instead of the profile. Only when we are framed, open it ourselves:
+     a real tab if the frame permits one, otherwise the top-level window. */
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a.li-link');
+    if (!a || !a.href) return;
+    var framed;
+    try { framed = window.top !== window.self; } catch (err) { framed = true; }
+    if (!framed) return;                       // standalone page — leave it alone
+    e.preventDefault();
+    var w = window.open(a.href, '_blank', 'noopener');
+    if (w) return;
+    try { window.top.location.href = a.href; }  // popups blocked — go top-level
+    catch (err) { window.location.href = a.href; }
+  });
 
   // Newly injected cards still need the scroll-reveal treatment.
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
