@@ -28,3 +28,4 @@ Thumbs.db
 .env.*
 # (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
 #  to be public and is protected by Row-Level Security.)
+.claude/launch.json

@@ -3,19 +3,21 @@
    ------------------------------------------------------------
    THIS IS THE ONLY FILE YOU EDIT TO ADD / CHANGE LAB MEMBERS.
 
-   For each person, fill in the five lines between the { } braces.
+   For each person, fill in the lines between the { } braces.
    To add someone, copy an entire block (from { to },) and paste it
    below the last one. To remove someone, delete their block.
 
    photo:      the file name of their picture, saved in  assets/team/
-               e.g. "sarah-cohen.jpg"  ->  assets/team/sarah-cohen.jpg
+               e.g. "Rina-Ghadban.jpg"  ->  assets/team/Rina-Ghadban.jpg
                Leave it as ""  and their initials show in a circle instead.
-   photoHover: OPTIONAL second picture (e.g. an illustrated version) that
+   photoHover: OPTIONAL second picture (e.g. the illustrated version) that
                fades in when someone hovers over the photo. Same folder.
                Leave it as ""  and the photo simply doesn't change.
    linkedin:   paste the LinkedIn address, e.g.
-               "linkedin.com/in/sarah-cohen-123456"
+               "linkedin.com/in/rina-ghadban-00121b266"
                Leave it as ""  and no LinkedIn icon appears.
+   note:       OPTIONAL single short line under the name.
+   bio:        OPTIONAL paragraphs (PI only). An empty list [] shows none.
 
    Keep every quote mark " and every comma exactly where they are.
    ============================================================ */
@@ -29,25 +31,37 @@ window.ELIAS_TEAM = {
     photo: "amer-elias.jpg",
     photoHover: "amer-elias-art.webp",
     linkedin: "linkedin.com/in/amer-elias-762a0998",
-    bio: [
-      "Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory dedicated to engineering novel site-specific recombinases for biotechnological and therapeutic innovation.",
-      "With extensive expertise in genome editing, protein engineering, and translational research, Dr. Elias brings a vision of transforming gene therapy through precise, DSB-free genome integration strategies.",
-      "The laboratory focuses on bridging fundamental molecular biology discoveries with clinical translation, combining computational design, experimental validation, and collaborative partnerships to develop next-generation gene therapies."
-    ]
+    bio: []          // intentionally empty — photo, name and LinkedIn only
   },
 
-  /* ---- Everyone else (shown as cards below the PI) ----
-     The examples below are placeholders — replace them with real
-     people, or delete the ones you don't need.                     */
+  /* ---- Everyone else (shown as cards below the PI) ---- */
   members: [
 
     {
-      name: "",                    // e.g. "Sarah Cohen"
-      role: "",                    // e.g. "PhD Student"
-      photo: "",                   // e.g. "sarah-cohen.jpg"
-      photoHover: "",              // optional second image shown on hover
-      linkedin: "",                // e.g. "linkedin.com/in/sarah-cohen-123"
-      note: ""                     // one short line, e.g. "Directed evolution of HK022"
+      name: "Dr. Hala Kassis",
+      role: "Collaborating Fellow",
+      photo: "Hala-Kassis.jpg",
+      photoHover: "Hala-Kassis-art.jpg",
+      linkedin: "linkedin.com/in/hala-kassis-574699162",
+      note: ""
+    },
+
+    {
+      name: "Dr. Kathelina Kristollari",
+      role: "Postdoctoral Fellow",
+      photo: "Kathelina-Kristollari.jpg",
+      photoHover: "Kathelina-Kristollari-art.jpg",
+      linkedin: "linkedin.com/in/kathelina-kristollari",
+      note: "Co-supervised with Prof. Shani Stern"
+    },
+
+    {
+      name: "Rina Ghadban",
+      role: "MSc Student",
+      photo: "Rina-Ghadban.jpg",
+      photoHover: "Rina-Ghadban-art.jpg",
+      linkedin: "linkedin.com/in/rina-ghadban-00121b266",
+      note: ""
     }
 
   ]
