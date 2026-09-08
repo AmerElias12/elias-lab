@@ -1188,8 +1188,16 @@ window.ELIAS_TEAM = {
     try { framed = window.top !== window.self; } catch (err) { framed = true; }
     if (!framed) return;                       // standalone page — leave it alone
     e.preventDefault();
-    var w = window.open(a.href, '_blank', 'noopener');
-    if (w) return;
+    /* Open a blank tab we still own, drop the back-reference to us, then send
+       it to LinkedIn. Passing 'noopener' to window.open instead would return
+       null even on success, leaving no way to tell a working tab from a
+       blocked one — and we would fall through and hijack the host page. */
+    var w = window.open('', '_blank');
+    if (w) {
+      try { w.opener = null; } catch (err) {}
+      w.location.href = a.href;
+      return;
+    }
     try { window.top.location.href = a.href; }  // popups blocked — go top-level
     catch (err) { window.location.href = a.href; }
   });
