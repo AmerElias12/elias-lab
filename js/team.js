@@ -100,32 +100,6 @@
     }
   }
 
-  /* When the site is embedded in someone else's page (the Wix HTML block),
-     the surrounding frame can swallow target="_blank" and load LinkedIn in
-     place. LinkedIn refuses to be framed, so the visitor gets a browser error
-     page instead of the profile. Only when we are framed, open it ourselves:
-     a real tab if the frame permits one, otherwise the top-level window. */
-  document.addEventListener('click', function (e) {
-    var a = e.target && e.target.closest && e.target.closest('a.li-link');
-    if (!a || !a.href) return;
-    var framed;
-    try { framed = window.top !== window.self; } catch (err) { framed = true; }
-    if (!framed) return;                       // standalone page — leave it alone
-    e.preventDefault();
-    /* Open a blank tab we still own, drop the back-reference to us, then send
-       it to LinkedIn. Passing 'noopener' to window.open instead would return
-       null even on success, leaving no way to tell a working tab from a
-       blocked one — and we would fall through and hijack the host page. */
-    var w = window.open('', '_blank');
-    if (w) {
-      try { w.opener = null; } catch (err) {}
-      w.location.href = a.href;
-      return;
-    }
-    try { window.top.location.href = a.href; }  // popups blocked — go top-level
-    catch (err) { window.location.href = a.href; }
-  });
-
   // Newly injected cards still need the scroll-reveal treatment.
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var fresh = document.querySelectorAll('#team-pi .reveal, #team-grid .reveal');
