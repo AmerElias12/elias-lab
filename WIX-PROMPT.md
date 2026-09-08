@@ -169,11 +169,69 @@ Bold **Elias A** in every author list.
 5. **2015 · Gene Therapy** — Site promiscuity of coliphage HK022 integrase as a tool for gene therapy. *Kolot M, Malchin N, Elias A, Gritsenko N, Yagil E.* DOI: https://doi.org/10.1038/gt.2015.9
 
 ## News — vertical timeline, newest first
+
 **Kicker:** LAB UPDATES · **Heading:** News · **Intro:** Recent milestones from the lab.
 
-- **October 2026 · upcoming** — *The lab opens its doors.* The Elias Lab begins operating in the Biotechnology Engineering Department at Braude College of Engineering, Karmiel — focused on engineering site-specific recombinases for double-strand-break-free gene therapy and cell engineering.
-- **September 2026** — *The founding team comes together.* **Dr. Hala Kassis** joins as a collaborating fellow, **Dr. Kathelina Kristollari** as a postdoctoral fellow — co-supervised with Prof. Shani Stern — and **Rina Ghadban** as an MSc student. Meet them in The Team.
-- **19 Apr 2026** — *Review published in Cells.* Our review, "Gene Editing Strategies for Neurological and Mental Disorders," was published in Cells.
+A single vertical line down the left with a dot per entry, newest at the top.
+Section sits on the alternate background `#ece7d9` with a hairline border above
+and below. Column max width 760px, centred.
+
+### The three entries, in this order
+
+**1 · OCTOBER 2026 · UPCOMING** *(this one is styled differently — see below)*
+
+> **The lab opens its doors**
+>
+> The Elias Lab begins operating in the Biotechnology Engineering Department at
+> Braude College of Engineering, Karmiel — focused on engineering site-specific
+> recombinases for double-strand-break-free gene therapy and cell engineering.
+
+**2 · SEPTEMBER 2026**
+
+> **The founding team comes together**
+>
+> **Dr. Hala Kassis** joins as a collaborating fellow, **Dr. Kathelina
+> Kristollari** as a postdoctoral fellow — co-supervised with Prof. Shani
+> Stern — and **Rina Ghadban** as an MSc student. Meet them in **The Team**.
+
+Bold the three names. "The Team" is a link — in Wix, anchor it to your Team
+section rather than typing a URL.
+
+**3 · 19 APR 2026**
+
+> **Review published in *Cells***
+>
+> Our review, "Gene Editing Strategies for Neurological and Mental Disorders:
+> Advances in Delivery, Methodology, and Clinical Translation," was published
+> in *Cells*.
+
+*Cells* is a journal name — italicise it in both the heading and the body.
+
+### The upcoming entry is marked, not just labelled
+
+Entry 1 hasn't happened yet, and the site says so twice: its date reads
+`October 2026 · upcoming` in blue `#1d5fd4` instead of emerald, and its dot is
+hollow — background `#ece7d9` with a 2px `#10b07e` ring — where the other two
+are solid `#1fd197`. Keep that. Move it to normal styling once the lab opens,
+and put new entries above it as they happen.
+
+### Styling
+
+| Part | Value |
+|---|---|
+| Section background | `#ece7d9`, 1px `rgba(22,36,31,.12)` border top and bottom |
+| Column | 760px max width, centred |
+| Timeline rule | 2px vertical line, `rgba(22,36,31,.12)` |
+| Dot — happened | 12px circle `#1fd197`, 3px `#ece7d9` border, 1px `#10b07e` outline |
+| Dot — upcoming | 12px circle `#ece7d9`, 2px `#10b07e` ring |
+| Date | IBM Plex Mono, 11px, UPPERCASE, letter-spacing .08em, `#10b07e` |
+| Date — upcoming | same, but `#1d5fd4` |
+| Headline | Fraunces, 600 weight, 18px, `#16241f` |
+| Body | IBM Plex Sans, 15px, `#4a5a52`, line-height 1.65 |
+| Gap between entries | 29px |
+
+If Wix's timeline widget fights you, three stacked text blocks with a thin
+divider column on the left gets you the same result and is easier to edit.
 
 ## Team
 
