@@ -69,7 +69,11 @@ Wix's AI builder takes a short brief, then you refine. So this file has:
 |---|---|
 | `assets/logo/elias-lab-logo.png` | site header logo |
 | `assets/logos/braude-college.png` | header (beside lab logo) + footer |
-| `assets/team/amer-elias.jpg` | Team section — **circular crop, ~150px** |
+| `assets/team/amer-elias.jpg` | Team — PI, **circular, 150px** |
+| `assets/team/Hala-Kassis.jpg` | Team — member card, circular 96px |
+| `assets/team/Kathelina-Kristollari.jpg` | Team — member card, circular 96px |
+| `assets/team/Rina-Ghadban.jpg` | Team — member card, circular 96px |
+| `assets/team/*-art.*` (4 files) | Optional hover portraits — see Team section |
 | `assets/logos/tel-aviv-university.png` etc. (5 files) | Collaborations strip |
 | `assets/logo/elias-lab-mark.png` | favicon |
 
@@ -168,26 +172,74 @@ Bold **Elias A** in every author list.
 **Kicker:** LAB UPDATES · **Heading:** News · **Intro:** Recent milestones from the lab.
 
 - **October 2026 · upcoming** — *The lab opens its doors.* The Elias Lab begins operating in the Biotechnology Engineering Department at Braude College of Engineering, Karmiel — focused on engineering site-specific recombinases for double-strand-break-free gene therapy and cell engineering.
+- **September 2026** — *The founding team comes together.* **Dr. Hala Kassis** joins as a collaborating fellow, **Dr. Kathelina Kristollari** as a postdoctoral fellow — co-supervised with Prof. Shani Stern — and **Rina Ghadban** as an MSc student. Meet them in The Team.
 - **19 Apr 2026** — *Review published in Cells.* Our review, "Gene Editing Strategies for Neurological and Mental Disorders," was published in Cells.
 
 ## Team
+
 **Kicker:** WHO WE ARE · **Heading:** The Team
 
-**Dr. Amer Elias** — Principal Investigator & Founder
-*(circular photo ~150px, LinkedIn icon linking to https://linkedin.com/in/amer-elias-762a0998)*
+Build this as two stacked blocks: the PI on his own, centred, then a row of
+three equal member cards. No biography text anywhere — photo, name, role,
+LinkedIn. That is the whole section.
 
-Dr. Amer Elias is establishing a gene therapy and cell engineering laboratory
-dedicated to engineering novel site-specific recombinases for biotechnological
-and therapeutic innovation.
+**Set every LinkedIn link to open in a new tab.** In Wix: select the icon →
+Link → Web Address → tick *Open in a new tab*. On a native Wix page this
+works; it is the one thing the iframe embed could never do.
 
-With extensive expertise in genome editing, protein engineering, and
-translational research, Dr. Elias brings a vision of transforming gene therapy
-through precise, DSB-free genome integration strategies.
+### Block 1 — the PI (centred, above the cards)
 
-The laboratory focuses on bridging fundamental molecular biology discoveries
-with clinical translation, combining computational design, experimental
-validation, and collaborative partnerships to develop next-generation gene
-therapies.
+| Element | Value |
+|---|---|
+| Photo | `amer-elias.jpg` — circular, 150px |
+| Name | Dr. Amer Elias |
+| Role | PRINCIPAL INVESTIGATOR & FOUNDER |
+| LinkedIn | `https://www.linkedin.com/in/amer-elias-762a0998` |
+
+Photo on the left, text on the right, the pair centred on the page with about
+40px between them. The LinkedIn icon sits inline just after the name, 20px.
+
+### Block 2 — three member cards, side by side
+
+Equal width, equal height, centred text, in this order:
+
+| # | Photo | Name | Role | Note under the role | LinkedIn |
+|---|---|---|---|---|---|
+| 1 | `Hala-Kassis.jpg` | Dr. Hala Kassis | COLLABORATING FELLOW | — | `https://www.linkedin.com/in/hala-kassis-574699162` |
+| 2 | `Kathelina-Kristollari.jpg` | Dr. Kathelina Kristollari | POSTDOCTORAL FELLOW | Co-supervised with Prof. Shani Stern | `https://www.linkedin.com/in/kathelina-kristollari` |
+| 3 | `Rina-Ghadban.jpg` | Rina Ghadban | MSC STUDENT | — | `https://www.linkedin.com/in/rina-ghadban-00121b266` |
+
+Card 2 carries a note the others don't, so it is taller unless you force it.
+Set all three cards to the same fixed height and pin the LinkedIn icon to the
+bottom of each, or the icons sit at three different heights.
+
+### Styling to match the rest of the site
+
+| Part | Value |
+|---|---|
+| Card background | `#fbfaf5` |
+| Card border | 1px `rgba(22,36,31,.12)`, corner radius 16px |
+| Card padding | 26px |
+| Member photo | 96px circle, 2px `#fbfaf5` border, 1.5px `#10b07e` ring outside it |
+| Name | Fraunces, 600 weight, 17.6px, `#16241f` |
+| Role | IBM Plex Mono, 10.5px, UPPERCASE, letter-spacing .07em, `#10b07e` |
+| Note | IBM Plex Sans, 13.8px, `#4a5a52`, line-height 1.55 |
+| PI name | Fraunces, 600 weight, 35px, `#16241f` |
+| PI role | IBM Plex Mono, 13px, UPPERCASE, letter-spacing .06em, `#10b07e` |
+| LinkedIn icon | 28px on cards, 20px beside the PI name; `#0c4a44`, hover `#0a66c2` |
+| Gap between cards | 24px |
+| Row max width | 1100px, centred |
+
+### Optional — the illustrated portraits
+
+Every person has a second, illustrated portrait: `amer-elias-art.webp`,
+`Hala-Kassis-art.jpg`, `Kathelina-Kristollari-art.jpg`,
+`Rina-Ghadban-art.jpg`. On the GitHub site these cross-fade in on hover.
+
+Wix's plain Image element cannot swap on hover. To reproduce it, use a
+**Hover Box** per photo: real portrait as the regular state, illustrated one
+as the hover state. It is fiddly for four photos — skipping it costs you
+nothing but a flourish, and the section still reads correctly.
 
 ## Collaborations — 4 logo cards
 **Kicker:** PARTNERS · **Heading:** Institutional Collaborations
