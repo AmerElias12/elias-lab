@@ -139,7 +139,7 @@ applications.
 
 1. **Recombinase Discovery, Engineering & Optimization** — Discover, engineer, and optimize novel tyrosine site-specific recombinases — with the HK022 integrase as our leading model — through metagenomic mining, phage-assisted continuous evolution (PACE), directed and random mutagenesis, and AlphaFold3-guided design to maximize activity and specificity at native human genomic sites.
 2. **Gene Therapy for Hereditary Diseases** — Develop precise, double-strand-break-free integration tools to treat a broad range of inherited disorders — restoring gene function through safe-harbor insertion, promoter-trap, and RMCE strategies that work across diverse patient mutations in the same gene.
-3. **Gene Therapy for Cancer** — Design recombinase-based approaches for oncology — from tumor-suppressor gene correction to engineered immune-cell therapies — enabling targeted delivery of large, multi-gene payloads.
+3. **Gene Therapy for Cancer** — Design recombinase-based approaches for oncology — from tumor-suppressor gene correction to engineered immune-cell therapies — enabling targeted delivery of large, multi-gene payloads for next-generation cancer treatment.
 4. **Cell Line Engineering & Development** — Build engineered and stable cell-line models by integrating defined genetic payloads at chosen loci — supporting reporter systems, therapeutic protein production, and functional research models.
 5. **Multiplexed Integration** — Demonstrate simultaneous integration of multiple distinct genetic payloads at different genomic loci in a single event, enabling complex gene-circuit and multi-transgene engineering.
 
@@ -150,10 +150,10 @@ disease, cancer, and complex cell engineering.
 
 | Small label | Card title | Text |
 |---|---|---|
-| Safe-Harbor Integration | Stable Transgene Expression | Targeting well-characterized safe loci (Rosa26, CLYBL, H11) for stable, predictable gene expression. Ideal for restoring gene function in loss-of-function diseases. |
-| RMCE Technology | Tumor Suppressor Gene Correction | Precise replacement of mutated BRCA1 and TP53 sequences with healthy wild-type donor DNA. Enables "pan-mutation" therapeutics. |
-| Neurodevelopmental Disorders | Haploinsufficiency Correction | Targeting genes like GRIN2B and SHANK3 to restore normal gene dosage in autism spectrum disorders and other neurodevelopmental conditions. |
-| Genetic Disease | Cystic Fibrosis & Duchenne Muscular Dystrophy | Large-scale DNA insertion for diseases caused by heterogeneous mutations. One approach benefiting patients with diverse mutations in the same gene. |
+| Safe-Harbor Integration | Stable Transgene Expression | Targeting well-characterized safe loci (Rosa26, CLYBL, H11) for stable, predictable gene expression in therapeutic applications. Ideal for restoring gene function in loss-of-function diseases. |
+| RMCE Technology | Tumor Suppressor Gene Correction | Precise replacement of mutated BRCA1 and TP53 sequences with healthy wild-type donor DNA. Enables "pan-mutation" therapeutics that correct disease-causing variants across patient populations. |
+| Neurodevelopmental Disorders | Haploinsufficiency Correction | Targeting genes like GRIN2B and SHANK3 to restore normal gene dosage in autism spectrum disorders and other neurodevelopmental conditions through safe-harbor integration. |
+| Genetic Disease | Cystic Fibrosis & Duchenne Muscular Dystrophy | Large-scale DNA insertion approaches for diseases caused by heterogeneous mutations. One therapeutic approach beneficial to patients with diverse mutations in the same gene. |
 
 ## Publications
 **Kicker:** SELECTED WORK · **Heading:** Publications
