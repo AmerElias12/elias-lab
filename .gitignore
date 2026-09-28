@@ -29,3 +29,8 @@ Thumbs.db
 # (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
 #  to be public and is protected by Row-Level Security.)
 .claude/launch.json
+
+# graphify: the knowledge graph is rebuilt locally with `graphify update .`,
+# and its Claude Code hooks point at a machine-specific install path.
+graphify-out/
+.claude/settings.json
