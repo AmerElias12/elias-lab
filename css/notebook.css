@@ -115,6 +115,18 @@ body{margin:0;font-family:var(--sans);color:var(--ink);background:#eef2ec;displa
 .ln-table td{padding:.8rem 1rem;font-size:13px;color:#16241f;border-bottom:1px solid rgba(22,36,31,.06);}
 .ln-table tr:last-child td{border-bottom:none;}
 .ln-table tr:hover td{background:#f4f1e8;}
+/* Inventory page header: secondary action (CSV) beside the primary Add. */
+.ln-header-actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;}
+.ln-add-btn.ghost{background:transparent;color:#0c4a44;border:1.5px solid rgba(22,36,31,.18);}
+.ln-add-btn.ghost:hover{background:rgba(12,74,68,.06);border-color:#10b07e;box-shadow:none;}
+.ln-row-actions{white-space:nowrap;}
+.ln-inv-count{font-size:12px;color:#4a5a52;margin-bottom:.6rem;}
+/* Expiry, surfaced in the cell and summarised above the table. */
+.ln-exp.expired{color:#c13a3a;font-weight:600;}
+.ln-exp.soon{color:#a86a12;font-weight:600;}
+.ln-inv-alert{padding:.6rem .9rem;border-radius:10px;font-size:13px;margin-bottom:1rem;border:1px solid;}
+.ln-inv-alert.expired{background:rgba(193,58,58,.08);border-color:rgba(193,58,58,.3);color:#8f2a2a;}
+.ln-inv-alert.soon{background:rgba(168,106,18,.08);border-color:rgba(168,106,18,.3);color:#7a4e0d;}
 /* An Elias Lab tool embedded as its own inventory page (Primers). Sized to
    the viewport so the app scrolls inside its own frame, not the notebook. */
 .ln-embed-app{display:block;width:100%;height:calc(100vh - 232px);min-height:540px;border:1px solid rgba(22,36,31,.14);border-radius:12px;background:#fbfaf5;}

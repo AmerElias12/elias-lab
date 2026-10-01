@@ -397,17 +397,98 @@ function showInventoryPage(cat) {
   }
   renderInventory(cat);
 }
+/* Kits carry an expiry date, so say something about it rather than printing
+   it as one more column. Dates are plain YYYY-MM-DD, compared at local
+   midnight so "expires today" is not already in the past. */
+function expiryState(value) {
+  if (!value) return null;
+  var d = new Date(value + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var days = Math.round((d - today) / 86400000);
+  if (days < 0) return { cls: 'expired', note: 'expired' };
+  if (days === 0) return { cls: 'expired', note: 'expires today' };
+  if (days <= 30) return { cls: 'soon', note: days + ' day' + (days === 1 ? '' : 's') + ' left' };
+  return null;
+}
+
 function renderInventory(tab) {
   currentInvTab = tab || currentInvTab;
-  var inv = getInventory();
   var cfg = INV_CONFIG[currentInvTab];
-  var items = inv[currentInvTab] || [];
   var el = document.getElementById('ln-invtable-' + currentInvTab);
-  if (!el) return;
-  if (!items.length) { el.innerHTML = '<div class="ln-empty">No ' + INV_LABELS[currentInvTab].many + ' added yet.</div>'; return; }
-  el.innerHTML = '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' + cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th>Actions</th></tr></thead><tbody>' +
-    items.map(function (item) { return '<tr>' + cfg.fields.map(function (f) { return '<td>' + esc(item[f] || '—') + '</td>'; }).join('') + '<td><button class="ln-icon-btn danger" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">✕</button></td></tr>'; }).join('') +
-    '</tbody></table></div>';
+  if (!el || !cfg) return;
+  var all = getInventory()[currentInvTab] || [];
+
+  // The search box is the single source of truth, so a filter survives
+  // leaving the page and coming back.
+  var box = document.getElementById('ln-invsearch-' + currentInvTab);
+  var q = (box && box.value || '').trim().toLowerCase();
+  var items = !q ? all : all.filter(function (item) {
+    for (var i = 0; i < cfg.fields.length; i++) {
+      if (String(item[cfg.fields[i]] || '').toLowerCase().indexOf(q) >= 0) return true;
+    }
+    return false;
+  });
+
+  if (!all.length) { el.innerHTML = '<div class="ln-empty">No ' + INV_LABELS[currentInvTab].many + ' added yet.</div>'; return; }
+  if (!items.length) { el.innerHTML = '<div class="ln-empty">Nothing here matches \u201c' + esc(q) + '\u201d.</div>'; return; }
+
+  // Expiry summary, kits only.
+  var banner = '';
+  if (currentInvTab === 'kits') {
+    var expired = 0, soon = 0;
+    all.forEach(function (item) {
+      var st = expiryState(item.expiry);
+      if (st && st.cls === 'expired') expired++; else if (st) soon++;
+    });
+    if (expired || soon) {
+      var parts = [];
+      if (expired) parts.push('<strong>' + expired + '</strong> expired');
+      if (soon) parts.push('<strong>' + soon + '</strong> expiring within 30 days');
+      banner = '<div class="ln-inv-alert ' + (expired ? 'expired' : 'soon') + '">\u26a0 ' + parts.join(' \u00b7 ') + '</div>';
+    }
+  }
+
+  var count = q ? '<div class="ln-inv-count">' + items.length + ' of ' + all.length + ' shown</div>' : '';
+
+  el.innerHTML = banner + count + '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
+    cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th>Actions</th></tr></thead><tbody>' +
+    items.map(function (item) {
+      return '<tr>' + cfg.fields.map(function (f) {
+        var val = esc(item[f] || '\u2014');
+        if (f === 'expiry') {
+          var st = expiryState(item[f]);
+          if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
+        }
+        return '<td>' + val + '</td>';
+      }).join('') +
+      '<td class="ln-row-actions">' +
+        '<button class="ln-icon-btn" title="Edit" onclick="openInventoryModal(\'' + item.id + '\')">\u270e</button>' +
+        '<button class="ln-icon-btn danger" title="Remove" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">\u2715</button>' +
+      '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+/* Download one category as CSV, for ordering lists and audits. */
+function exportInventoryCSV(cat) {
+  var cfg = INV_CONFIG[cat], items = getInventory()[cat] || [];
+  if (!items.length) { alert('There is nothing in ' + INV_LABELS[cat].many + ' to export yet.'); return; }
+  var rows = [cfg.cols].concat(items.map(function (item) {
+    return cfg.fields.map(function (f) { return item[f] == null ? '' : String(item[f]); });
+  }));
+  var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  // BOM so Excel reads the UTF-8 in °C, 5'→3' and G↓AATTC correctly.
+  var url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'elias-lab-' + cat + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+}
+function csvCell(v) {
+  // A leading = + - or @ makes Excel treat the cell as a formula; prefix it.
+  if (/^[=+\-@]/.test(v)) v = "'" + v;
+  return '"' + v.replace(/"/g, '""') + '"';
 }
 async function deleteInvItem(tab, id) { if (confirm('Remove this item?')) { await DB.removeInventory(tab, id); renderInventory(tab); } }
 
@@ -555,7 +636,10 @@ async function saveNewUser() {
   closeModal(); renderAdmin();
 }
 
-function openInventoryModal() {
+/* Called with no argument to add, or with an item id to edit it. */
+var editingInvItem = null;
+function openInventoryModal(id) {
+  editingInvItem = id ? (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0] || null : null;
   var bg = document.getElementById('ln-modal-bg'), mc = document.getElementById('ln-modal-content');
   var user = currentUser(), today = new Date().toISOString().split('T')[0];
   var forms = {
@@ -566,21 +650,31 @@ function openInventoryModal() {
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
-  mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Add ' + tabLabel + '</h3>' + forms[currentInvTab] +
-    '<div style="margin-top:.75rem;font-size:12px;color:#888;">Added by: <strong>' + esc(user ? user.name : '') + '</strong></div>' +
-    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">Add to Inventory</button></div>';
+  var editing = !!editingInvItem;
+  var credit = editing ? (editingInvItem.addedBy || editingInvItem.madeBy || '') : (user ? user.name : '');
+  mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editing ? 'Edit ' : 'Add ') + tabLabel + '</h3>' + forms[currentInvTab] +
+    '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
+  // Pre-fill from the item being edited; fields without an input are skipped.
+  if (editing) {
+    INV_CONFIG[currentInvTab].fields.forEach(function (f) {
+      var input = document.getElementById('m-' + f);
+      if (input && editingInvItem[f] != null) input.value = editingInvItem[f];
+    });
+  }
   bg.classList.add('open');
 }
 async function saveInvItem() {
   var user = currentUser(), addedBy = user ? user.name : 'Unknown', today = new Date().toISOString().split('T')[0], tab = currentInvTab;
-  var item = { id: uid(), addedBy: addedBy };
+  // Editing keeps the item's id and who originally added it.
+  var item = editingInvItem ? Object.assign({}, editingInvItem) : { id: uid(), addedBy: addedBy };
   if (tab === 'enzymes') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'), storage: g('m-storage') });
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
   else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), location: g('m-location') });
   else if (tab === 'stocks') Object.assign(item, { strain: g('m-strain'), plasmid: g('m-plasmid'), date: g('m-date') || today, box: g('m-box'), madeBy: g('m-madeBy') });
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
   if (!item.name && !item.strain) { alert('Please fill in the item name.'); return; }
-  await DB.upsertInventory(tab, item); closeModal(); renderInventory(tab);
+  await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);
 }
 
 // ── BOOT ───────────────────────────────────────────────────
