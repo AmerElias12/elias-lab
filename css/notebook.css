@@ -115,6 +115,11 @@ body{margin:0;font-family:var(--sans);color:var(--ink);background:#eef2ec;displa
 .ln-table td{padding:.8rem 1rem;font-size:13px;color:#16241f;border-bottom:1px solid rgba(22,36,31,.06);}
 .ln-table tr:last-child td{border-bottom:none;}
 .ln-table tr:hover td{background:#f4f1e8;}
+/* An Elias Lab tool embedded as its own inventory page (Primers). Sized to
+   the viewport so the app scrolls inside its own frame, not the notebook. */
+.ln-embed-app{display:block;width:100%;height:calc(100vh - 232px);min-height:540px;border:1px solid rgba(22,36,31,.14);border-radius:12px;background:#fbfaf5;}
+/* .ln-add-btn used on a link rather than a <button> */
+.ln-add-link{display:inline-block;text-decoration:none;line-height:1.1;}
 .ln-tabs{display:flex;gap:.5rem;margin-bottom:1.6rem;flex-wrap:wrap;}
 .ln-tab{padding:.55rem 1.1rem;border-radius:100px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid rgba(22,36,31,.14);background:#fbfaf5;color:#4a5a52;transition:all .2s;}
 .ln-tab.active{background:#0c4a44;color:#f4f1e8;border-color:#0c4a44;}

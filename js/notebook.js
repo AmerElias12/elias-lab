@@ -129,7 +129,7 @@ function lnShow(section) {
   else if (section === 'notebooks') renderNotebooks();
   else if (section === 'presentations') renderPresentations();
   else if (section === 'webapps') renderWebapps();
-  else if (section === 'inventory') renderInventory(currentInvTab);
+  else if (section.indexOf('inv-') === 0) showInventoryPage(section.slice(4));
   else if (section === 'admin') { renderAdmin(); refreshAdmin(); }
 }
 // pull fresh user list (catches new sign-ups), then re-render
@@ -335,10 +335,10 @@ async function deletePresentation(id) { if (confirm('Delete this presentation?')
 
 // ── WEBAPPS & TOOLS ────────────────────────────────────────
 function renderWebapps() {
-  // In-page custom tools (no external files needed) + bundled GenomeScan
+  // Full standalone apps. The Primer Generator is not here: it is the
+  // Inventory -> Primers page.
   var custom = '' +
     // Full standalone apps, opened in their own tab
-    appCard('tools/grna-primer-generator.html', '🧬', 'Primer Generator', 'Dual system: gRNA cloning primers (PRg) and regular primers (PR), with storage tracking, bulk CSV import and export') +
     appCard('tools/gibson-calculator.html', '⚙️', 'Gibson Assembly Calculator', 'Reaction volume calculator for NEB Gibson and EURx LigON kits, with protocol notes') +
     appCard('tools/genome-scan.html', '🧭', 'GenomeScan', 'Consensus / att-site finder across the human genome (BLAST + Open Targets)');
   document.getElementById('ln-custom-tools-grid').innerHTML = custom;
@@ -370,6 +370,13 @@ function appCard(href, icon, name, desc) {
 
 // ── INVENTORY ──────────────────────────────────────────────
 var currentInvTab = 'enzymes';
+var INV_LABELS = {
+  enzymes:  { one: 'Restriction Enzyme', many: 'restriction enzymes' },
+  primers:  { one: 'Primer',             many: 'primers' },
+  plasmids: { one: 'Plasmid',            many: 'plasmids' },
+  stocks:   { one: 'Glycerol Stock',     many: 'glycerol stocks' },
+  kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
+};
 var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
@@ -377,22 +384,27 @@ var INV_CONFIG = {
   stocks: { cols: ['Strain / Name', 'Plasmid', 'Date Prepared', 'Box', 'Made by'], fields: ['strain', 'plasmid', 'date', 'box', 'madeBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
 };
-function lnInvTab(tab, el) {
-  currentInvTab = tab;
-  document.querySelectorAll('.ln-tab').forEach(function (t) { t.classList.remove('active'); });
-  document.querySelectorAll('.ln-tab-content').forEach(function (t) { t.classList.remove('active'); });
-  el.classList.add('active');
-  var c = document.getElementById('ln-inv-' + tab); if (c) c.classList.add('active');
-  renderInventory(tab);
+/* Each inventory category is its own page, reached from the sidebar.
+   Primers is the Primer Generator app instead of a table; its iframe is
+   loaded the first time the page is opened, not on every page load. */
+function showInventoryPage(cat) {
+  if (!INV_CONFIG[cat]) return;
+  currentInvTab = cat;
+  if (cat === 'primers') {
+    var frame = document.getElementById('ln-primer-app');
+    if (frame && !frame.getAttribute('src')) frame.setAttribute('src', frame.getAttribute('data-src'));
+    return;
+  }
+  renderInventory(cat);
 }
 function renderInventory(tab) {
   currentInvTab = tab || currentInvTab;
   var inv = getInventory();
   var cfg = INV_CONFIG[currentInvTab];
   var items = inv[currentInvTab] || [];
-  var el = document.getElementById('ln-inv-' + currentInvTab);
+  var el = document.getElementById('ln-invtable-' + currentInvTab);
   if (!el) return;
-  if (!items.length) { el.innerHTML = '<div class="ln-empty">No ' + currentInvTab + ' added yet.</div>'; return; }
+  if (!items.length) { el.innerHTML = '<div class="ln-empty">No ' + INV_LABELS[currentInvTab].many + ' added yet.</div>'; return; }
   el.innerHTML = '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' + cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th>Actions</th></tr></thead><tbody>' +
     items.map(function (item) { return '<tr>' + cfg.fields.map(function (f) { return '<td>' + esc(item[f] || '—') + '</td>'; }).join('') + '<td><button class="ln-icon-btn danger" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">✕</button></td></tr>'; }).join('') +
     '</tbody></table></div>';
@@ -553,8 +565,8 @@ function openInventoryModal() {
     stocks: '<div class="ln-form-row"><label>Strain / Clone Name</label><input id="m-strain" placeholder="e.g. HEK293-HK022-GFP"></div><div class="ln-form-row"><label>Plasmid / Insert</label><input id="m-plasmid" placeholder="e.g. pHK022-GFP"></div><div class="ln-form-row"><label>Date Prepared</label><input type="date" id="m-date" value="' + today + '"></div><div class="ln-form-row"><label>Storage Box</label><input id="m-box" placeholder="e.g. -80°C Box G1, slot 3"></div><div class="ln-form-row"><label>Made by</label><input id="m-madeBy" value="' + esc(user ? user.name : '') + '"></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
-  var tabLabel = currentInvTab.charAt(0).toUpperCase() + currentInvTab.slice(1);
-  mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Add ' + tabLabel + ' Item</h3>' + forms[currentInvTab] +
+  var tabLabel = INV_LABELS[currentInvTab].one;
+  mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Add ' + tabLabel + '</h3>' + forms[currentInvTab] +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">Added by: <strong>' + esc(user ? user.name : '') + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">Add to Inventory</button></div>';
   bg.classList.add('open');
