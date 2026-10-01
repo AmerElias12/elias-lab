@@ -375,6 +375,7 @@ var INV_LABELS = {
   primers:  { one: 'Primer',             many: 'primers' },
   plasmids: { one: 'Plasmid',            many: 'plasmids' },
   stocks:   { one: 'Glycerol Stock',     many: 'glycerol stocks' },
+  cells:    { one: 'Cell Line',           many: 'cell lines' },
   kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
 };
 var INV_CONFIG = {
@@ -382,6 +383,7 @@ var INV_CONFIG = {
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'location', 'addedBy'] },
   stocks: { cols: ['Strain / Name', 'Plasmid', 'Date Prepared', 'Box', 'Made by'], fields: ['strain', 'plasmid', 'date', 'box', 'madeBy'] },
+  cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
 };
 /* Each inventory category is its own page, reached from the sidebar.
@@ -647,6 +649,7 @@ function openInventoryModal(id) {
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
     plasmids: '<div class="ln-form-row"><label>Plasmid Name</label><input id="m-name" placeholder="e.g. pUC19-HK022"></div><div class="ln-form-row"><label>Backbone</label><input id="m-backbone" placeholder="e.g. pUC19"></div><div class="ln-form-row"><label>Insert</label><input id="m-insert" placeholder="e.g. HK022 integrase CDS"></div><div class="ln-form-row"><label>Antibiotic Resistance</label><input id="m-resistance" placeholder="e.g. AmpR, KanR"></div><div class="ln-form-row"><label>Box / Location</label><input id="m-location" placeholder="e.g. -80°C Plasmid Box 1"></div>',
     stocks: '<div class="ln-form-row"><label>Strain / Clone Name</label><input id="m-strain" placeholder="e.g. HEK293-HK022-GFP"></div><div class="ln-form-row"><label>Plasmid / Insert</label><input id="m-plasmid" placeholder="e.g. pHK022-GFP"></div><div class="ln-form-row"><label>Date Prepared</label><input type="date" id="m-date" value="' + today + '"></div><div class="ln-form-row"><label>Storage Box</label><input id="m-box" placeholder="e.g. -80°C Box G1, slot 3"></div><div class="ln-form-row"><label>Made by</label><input id="m-madeBy" value="' + esc(user ? user.name : '') + '"></div>',
+    cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
@@ -672,6 +675,7 @@ async function saveInvItem() {
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
   else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), location: g('m-location') });
   else if (tab === 'stocks') Object.assign(item, { strain: g('m-strain'), plasmid: g('m-plasmid'), date: g('m-date') || today, box: g('m-box'), madeBy: g('m-madeBy') });
+  else if (tab === 'cells') Object.assign(item, { name: g('m-name'), passage: g('m-passage'), source: g('m-source'), tank: g('m-tank'), rack: g('m-rack'), box: g('m-box'), position: g('m-position') });
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
   if (!item.name && !item.strain) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);

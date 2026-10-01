@@ -21,9 +21,18 @@
     protocols: [],
     notebooks: [],
     presentations: [],
-    inventory: { enzymes: [], primers: [], plasmids: [], stocks: [], kits: [] }
+    inventory: { enzymes: [], primers: [], plasmids: [], stocks: [], cells: [], kits: [] }
   };
-  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'kits'];
+  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits'];
+
+  /* An inventory saved before a category existed has no array for it, so
+     adding the first item of a new category would throw. Fill in whatever is
+     missing on load; this keeps working for any category added later. */
+  function withAllCategories(inv) {
+    var out = (inv && typeof inv === 'object') ? inv : {};
+    INV_CATS.forEach(function (c) { if (!Array.isArray(out[c])) out[c] = []; });
+    return out;
+  }
   var COLLECTIONS = { protocols: 'protocols', notebooks: 'notebooks', presentations: 'presentations' };
 
   // ---- small helpers shared with the UI ----
@@ -181,7 +190,7 @@
         state.protocols = lsGet('protocols') || [];
         state.notebooks = lsGet('notebooks') || [];
         state.presentations = lsGet('presentations') || [];
-        state.inventory = lsGet('inventory') || { enzymes: [], primers: [], plasmids: [], stocks: [], kits: [] };
+        state.inventory = withAllCategories(lsGet('inventory'));
         return;
       }
       // supabase
@@ -196,7 +205,7 @@
       state.protocols = q[1].data || [];
       state.notebooks = q[2].data || [];
       state.presentations = q[3].data || [];
-      var inv = { enzymes: [], primers: [], plasmids: [], stocks: [], kits: [] };
+      var inv = withAllCategories({});
       (q[4].data || []).forEach(function (r) {
         var item = Object.assign({ id: r.id, addedBy: r.added_by }, r.data || {});
         if (inv[r.category]) inv[r.category].push(item);

@@ -10,8 +10,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
-    <link rel="stylesheet" href="css/tokens.css?v=7">
-    <link rel="stylesheet" href="css/notebook.css?v=7">
+    <link rel="stylesheet" href="css/tokens.css?v=8">
+    <link rel="stylesheet" href="css/notebook.css?v=8">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -64,6 +64,7 @@
         <div class="ln-nav-item" onclick="lnShow('inv-primers')"><span class="ni">🧬</span><span>Primers</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-plasmids')"><span class="ni">⭕</span><span>Plasmids</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-stocks')"><span class="ni">🧊</span><span>Glycerol Stocks</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-cells')"><span class="ni">🧫</span><span>Tissue Culture</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-kits')"><span class="ni">📦</span><span>Kits &amp; Reagents</span></div>
         <div id="ln-admin-nav" style="display:none;">
           <div class="ln-nav-section">Admin</div>
@@ -132,6 +133,11 @@
           <input class="ln-search" id="ln-invsearch-stocks" placeholder="🔍 Search glycerol stocks..." oninput="renderInventory('stocks')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-stocks"></div>
         </div>
+        <div id="ln-inv-cells" class="ln-section">
+          <div class="ln-section-header"><div><h2>Tissue Culture</h2><p>Cell lines in liquid nitrogen — passage, source and exactly which position they sit in</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cells')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Cell Line</button></div></div>
+          <input class="ln-search" id="ln-invsearch-cells" placeholder="🔍 Search cell lines..." oninput="renderInventory('cells')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-cells"></div>
+        </div>
         <div id="ln-inv-kits" class="ln-section">
           <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
           <input class="ln-search" id="ln-invsearch-kits" placeholder="🔍 Search kits and reagents..." oninput="renderInventory('kits')" style="margin-bottom:1.5rem;">
@@ -158,8 +164,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=7"></script>
-  <script src="js/data.js?v=7"></script>
-  <script src="js/notebook.js?v=7"></script>
+  <script src="js/config.js?v=8"></script>
+  <script src="js/data.js?v=8"></script>
+  <script src="js/notebook.js?v=8"></script>
 </body>
 </html>
