@@ -215,37 +215,46 @@
             };
 
             // Export functions
-            const exportGrna = () => {
-                let csv = 'gRNA Cloning Primers (PRg)\n\nNo,Name,Sequence,Length,Tm,Freezer,Shelf,Box,Description\n';
-                grnaPrimers.forEach(p => {
-                    const forwardTm = calculateTm(p.forwardPrimer);
-                    const reverseTm = calculateTm(p.reversePrimer);
-                    csv += `${p.forwardNumber},"${p.forwardName}","${p.forwardPrimer}",${p.forwardLength},${forwardTm},"${p.freezer}","${p.shelf}","${p.box}","${p.description}"\n`;
-                    csv += `${p.reverseNumber},"${p.reverseName}","${p.reversePrimer}",${p.reverseLength},${reverseTm},"${p.freezer}","${p.shelf}","${p.box}","${p.description}"\n`;
-                });
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
+            // Every cell is quoted and embedded quotes are doubled, per RFC 4180 —
+            // without this a description containing " or , silently breaks the row.
+            // A leading = + - or @ is prefixed so Excel treats it as text, not a formula.
+            const csvCell = (value) => {
+                let v = (value === null || value === undefined) ? '' : String(value);
+                if (/^[=+\-@]/.test(v)) v = "'" + v;
+                return '"' + v.replace(/"/g, '""') + '"';
+            };
+            const downloadCsv = (rows, filename) => {
+                const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+                // BOM so Excel reads the UTF-8 in °C and 5'→3' instead of mojibake.
+                const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = 'PRg_gRNA_Cloning_Primers.csv';
+                link.download = filename;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+            };
+
+            const exportGrna = () => {
+                if (!grnaPrimers.length) { alert('No gRNA cloning primers saved yet.'); return; }
+                // Header on row 1: a title line above it stops Excel and pandas
+                // from reading the columns. The kind of primer is in the filename.
+                const rows = [['No', 'Name', 'Sequence', 'Length', 'Tm', 'Freezer', 'Shelf', 'Box', 'Description']];
+                grnaPrimers.forEach(p => {
+                    rows.push([p.forwardNumber, p.forwardName, p.forwardPrimer, p.forwardLength, calculateTm(p.forwardPrimer), p.freezer, p.shelf, p.box, p.description]);
+                    rows.push([p.reverseNumber, p.reverseName, p.reversePrimer, p.reverseLength, calculateTm(p.reversePrimer), p.freezer, p.shelf, p.box, p.description]);
+                });
+                downloadCsv(rows, 'PRg_gRNA_Cloning_Primers.csv');
             };
 
             const exportReg = () => {
-                let csv = 'Regular Primers (PR)\n\nNo,Name,Sequence,Length,Tm,Orientation,Freezer,Shelf,Box,Vendor,Status,Description\n';
+                if (!regPrimers.length) { alert('No regular primers saved yet.'); return; }
+                const rows = [['No', 'Name', 'Sequence', 'Length', 'Tm', 'Orientation', 'Freezer', 'Shelf', 'Box', 'Vendor', 'Status', 'Description']];
                 regPrimers.forEach(p => {
-                    csv += `${p.number},"${p.name}","${p.sequence}",${p.length},${p.tm},"${p.orientation}","${p.freezer}","${p.shelf}","${p.box}","${p.vendor}","${p.status}","${p.description}"\n`;
+                    rows.push([p.number, p.name, p.sequence, p.length, p.tm, p.orientation, p.freezer, p.shelf, p.box, p.vendor, p.status, p.description]);
                 });
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = 'PR_Regular_Primers.csv';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                downloadCsv(rows, 'PR_Regular_Primers.csv');
             };
 
             const clearAll = () => {
