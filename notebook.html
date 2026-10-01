@@ -10,8 +10,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
-    <link rel="stylesheet" href="css/tokens.css?v=5">
-    <link rel="stylesheet" href="css/notebook.css?v=5">
+    <link rel="stylesheet" href="css/tokens.css?v=7">
+    <link rel="stylesheet" href="css/notebook.css?v=7">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -60,7 +60,11 @@
         <div class="ln-nav-item" onclick="lnShow('presentations')"><span class="ni">🖥️</span><span>Presentations</span></div>
         <div class="ln-nav-item" onclick="lnShow('webapps')"><span class="ni">🌐</span><span>Webapps &amp; Tools</span></div>
         <div class="ln-nav-section">Inventory</div>
-        <div class="ln-nav-item" onclick="lnShow('inventory')"><span class="ni">🧪</span><span>All Inventory</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-enzymes')"><span class="ni">✂️</span><span>Restriction Enzymes</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-primers')"><span class="ni">🧬</span><span>Primers</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-plasmids')"><span class="ni">⭕</span><span>Plasmids</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-stocks')"><span class="ni">🧊</span><span>Glycerol Stocks</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-kits')"><span class="ni">📦</span><span>Kits &amp; Reagents</span></div>
         <div id="ln-admin-nav" style="display:none;">
           <div class="ln-nav-section">Admin</div>
           <div class="ln-nav-item" onclick="lnShow('admin')"><span class="ni">⚙️</span><span>User Management</span></div>
@@ -107,21 +111,31 @@
           <h3 class="ln-webapp-sub" style="color:#444;">🌐 External Bioinformatics Tools</h3>
           <div class="ln-webapp-grid" id="ln-webapp-grid"></div>
         </div>
-        <!-- INVENTORY -->
-        <div id="ln-inventory" class="ln-section">
-          <div class="ln-section-header"><div><h2>Lab Inventory</h2><p>Track all lab materials and reagents</p></div><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Item</button></div>
-          <div class="ln-tabs">
-            <div class="ln-tab active" onclick="lnInvTab('enzymes',this)">Restriction Enzymes</div>
-            <div class="ln-tab" onclick="lnInvTab('primers',this)">Primers</div>
-            <div class="ln-tab" onclick="lnInvTab('plasmids',this)">Plasmids</div>
-            <div class="ln-tab" onclick="lnInvTab('stocks',this)">Glycerol Stocks</div>
-            <div class="ln-tab" onclick="lnInvTab('kits',this)">Kits &amp; Reagents</div>
-          </div>
-          <div id="ln-inv-enzymes" class="ln-tab-content active"></div>
-          <div id="ln-inv-primers" class="ln-tab-content"></div>
-          <div id="ln-inv-plasmids" class="ln-tab-content"></div>
-          <div id="ln-inv-stocks" class="ln-tab-content"></div>
-          <div id="ln-inv-kits" class="ln-tab-content"></div>
+        <!-- INVENTORY — one page per category -->
+        <div id="ln-inv-enzymes" class="ln-section">
+          <div class="ln-section-header"><div><h2>Restriction Enzymes</h2><p>Supplier, recognition site, concentration and where each one is stored</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('enzymes')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Enzyme</button></div></div>
+          <input class="ln-search" id="ln-invsearch-enzymes" placeholder="🔍 Search restriction enzymes..." oninput="renderInventory('enzymes')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-enzymes"></div>
+        </div>
+        <!-- Primers is the Primer Generator app rather than a table. -->
+        <div id="ln-inv-primers" class="ln-section">
+          <div class="ln-section-header"><div><h2>Primers</h2><p>Design, store and export primers with the lab's Primer Generator</p></div><a class="ln-add-btn ln-add-link" href="tools/grna-primer-generator.html" target="_blank" rel="noopener">Open in a new tab ↗</a></div>
+          <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html" title="Primer Generator"></iframe>
+        </div>
+        <div id="ln-inv-plasmids" class="ln-section">
+          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Backbone, insert, resistance and storage box for every construct</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('plasmids')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Plasmid</button></div></div>
+          <input class="ln-search" id="ln-invsearch-plasmids" placeholder="🔍 Search plasmids..." oninput="renderInventory('plasmids')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-plasmids"></div>
+        </div>
+        <div id="ln-inv-stocks" class="ln-section">
+          <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Frozen strains and clones — what is in them, who made them and when</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
+          <input class="ln-search" id="ln-invsearch-stocks" placeholder="🔍 Search glycerol stocks..." oninput="renderInventory('stocks')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-stocks"></div>
+        </div>
+        <div id="ln-inv-kits" class="ln-section">
+          <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
+          <input class="ln-search" id="ln-invsearch-kits" placeholder="🔍 Search kits and reagents..." oninput="renderInventory('kits')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-kits"></div>
         </div>
         <!-- ADMIN -->
         <div id="ln-admin" class="ln-section">
@@ -144,8 +158,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=5"></script>
-  <script src="js/data.js?v=5"></script>
-  <script src="js/notebook.js?v=5"></script>
+  <script src="js/config.js?v=7"></script>
+  <script src="js/data.js?v=7"></script>
+  <script src="js/notebook.js?v=7"></script>
 </body>
 </html>
