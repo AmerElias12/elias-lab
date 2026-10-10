@@ -13,7 +13,7 @@
    Security on the database is what actually protects your data.
    ============================================================ */
 window.ELIAS_CONFIG = {
-  SUPABASE_URL: '',        // e.g. 'https://abcdxyz.supabase.co'
-  SUPABASE_ANON_KEY: '',   // e.g. 'eyJhbGciOi...'
+  SUPABASE_URL: 'https://obegyesekombhzadaipj.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_bCZaXq04N_huJCF2hUdF6A_4_p2KgRH',  // publishable (public) key
   ADMIN_EMAIL: 'amere@braude.ac.il'
 };

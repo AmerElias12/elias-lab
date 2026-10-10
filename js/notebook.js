@@ -115,11 +115,44 @@ function lnShowApp(user) {
   document.getElementById('ln-sidebar-name').textContent = user.name;
   document.getElementById('ln-welcome-msg').textContent = 'Welcome back, ' + user.name.split(' ').slice(-1)[0] + '!';
   document.getElementById('ln-admin-nav').style.display = user.role === 'admin' ? 'block' : 'none';
+  lnLastRefresh = Date.now();
   lnShow('dashboard');
 }
 
+// ── SHARED-MODE REFRESH ────────────────────────────────────
+// Pull other members' edits whenever the tab comes back into view, and every
+// 30 minutes while it stays open (which also renews attachment links before
+// they expire). Skipped while a form is open so nothing is redrawn mid-edit.
+var lnCurrentSection = 'dashboard';
+var lnLastRefresh = 0, lnRefreshing = false;
+var LN_REFRESH_MIN_GAP = 30 * 1000;
+async function lnRefreshFromServer() {
+  if (lnRefreshing || DB.mode !== 'supabase' || !currentUser()) return;
+  if (document.visibilityState !== 'visible') return;
+  if (Date.now() - lnLastRefresh < LN_REFRESH_MIN_GAP) return;
+  if (document.getElementById('ln-modal-bg').classList.contains('open')) return;
+  lnRefreshing = true;
+  try {
+    if (await DB.refresh()) { lnLastRefresh = Date.now(); lnRerender(); }
+  } catch (e) { /* offline or a transient error: keep showing the cached data */ }
+  finally { lnRefreshing = false; }
+}
+// Redraw the open section, keeping whatever is typed in its search box.
+function lnRerender() {
+  var s = lnCurrentSection;
+  var search = document.querySelector('#ln-' + s + ' .ln-search');
+  if (s === 'protocols') renderProtocols(search ? search.value : '');
+  else if (s === 'notebooks') renderNotebooks(search ? search.value : '');
+  else if (s === 'admin') renderAdmin();
+  else lnShow(s);
+}
+document.addEventListener('visibilitychange', lnRefreshFromServer);
+window.addEventListener('focus', lnRefreshFromServer);
+setInterval(lnRefreshFromServer, 30 * 60 * 1000);
+
 // ── NAVIGATION ─────────────────────────────────────────────
 function lnShow(section) {
+  lnCurrentSection = section;
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
   var sec = document.getElementById('ln-' + section); if (sec) sec.classList.add('active');

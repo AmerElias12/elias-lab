@@ -18,14 +18,18 @@ your browser) until you're ready for (1).
 
 1. Create a free account at <https://supabase.com> and click **New project**.
    Pick a name, a strong database password, and a region near you.
+   Under **Security**, keep **Enable Data API** on, turn **Automatically
+   expose new tables** off, and turn **Enable automatic RLS** on. The schema
+   grants table access to signed-in users itself.
 2. When it finishes provisioning, open **SQL Editor → New query**, paste the
    entire contents of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**.
    This creates the tables, security policies, the sign-up trigger, and the
    `lab-files` storage bucket.
 3. Open **Storage** and confirm a bucket named **`lab-files`** exists and is
-   marked **Public**. (The SQL creates it; if your project blocks bucket
-   creation from SQL, just add it manually: New bucket → name `lab-files` →
-   Public ON.)
+   **not** public. (The SQL creates it; if your project blocks bucket
+   creation from SQL, add it manually: New bucket → name `lab-files` →
+   Public OFF.) Only approved members can open attachments, through links
+   that expire after two hours.
 4. Open **Project Settings → API** and copy:
    - **Project URL** (e.g. `https://abcdxyz.supabase.co`)
    - **anon public** key (a long `eyJ...` string)
