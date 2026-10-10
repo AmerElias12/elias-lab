@@ -94,6 +94,44 @@
   function profileFromRow(r) { return { id: r.id, name: r.name, email: r.email, role: r.role, status: r.status, added: (r.created_at || '').split('T')[0] }; }
 
   // ===========================================================
+  // Attachments (shared mode)
+  // The lab-files bucket is private, so records store each file's storage
+  // `path`, and `data` holds a signed link that is regenerated on every
+  // load. Signed links never reach the database; they expire after
+  // SIGNED_URL_TTL, and the UI reloads well before that.
+  // ===========================================================
+  var SIGNED_URL_TTL = 2 * 60 * 60; // seconds
+
+  // Storage path of an attachment. Files uploaded while the bucket was public
+  // only stored their public URL, so recover the path from it. Inline
+  // base64 files (imported from local mode) have no path.
+  function filePath(f) {
+    if (!f) return null;
+    if (f.path) return f.path;
+    var m = /\/object\/public\/lab-files\/(.+)$/.exec(f.data || '');
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function filesForDb(files) {
+    return (files || []).map(function (f) {
+      var p = filePath(f);
+      return p ? { name: f.name, type: f.type, size: f.size, path: p } : f;
+    });
+  }
+  async function signFiles(records) {
+    var files = [];
+    records.forEach(function (r) {
+      (r.files || []).forEach(function (f) { var p = filePath(f); if (p) { f.path = p; files.push(f); } });
+    });
+    if (!files.length) return;
+    var paths = files.map(function (f) { return f.path; }).filter(function (p, i, a) { return a.indexOf(p) === i; });
+    var r = await sb.storage.from('lab-files').createSignedUrls(paths, SIGNED_URL_TTL);
+    if (r.error || !r.data) return; // links stay as they were; the next refresh retries
+    var urls = {};
+    r.data.forEach(function (d) { if (d.signedUrl) urls[d.path] = d.signedUrl; });
+    files.forEach(function (f) { if (urls[f.path]) f.data = urls[f.path]; });
+  }
+
+  // ===========================================================
   // Public DB API
   // ===========================================================
   var DB = {
@@ -183,8 +221,9 @@
       state.currentUser = null;
     },
 
-    /* Load all collections into the cache. */
-    loadAll: async function () {
+    /* Load all collections into the cache. With keepOnError, a failed query
+       throws instead of emptying the cache (used by background refreshes). */
+    loadAll: async function (opts) {
       if (this.mode === 'local') {
         state.users = lsGet('users') || [];
         state.protocols = lsGet('protocols') || [];
@@ -201,6 +240,9 @@
         sb.from('presentations').select('*').order('created_at'),
         sb.from('inventory_items').select('*').order('created_at')
       ]);
+      var failed = q.filter(function (r) { return r.error; })[0];
+      if (failed && opts && opts.keepOnError) throw new Error(failed.error.message);
+      await signFiles((q[1].data || []).concat(q[2].data || [], q[3].data || []));
       state.users = (q[0].data || []).map(profileFromRow);
       state.protocols = q[1].data || [];
       state.notebooks = q[2].data || [];
@@ -211,6 +253,14 @@
         if (inv[r.category]) inv[r.category].push(item);
       });
       state.inventory = inv;
+    },
+
+    /* Re-fetch everything so edits by other members show up. Shared mode
+       only; returns false when there is nothing to refresh. */
+    refresh: async function () {
+      if (this.mode !== 'supabase' || !state.currentUser || state.currentUser.status !== 'approved') return false;
+      await this.loadAll({ keepOnError: true });
+      return true;
     },
 
     /* Insert or update one record in a collection. */
@@ -224,8 +274,10 @@
         return obj;
       }
       var row = Object.assign({}, obj, { created_by: state.currentUser ? state.currentUser.id : null });
+      if (row.files) row.files = filesForDb(row.files);
       var r = await sb.from(COLLECTIONS[collection]).upsert(row).select().single();
       if (r.error) throw new Error(r.error.message);
+      await signFiles([r.data]);
       var arr2 = state[collection];
       var j = arr2.findIndex(function (x) { return x.id === r.data.id; });
       if (j >= 0) arr2[j] = r.data; else arr2.push(r.data);
@@ -327,8 +379,8 @@
           var path = (state.currentUser ? state.currentUser.id : 'anon') + '/' + Date.now() + '-' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
           var up = await sb.storage.from('lab-files').upload(path, f, { upsert: false });
           if (up.error) throw new Error(up.error.message);
-          var pub = sb.storage.from('lab-files').getPublicUrl(path);
-          out.push({ name: f.name, type: f.type, data: pub.data.publicUrl, size: f.size });
+          var signed = await sb.storage.from('lab-files').createSignedUrl(path, SIGNED_URL_TTL);
+          out.push({ name: f.name, type: f.type, path: path, data: signed.data ? signed.data.signedUrl : '', size: f.size });
         }
       }
       return out;
