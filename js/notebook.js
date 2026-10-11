@@ -527,6 +527,244 @@ function csvCell(v) {
 }
 async function deleteInvItem(tab, id) { if (confirm('Remove this item?')) { await DB.removeInventory(tab, id); renderInventory(tab); } }
 
+// ── INVENTORY BULK UPLOAD ──────────────────────────────────
+/* One spreadsheet covers every table category: the template has a sheet per
+   category, headed with the same column names as the tables and the CSV
+   export, so an exported CSV can be uploaded back as well. Primers live in
+   the Primer Generator app, so they are not part of it. */
+var BULK_CATS = ['enzymes', 'plasmids', 'stocks', 'cells', 'kits'];
+var BULK_SHEETS = { enzymes: 'Restriction Enzymes', plasmids: 'Plasmids', stocks: 'Glycerol Stocks', cells: 'Tissue Culture', kits: 'Kits & Reagents' };
+var BULK_DATE_FIELDS = { date: true, expiry: true };
+var BULK_EXAMPLES = {
+  enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials', storage: '-20°C Box 2A' },
+  plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', location: '-80°C Plasmid Box 1' },
+  stocks: { strain: 'HEK293-HK022-GFP', plasmid: 'pHK022-GFP', date: '2026-03-05', box: '-80°C Box G1, slot 3', madeBy: 'Blank = your name' },
+  cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
+  kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps', expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
+};
+// Other header spellings people are likely to type, keyed by field.
+var BULK_ALIASES = {
+  qty: ['quantity', 'quantityremaining'], expiry: ['expirydate', 'expires'], date: ['date'],
+  cutsite: ['recognitionsite', 'recognitioncutsite'], conc: ['concentration'], strain: ['name', 'clonename', 'strainclonename'],
+  resistance: ['antibioticresistance'], location: ['boxlocation', 'storagelocation'], passage: ['passagenumber'],
+  tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation']
+};
+
+// SheetJS reads and writes .xlsx/.csv. Loaded only when needed, pinned to a
+// patched version (0.18.x on cdnjs has known file-parsing vulnerabilities).
+var XLSX_SRC = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+var XLSX_SRI = 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT';
+var xlsxLoading = null;
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!xlsxLoading) xlsxLoading = new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = XLSX_SRC; s.integrity = XLSX_SRI; s.crossOrigin = 'anonymous';
+    s.onload = function () { resolve(window.XLSX); };
+    s.onerror = function () { xlsxLoading = null; reject(new Error('Could not load the spreadsheet reader. Check your internet connection and try again.')); };
+    document.head.appendChild(s);
+  });
+  return xlsxLoading;
+}
+
+// Template columns: everything in the table except "Added by", which is filled
+// in automatically. The first column (name / strain) is the required one.
+function bulkColumns(cat) {
+  var cfg = INV_CONFIG[cat];
+  return cfg.fields.map(function (f, i) { return { field: f, label: cfg.cols[i] }; })
+    .filter(function (c) { return c.field !== 'addedBy'; });
+}
+function bulkKey(s) { return String(s == null ? '' : s).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function bulkPad(n) { return (n < 10 ? '0' : '') + n; }
+
+async function downloadInventoryTemplate() {
+  var XLSX;
+  try { XLSX = await loadXlsx(); } catch (e) { alert(e.message); return; }
+  var wb = XLSX.utils.book_new();
+  var help = [
+    ['Elias Lab inventory — bulk upload template'], [],
+    ['1. Fill in the sheet for each category you want to add to. Leave the others empty.'],
+    ['2. One item per row, starting under the header row. Keep the headers as they are.'],
+    ['3. Write dates as YYYY-MM-DD (e.g. 2026-03-05) or as Excel dates.'],
+    ['4. In the Lab Notebook, open any inventory page, click "Bulk upload" and choose this file.'],
+    ['Rows without a name are skipped, and so are rows identical to an item already in the inventory.'],
+    ['Primers are not included: add them in the Primer Generator.'], [],
+    ['Sheet', 'Column', 'Required', 'Example']
+  ];
+  BULK_CATS.forEach(function (cat) {
+    bulkColumns(cat).forEach(function (c, i) { help.push([BULK_SHEETS[cat], c.label, i === 0 ? 'yes' : '', BULK_EXAMPLES[cat][c.field] || '']); });
+  });
+  var hs = XLSX.utils.aoa_to_sheet(help);
+  hs['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 34 }];
+  XLSX.utils.book_append_sheet(wb, hs, 'Instructions');
+  BULK_CATS.forEach(function (cat) {
+    var cols = bulkColumns(cat);
+    var ws = XLSX.utils.aoa_to_sheet([cols.map(function (c) { return c.label; })]);
+    ws['!cols'] = cols.map(function (c) { return { wch: Math.max(16, c.label.length + 4) }; });
+    XLSX.utils.book_append_sheet(wb, ws, BULK_SHEETS[cat]);
+  });
+  XLSX.writeFile(wb, 'elias-lab-inventory-template.xlsx');
+}
+
+/* Map a header row to fields of one category. Returns {cols: {index: field},
+   score} or null when the category's required column is missing. */
+function bulkMapHeader(cat, header) {
+  var cfg = INV_CONFIG[cat], lookup = {};
+  cfg.fields.forEach(function (f, i) {
+    lookup[bulkKey(cfg.cols[i])] = f; lookup[bulkKey(f)] = f;
+    (BULK_ALIASES[f] || []).forEach(function (a) { if (!lookup[a]) lookup[a] = f; });
+  });
+  var cols = {}, used = {}, score = 0;
+  header.forEach(function (h, i) {
+    var f = lookup[bulkKey(h)];
+    if (f && !used[f]) { cols[i] = f; used[f] = true; score++; }
+  });
+  return used[cfg.fields[0]] ? { cols: cols, score: score } : null;
+}
+// Pick the category for a sheet: its name if it is one of ours, otherwise
+// the category whose columns best match the header row.
+function bulkPickCategory(sheetName, header) {
+  var named = BULK_CATS.filter(function (c) { return bulkKey(sheetName) === bulkKey(BULK_SHEETS[c]) || bulkKey(sheetName) === c; })[0];
+  if (named) { var m = bulkMapHeader(named, header); if (m) return { cat: named, cols: m.cols }; }
+  var best = null, tie = false;
+  BULK_CATS.forEach(function (c) {
+    var m = bulkMapHeader(c, header);
+    if (!m || m.score < 2) return;
+    if (!best || m.score > best.score) { best = { cat: c, cols: m.cols, score: m.score }; tie = false; }
+    else if (m.score === best.score) tie = true;
+  });
+  return best && !tie ? best : null;
+}
+function bulkCell(XLSX, v, field) {
+  if (v == null) return '';
+  if (typeof v === 'number' && BULK_DATE_FIELDS[field]) {
+    var d = XLSX.SSF.parse_date_code(v);
+    if (d && d.y) return d.y + '-' + bulkPad(d.m) + '-' + bulkPad(d.d);
+  }
+  var s = String(v).trim();
+  if (/^'[=+\-@]/.test(s)) s = s.slice(1); // undo the CSV export's formula guard
+  var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (BULK_DATE_FIELDS[field] && iso) s = iso[1] + '-' + bulkPad(+iso[2]) + '-' + bulkPad(+iso[3]);
+  return s;
+}
+function bulkSignature(cat, item) {
+  return bulkColumns(cat).map(function (c) { return String(item[c.field] || '').trim().toLowerCase(); }).join('\u0001');
+}
+
+/* Read a workbook or CSV into a plan: per category, the new items plus what
+   was skipped and why. Nothing is saved here. */
+function buildBulkPlan(XLSX, wb) {
+  var user = currentUser(), me = user ? user.name : 'Unknown';
+  var plan = { cats: {}, ignored: [], total: 0 };
+  wb.SheetNames.forEach(function (sheetName) {
+    var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+    var h = 0;
+    while (h < rows.length && !rows[h].some(function (v) { return String(v).trim() !== ''; })) h++;
+    if (h >= rows.length) return; // empty sheet
+    var pick = bulkPickCategory(sheetName, rows[h]);
+    if (!pick) { if (bulkKey(sheetName) !== 'instructions') plan.ignored.push(sheetName); return; }
+    var cat = pick.cat, nameField = INV_CONFIG[cat].fields[0];
+    var p = plan.cats[cat] || (plan.cats[cat] = { items: [], noName: [], dupes: 0, badDates: [] });
+    var seen = {};
+    (getInventory()[cat] || []).forEach(function (it) { seen[bulkSignature(cat, it)] = true; });
+    p.items.forEach(function (it) { seen[bulkSignature(cat, it)] = true; });
+    for (var r = h + 1; r < rows.length; r++) {
+      var item = {}, any = false;
+      Object.keys(pick.cols).forEach(function (i) {
+        var f = pick.cols[i], v = bulkCell(XLSX, rows[r][i], f);
+        if (v !== '') { item[f] = v; any = true; }
+      });
+      if (!any) continue;
+      var rowNo = sheetName + ' row ' + (r + 1);
+      if (!item[nameField]) { p.noName.push(rowNo); continue; }
+      Object.keys(BULK_DATE_FIELDS).forEach(function (f) {
+        if (item[f] && !/^\d{4}-\d{2}-\d{2}$/.test(item[f])) p.badDates.push(rowNo + ' (' + item[f] + ')');
+      });
+      var sig = bulkSignature(cat, item);
+      if (seen[sig]) { p.dupes++; continue; }
+      seen[sig] = true;
+      if (!item.addedBy) item.addedBy = me;
+      if (cat === 'stocks' && !item.madeBy) item.madeBy = me;
+      p.items.push(item); plan.total++;
+    }
+  });
+  return plan;
+}
+
+var bulkPlan = null;
+function openBulkUploadModal() {
+  bulkPlan = null;
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Bulk upload inventory</h3>' +
+    '<p class="ln-bulk-intro">Add many items at once, to any inventory category. The template has one sheet per category; a CSV exported from an inventory page works too.</p>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">1</span><div><strong>Download the template</strong>' +
+      '<div class="hint">Sheets for Restriction Enzymes, Plasmids, Glycerol Stocks, Tissue Culture and Kits &amp; Reagents, with an example for every column. Primers are added in the Primer Generator.</div>' +
+      '<button class="ln-add-btn ghost" onclick="downloadInventoryTemplate()">↓ Download template (.xlsx)</button></div></div>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">2</span><div><strong>Upload the filled-in file</strong>' +
+      '<div class="hint">Excel (.xlsx) or CSV. You will see what will be added before anything is saved.</div>' +
+      '<input type="file" id="m-bulk-file" accept=".xlsx,.xls,.csv" onchange="previewBulkUpload(this)"></div></div>' +
+    '<div id="ln-bulk-preview"></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" id="ln-bulk-save" disabled onclick="saveBulkUpload()">Add items</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+
+async function previewBulkUpload(input) {
+  var out = document.getElementById('ln-bulk-preview'), btn = document.getElementById('ln-bulk-save');
+  bulkPlan = null; btn.disabled = true; btn.textContent = 'Add items';
+  var file = input.files && input.files[0];
+  if (!file) { out.innerHTML = ''; return; }
+  out.innerHTML = '<div class="ln-bulk-note">Reading ' + esc(file.name) + '…</div>';
+  try {
+    var XLSX = await loadXlsx();
+    var isCsv = /\.csv$/i.test(file.name);
+    // CSV as text so UTF-8 (°C, ↓, ₂) survives; raw keeps catalog numbers like 0123 as typed.
+    var wb = isCsv ? XLSX.read(await file.text(), { type: 'string', raw: true })
+                   : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    bulkPlan = buildBulkPlan(XLSX, wb);
+  } catch (e) {
+    out.innerHTML = '<div class="ln-bulk-note error">Could not read this file: ' + esc(e.message) + '</div>';
+    return;
+  }
+  // Untouched template sheets have no rows at all, so leave them out.
+  var parts = BULK_CATS.filter(function (c) {
+    var p = bulkPlan.cats[c];
+    return p && (p.items.length || p.dupes || p.noName.length);
+  }).map(function (cat) {
+    var p = bulkPlan.cats[cat], notes = [];
+    if (p.dupes) notes.push(p.dupes + ' already in the inventory, skipped');
+    if (p.noName.length) notes.push(p.noName.length + ' without a name, skipped (' + esc(p.noName.slice(0, 5).join(', ')) + (p.noName.length > 5 ? '…' : '') + ')');
+    if (p.badDates.length) notes.push('dates not in YYYY-MM-DD, kept as written: ' + esc(p.badDates.slice(0, 5).join(', ')) + (p.badDates.length > 5 ? '…' : ''));
+    return '<li><strong>' + esc(BULK_SHEETS[cat]) + '</strong> — ' + p.items.length + ' new' +
+      (notes.length ? '<div class="ln-bulk-sub">' + notes.join('<br>') + '</div>' : '') + '</li>';
+  });
+  if (bulkPlan.ignored.length) parts.push('<li class="muted">Not recognised as an inventory category, ignored: ' + esc(bulkPlan.ignored.join(', ')) + '</li>');
+  if (!parts.length) parts.push('<li class="muted">No inventory rows found. Check that the header row matches the template.</li>');
+  out.innerHTML = '<ul class="ln-bulk-list">' + parts.join('') + '</ul>';
+  if (bulkPlan.total) { btn.disabled = false; btn.textContent = 'Add ' + bulkPlan.total + ' item' + (bulkPlan.total === 1 ? '' : 's'); }
+}
+
+async function saveBulkUpload() {
+  if (!bulkPlan || !bulkPlan.total) return;
+  var btn = document.getElementById('ln-bulk-save'), out = document.getElementById('ln-bulk-preview');
+  btn.disabled = true; btn.textContent = 'Adding…';
+  var done = [], error = null;
+  for (var i = 0; i < BULK_CATS.length && !error; i++) {
+    var cat = BULK_CATS[i], p = bulkPlan.cats[cat];
+    if (!p || !p.items.length) continue;
+    try {
+      var n = await DB.addInventoryMany(cat, p.items);
+      done.push(n + ' ' + (n === 1 ? INV_LABELS[cat].one.toLowerCase() : INV_LABELS[cat].many));
+    }
+    catch (e) { error = INV_LABELS[cat].many + ': ' + e.message; }
+  }
+  bulkPlan = null;
+  if (lnCurrentSection.indexOf('inv-') === 0) renderInventory();
+  out.innerHTML = (done.length ? '<div class="ln-bulk-note ok">Added ' + esc(done.join(', ')) + '.</div>' : '') +
+    (error ? '<div class="ln-bulk-note error">Stopped on ' + esc(error) + '</div>' : '');
+  btn.textContent = 'Done'; btn.disabled = false; btn.onclick = closeModal;
+  document.getElementById('m-bulk-file').value = '';
+}
+
 // ── ADMIN ──────────────────────────────────────────────────
 function renderAdmin() {
   if (!DB.isAdmin()) return;
