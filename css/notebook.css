@@ -127,6 +127,22 @@ body{margin:0;font-family:var(--sans);color:var(--ink);background:#eef2ec;displa
 .ln-inv-alert{padding:.6rem .9rem;border-radius:10px;font-size:13px;margin-bottom:1rem;border:1px solid;}
 .ln-inv-alert.expired{background:rgba(193,58,58,.08);border-color:rgba(193,58,58,.3);color:#8f2a2a;}
 .ln-inv-alert.soon{background:rgba(168,106,18,.08);border-color:rgba(168,106,18,.3);color:#7a4e0d;}
+/* Inventory bulk upload */
+.ln-modal-save:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.ln-bulk-intro{font-size:13px;color:#555;line-height:1.6;margin-bottom:1.2rem;}
+.ln-bulk-step{display:flex;gap:.85rem;align-items:flex-start;margin-bottom:1.2rem;}
+.ln-bulk-step>div{flex:1;min-width:0;}
+.ln-bulk-step strong{font-size:14px;}
+.ln-bulk-step .hint{font-size:12px;color:#7a877f;margin:.3rem 0 .6rem;line-height:1.5;}
+.ln-bulk-step input[type=file]{font-size:13px;max-width:100%;}
+.ln-bulk-num{flex:none;width:26px;height:26px;border-radius:50%;background:#0c4a44;color:#f4f1e8;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.ln-bulk-list{list-style:none;padding:.8rem 1rem;margin:0 0 .5rem;background:#f6f4ee;border-radius:10px;font-size:13px;}
+.ln-bulk-list li{padding:.35rem 0;}
+.ln-bulk-list li.muted{color:#7a877f;}
+.ln-bulk-sub{font-size:12px;color:#7a4e0d;margin-top:.2rem;line-height:1.5;}
+.ln-bulk-note{padding:.6rem .9rem;border-radius:10px;font-size:13px;margin-bottom:.5rem;background:#f6f4ee;color:#555;}
+.ln-bulk-note.ok{background:#e7f7ef;color:#0c6b4e;}
+.ln-bulk-note.error{background:rgba(193,58,58,.08);color:#8f2a2a;}
 /* An Elias Lab tool embedded as its own inventory page (Primers). Sized to
    the viewport so the app scrolls inside its own frame, not the notebook. */
 .ln-embed-app{display:block;width:100%;height:calc(100vh - 232px);min-height:540px;border:1px solid rgba(22,36,31,.14);border-radius:12px;background:#fbfaf5;}

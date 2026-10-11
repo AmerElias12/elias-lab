@@ -314,6 +314,31 @@
       return item;
     },
 
+    /* Add many new items to one category at once (bulk upload). Shared mode
+       sends them in batches; if a batch fails, the batches before it are
+       already saved and the error says how many. */
+    addInventoryMany: async function (category, items) {
+      items.forEach(function (item) { if (!item.id) item.id = uid(); });
+      if (this.mode === 'local') {
+        state.inventory[category] = state.inventory[category].concat(items);
+        lsSet('inventory', state.inventory);
+        return items.length;
+      }
+      var BATCH = 500, saved = 0;
+      for (var i = 0; i < items.length; i += BATCH) {
+        var chunk = items.slice(i, i + BATCH);
+        var rows = chunk.map(function (item) {
+          var data = Object.assign({}, item); delete data.id; delete data.addedBy;
+          return { id: item.id, category: category, data: data, added_by: item.addedBy || null };
+        });
+        var r = await sb.from('inventory_items').insert(rows);
+        if (r.error) throw new Error((saved ? saved + ' items were saved before this error: ' : '') + r.error.message);
+        state.inventory[category] = state.inventory[category].concat(chunk);
+        saved += chunk.length;
+      }
+      return saved;
+    },
+
     removeInventory: async function (category, id) {
       if (this.mode === 'local') {
         state.inventory[category] = state.inventory[category].filter(function (x) { return x.id !== id; });

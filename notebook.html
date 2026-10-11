@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=8">
+    <link rel="stylesheet" href="css/notebook.css?v=10">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -114,7 +114,7 @@
         </div>
         <!-- INVENTORY — one page per category -->
         <div id="ln-inv-enzymes" class="ln-section">
-          <div class="ln-section-header"><div><h2>Restriction Enzymes</h2><p>Supplier, recognition site, concentration and where each one is stored</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('enzymes')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Enzyme</button></div></div>
+          <div class="ln-section-header"><div><h2>Restriction Enzymes</h2><p>Supplier, recognition site, concentration and where each one is stored</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('enzymes')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Enzyme</button></div></div>
           <input class="ln-search" id="ln-invsearch-enzymes" placeholder="🔍 Search restriction enzymes..." oninput="renderInventory('enzymes')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-enzymes"></div>
         </div>
@@ -124,22 +124,22 @@
           <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html" title="Primer Generator"></iframe>
         </div>
         <div id="ln-inv-plasmids" class="ln-section">
-          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Backbone, insert, resistance and storage box for every construct</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('plasmids')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Plasmid</button></div></div>
+          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Backbone, insert, resistance and storage box for every construct</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('plasmids')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Plasmid</button></div></div>
           <input class="ln-search" id="ln-invsearch-plasmids" placeholder="🔍 Search plasmids..." oninput="renderInventory('plasmids')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-plasmids"></div>
         </div>
         <div id="ln-inv-stocks" class="ln-section">
-          <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Frozen strains and clones — what is in them, who made them and when</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
+          <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Frozen strains and clones — what is in them, who made them and when</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
           <input class="ln-search" id="ln-invsearch-stocks" placeholder="🔍 Search glycerol stocks..." oninput="renderInventory('stocks')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-stocks"></div>
         </div>
         <div id="ln-inv-cells" class="ln-section">
-          <div class="ln-section-header"><div><h2>Tissue Culture</h2><p>Cell lines in liquid nitrogen — passage, source and exactly which position they sit in</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cells')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Cell Line</button></div></div>
+          <div class="ln-section-header"><div><h2>Tissue Culture</h2><p>Cell lines in liquid nitrogen — passage, source and exactly which position they sit in</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cells')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Cell Line</button></div></div>
           <input class="ln-search" id="ln-invsearch-cells" placeholder="🔍 Search cell lines..." oninput="renderInventory('cells')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-cells"></div>
         </div>
         <div id="ln-inv-kits" class="ln-section">
-          <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
+          <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
           <input class="ln-search" id="ln-invsearch-kits" placeholder="🔍 Search kits and reagents..." oninput="renderInventory('kits')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-kits"></div>
         </div>
@@ -164,8 +164,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=9"></script>
-  <script src="js/data.js?v=9"></script>
-  <script src="js/notebook.js?v=9"></script>
+  <script src="js/config.js?v=10"></script>
+  <script src="js/data.js?v=10"></script>
+  <script src="js/notebook.js?v=10"></script>
 </body>
 </html>
