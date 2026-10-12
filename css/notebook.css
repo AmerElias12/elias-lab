@@ -186,3 +186,12 @@ body{margin:0;font-family:var(--sans);color:var(--ink);background:#eef2ec;displa
 .ln-approved-badge{background:#e7f7ef;color:#10b07e;padding:.25rem .7rem;border-radius:100px;font-size:11px;font-weight:600;font-family:var(--mono);}
 .ln-empty{color:#aaa;font-size:14px;padding:2rem 0;}
 @media(max-width:640px){.ln-sidebar{width:60px;}.ln-sidebar .ln-nav-item span:not(.ni){display:none;}.ln-sidebar .ln-nav-section,.ln-sidebar-header p{display:none;}.ln-section{padding:1.2rem;}.ln-modal{padding:1.4rem;}}
+/* Glycerol stock form and table */
+.ln-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 .9rem;}
+.ln-form-section{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a877f;margin:.6rem 0 .5rem;}
+.ln-map-link{color:#0c4a44;font-weight:600;text-decoration:none;white-space:nowrap;}
+.ln-map-link:hover{text-decoration:underline;}
+.ln-notes-cell{min-width:180px;white-space:pre-wrap;}
+@media(max-width:640px){.ln-form-grid{grid-template-columns:1fr;}}
+.ln-nowrap{white-space:nowrap;}
+.ln-wide-cell{min-width:180px;}

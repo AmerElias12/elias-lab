@@ -415,10 +415,14 @@ var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'location', 'addedBy'] },
-  stocks: { cols: ['Strain / Name', 'Plasmid', 'Date Prepared', 'Box', 'Made by'], fields: ['strain', 'plasmid', 'date', 'box', 'madeBy'] },
+  stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Shelf', 'Place on Shelf', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
 };
+// E. coli strains the lab keeps glycerol stocks in; offered as suggestions, others can be typed.
+var STOCK_STRAINS = ['DH5α', 'NEB Stable', 'Stbl3'];
+var RESISTANCES = ['AmpR', 'KanR', 'CmR', 'SpecR', 'TetR', 'ZeoR'];
+
 /* Each inventory category is its own page, reached from the sidebar.
    Primers is the Primer Generator app instead of a table; its iframe is
    loaded the first time the page is opened, not on every page load. */
@@ -495,7 +499,12 @@ function renderInventory(tab) {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
         }
-        return '<td>' + val + '</td>';
+        // Map links open in a new tab; only http(s), so a typed "javascript:" can't run.
+        if (f === 'mapLink' && /^https?:\/\//i.test(item[f] || '')) {
+          val = '<a href="' + esc(item[f]) + '" target="_blank" rel="noopener" class="ln-map-link">Map \u2197</a>';
+        }
+        var cls = f === 'notes' ? 'ln-notes-cell' : f === 'serial' ? 'ln-nowrap' : f === 'description' ? 'ln-wide-cell' : '';
+        return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</td>';
       }).join('') +
       '<td class="ln-row-actions">' +
         '<button class="ln-icon-btn" title="Edit" onclick="openInventoryModal(\'' + item.id + '\')">\u270e</button>' +
@@ -534,20 +543,26 @@ async function deleteInvItem(tab, id) { if (confirm('Remove this item?')) { awai
    the Primer Generator app, so they are not part of it. */
 var BULK_CATS = ['enzymes', 'plasmids', 'stocks', 'cells', 'kits'];
 var BULK_SHEETS = { enzymes: 'Restriction Enzymes', plasmids: 'Plasmids', stocks: 'Glycerol Stocks', cells: 'Tissue Culture', kits: 'Kits & Reagents' };
-var BULK_DATE_FIELDS = { date: true, expiry: true };
+var BULK_DATE_FIELDS = { expiry: true };
+// A column whose value must not repeat within a category: rows reusing one are skipped.
+var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
   enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials', storage: '-20°C Box 2A' },
   plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', location: '-80°C Plasmid Box 1' },
-  stocks: { strain: 'HEK293-HK022-GFP', plasmid: 'pHK022-GFP', date: '2026-03-05', box: '-80°C Box G1, slot 3', madeBy: 'Blank = your name' },
+  stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: '2', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps', expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
 };
 // Other header spellings people are likely to type, keyed by field.
 var BULK_ALIASES = {
-  qty: ['quantity', 'quantityremaining'], expiry: ['expirydate', 'expires'], date: ['date'],
-  cutsite: ['recognitionsite', 'recognitioncutsite'], conc: ['concentration'], strain: ['name', 'clonename', 'strainclonename'],
+  qty: ['quantity', 'quantityremaining'], expiry: ['expirydate', 'expires'],
+  cutsite: ['recognitionsite', 'recognitioncutsite'], conc: ['concentration'],
   resistance: ['antibioticresistance'], location: ['boxlocation', 'storagelocation'], passage: ['passagenumber'],
-  tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation']
+  tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation'],
+  serial: ['serialnumber', 'serialno', 'serial', 'stocknumber', 'stockno'], description: ['desc'],
+  qc: ['sequenced', 'sequencing', 'sequencingqc', 'qcprimers', 'sequencedwith'], hostStrain: ['strain', 'ecolistrain', 'bacterialstrain'],
+  freezer: ['freezer', 'freezername', 'freezer80c', 'freezer80'], shelfPlace: ['placeofshelf', 'shelfplace', 'placeonshelf', 'shelfposition'],
+  owner: ['madeby'], mapLink: ['map', 'maplink', 'plasmidmap', 'link', 'mapurl']
 };
 
 // SheetJS 0.20.3 reads .xlsx/.csv uploads. Served from this site (vendor/)
@@ -593,7 +608,8 @@ function buildInventoryTemplate(XLSX) {
     ['2. One item per row, starting under the header row. Keep the headers as they are.'],
     ['3. Write dates as YYYY-MM-DD (e.g. 2026-03-05) or as Excel dates.'],
     ['4. In the Lab Notebook, open any inventory page, click "Bulk upload" and choose this file.'],
-    ['Rows without a name are skipped, and so are rows identical to an item already in the inventory.'],
+    ['Rows missing the required (first) column are skipped, and so are rows identical to an item already in the inventory.'],
+    ['Glycerol stock serial numbers must be unique: a row reusing a serial that is already taken (in the inventory or earlier in the file) is skipped.'],
     ['Primers are not included: add them in the Primer Generator.'], [],
     ['Sheet', 'Column', 'Required', 'Example']
   ];
@@ -670,10 +686,12 @@ function buildBulkPlan(XLSX, wb) {
     var pick = bulkPickCategory(sheetName, rows[h]);
     if (!pick) { if (bulkKey(sheetName) !== 'instructions') plan.ignored.push(sheetName); return; }
     var cat = pick.cat, nameField = INV_CONFIG[cat].fields[0];
-    var p = plan.cats[cat] || (plan.cats[cat] = { items: [], noName: [], dupes: 0, badDates: [] });
-    var seen = {};
-    (getInventory()[cat] || []).forEach(function (it) { seen[bulkSignature(cat, it)] = true; });
-    p.items.forEach(function (it) { seen[bulkSignature(cat, it)] = true; });
+    var p = plan.cats[cat] || (plan.cats[cat] = { items: [], noName: [], dupes: 0, badDates: [], taken: [] });
+    var seen = {}, uniq = BULK_UNIQUE[cat], used = {};
+    (getInventory()[cat] || []).concat(p.items).forEach(function (it) {
+      seen[bulkSignature(cat, it)] = true;
+      if (uniq && it[uniq]) used[bulkKey(it[uniq])] = true;
+    });
     for (var r = h + 1; r < rows.length; r++) {
       var item = {}, any = false;
       Object.keys(pick.cols).forEach(function (i) {
@@ -688,9 +706,11 @@ function buildBulkPlan(XLSX, wb) {
       });
       var sig = bulkSignature(cat, item);
       if (seen[sig]) { p.dupes++; continue; }
+      if (uniq && used[bulkKey(item[uniq])]) { p.taken.push(rowNo + ' (' + item[uniq] + ')'); continue; }
       seen[sig] = true;
+      if (uniq) used[bulkKey(item[uniq])] = true;
       if (!item.addedBy) item.addedBy = me;
-      if (cat === 'stocks' && !item.madeBy) item.madeBy = me;
+      if (cat === 'stocks' && !item.owner) item.owner = me;
       p.items.push(item); plan.total++;
     }
   });
@@ -735,11 +755,12 @@ async function previewBulkUpload(input) {
   // Untouched template sheets have no rows at all, so leave them out.
   var parts = BULK_CATS.filter(function (c) {
     var p = bulkPlan.cats[c];
-    return p && (p.items.length || p.dupes || p.noName.length);
+    return p && (p.items.length || p.dupes || p.noName.length || p.taken.length);
   }).map(function (cat) {
     var p = bulkPlan.cats[cat], notes = [];
     if (p.dupes) notes.push(p.dupes + ' already in the inventory, skipped');
-    if (p.noName.length) notes.push(p.noName.length + ' without a name, skipped (' + esc(p.noName.slice(0, 5).join(', ')) + (p.noName.length > 5 ? '…' : '') + ')');
+    if (p.noName.length) notes.push(p.noName.length + ' missing \u201c' + esc(INV_CONFIG[cat].cols[0]) + '\u201d, skipped (' + esc(p.noName.slice(0, 5).join(', ')) + (p.noName.length > 5 ? '…' : '') + ')');
+    if (p.taken.length) notes.push(p.taken.length + ' reuse a ' + esc(INV_CONFIG[cat].cols[0]) + ' that is already taken, skipped: ' + esc(p.taken.slice(0, 5).join(', ')) + (p.taken.length > 5 ? '…' : ''));
     if (p.badDates.length) notes.push('dates not in YYYY-MM-DD, kept as written: ' + esc(p.badDates.slice(0, 5).join(', ')) + (p.badDates.length > 5 ? '…' : ''));
     return '<li><strong>' + esc(BULK_SHEETS[cat]) + '</strong> — ' + p.items.length + ' new' +
       (notes.length ? '<div class="ln-bulk-sub">' + notes.join('<br>') + '</div>' : '') + '</li>';
@@ -916,6 +937,20 @@ async function saveNewUser() {
   closeModal(); renderAdmin();
 }
 
+/* Suggest the next glycerol stock serial: the highest existing number plus
+   one, keeping its prefix and zero padding (GS-0041 -> GS-0042). */
+function nextStockSerial() {
+  var best = null;
+  getInventory().stocks.forEach(function (x) {
+    var m = /^(.*?)(\d+)$/.exec(String(x.serial || '').trim());
+    if (m && (!best || +m[2] > best.n)) best = { prefix: m[1], n: +m[2], width: m[2].length };
+  });
+  if (!best) return '';
+  var next = String(best.n + 1);
+  while (next.length < best.width) next = '0' + next;
+  return best.prefix + next;
+}
+
 /* Called with no argument to add, or with an item id to edit it. */
 var editingInvItem = null;
 function openInventoryModal(id) {
@@ -926,13 +961,30 @@ function openInventoryModal(id) {
     enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div><div class="ln-form-row"><label>Storage Location</label><input id="m-storage" placeholder="e.g. -20°C Box 2A"></div>',
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
     plasmids: '<div class="ln-form-row"><label>Plasmid Name</label><input id="m-name" placeholder="e.g. pUC19-HK022"></div><div class="ln-form-row"><label>Backbone</label><input id="m-backbone" placeholder="e.g. pUC19"></div><div class="ln-form-row"><label>Insert</label><input id="m-insert" placeholder="e.g. HK022 integrase CDS"></div><div class="ln-form-row"><label>Antibiotic Resistance</label><input id="m-resistance" placeholder="e.g. AmpR, KanR"></div><div class="ln-form-row"><label>Box / Location</label><input id="m-location" placeholder="e.g. -80°C Plasmid Box 1"></div>',
-    stocks: '<div class="ln-form-row"><label>Strain / Clone Name</label><input id="m-strain" placeholder="e.g. HEK293-HK022-GFP"></div><div class="ln-form-row"><label>Plasmid / Insert</label><input id="m-plasmid" placeholder="e.g. pHK022-GFP"></div><div class="ln-form-row"><label>Date Prepared</label><input type="date" id="m-date" value="' + today + '"></div><div class="ln-form-row"><label>Storage Box</label><input id="m-box" placeholder="e.g. -80°C Box G1, slot 3"></div><div class="ln-form-row"><label>Made by</label><input id="m-madeBy" value="' + esc(user ? user.name : '') + '"></div>',
+    stocks: '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Serial #</label><input id="m-serial" placeholder="e.g. GS-0001"></div>' +
+      '<div class="ln-form-row"><label>Strain</label><input id="m-hostStrain" list="ln-strain-list" placeholder="e.g. ' + STOCK_STRAINS[0] + '"></div></div>' +
+      '<div class="ln-form-row"><label>Description</label><input id="m-description" placeholder="e.g. pUC19-HK022 attB, clone 3"></div>' +
+      '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Resistance</label><input id="m-resistance" list="ln-resistance-list" placeholder="e.g. AmpR"></div>' +
+      '<div class="ln-form-row"><label>Owner</label><input id="m-owner"></div></div>' +
+      '<div class="ln-form-row"><label>Sequenced (QC)</label><input id="m-qc" placeholder="Primers used, e.g. M13F + M13R, sequence correct"></div>' +
+      '<div class="ln-form-section">Location</div><div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Freezer (-80°C)</label><input id="m-freezer" placeholder="e.g. Freezer A"></div>' +
+      '<div class="ln-form-row"><label>Shelf</label><input id="m-shelf" placeholder="e.g. 2"></div>' +
+      '<div class="ln-form-row"><label>Place on Shelf</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
+      '<div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box G1"></div>' +
+      '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div></div>' +
+      '<div class="ln-form-row"><label>Map Link</label><input id="m-mapLink" type="url" placeholder="https://… (Benchling, SnapGene, Drive)"></div>' +
+      '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes"></textarea></div>' +
+      '<datalist id="ln-strain-list">' + STOCK_STRAINS.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>' +
+      '<datalist id="ln-resistance-list">' + RESISTANCES.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>',
     cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
   var editing = !!editingInvItem;
-  var credit = editing ? (editingInvItem.addedBy || editingInvItem.madeBy || '') : (user ? user.name : '');
+  var credit = editing ? (editingInvItem.addedBy || editingInvItem.owner || '') : (user ? user.name : '');
   mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editing ? 'Edit ' : 'Add ') + tabLabel + '</h3>' + forms[currentInvTab] +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
@@ -942,6 +994,9 @@ function openInventoryModal(id) {
       var input = document.getElementById('m-' + f);
       if (input && editingInvItem[f] != null) input.value = editingInvItem[f];
     });
+  } else if (currentInvTab === 'stocks') {
+    document.getElementById('m-serial').value = nextStockSerial();
+    document.getElementById('m-owner').value = user ? user.name : '';
   }
   bg.classList.add('open');
 }
@@ -952,10 +1007,15 @@ async function saveInvItem() {
   if (tab === 'enzymes') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'), storage: g('m-storage') });
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
   else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), location: g('m-location') });
-  else if (tab === 'stocks') Object.assign(item, { strain: g('m-strain'), plasmid: g('m-plasmid'), date: g('m-date') || today, box: g('m-box'), madeBy: g('m-madeBy') });
+  else if (tab === 'stocks') {
+    INV_CONFIG.stocks.fields.forEach(function (f) { item[f] = g('m-' + f); });
+    if (!item.serial) { alert('Please fill in the serial number.'); return; }
+    var clash = getInventory().stocks.filter(function (x) { return x.id !== item.id && bulkKey(x.serial) === bulkKey(item.serial); })[0];
+    if (clash) { alert('Serial number ' + item.serial + ' is already used by another glycerol stock' + (clash.description ? ' (' + clash.description + ')' : '') + '.'); return; }
+  }
   else if (tab === 'cells') Object.assign(item, { name: g('m-name'), passage: g('m-passage'), source: g('m-source'), tank: g('m-tank'), rack: g('m-rack'), box: g('m-box'), position: g('m-position') });
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
-  if (!item.name && !item.strain) { alert('Please fill in the item name.'); return; }
+  if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);
 }
 

@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=11">
+    <link rel="stylesheet" href="css/notebook.css?v=12">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -129,7 +129,7 @@
           <div id="ln-invtable-plasmids"></div>
         </div>
         <div id="ln-inv-stocks" class="ln-section">
-          <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Frozen strains and clones — what is in them, who made them and when</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
+          <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Bacterial glycerol stocks — what is in them, sequencing QC, and exactly where they are stored at -80°C</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
           <input class="ln-search" id="ln-invsearch-stocks" placeholder="🔍 Search glycerol stocks..." oninput="renderInventory('stocks')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-stocks"></div>
         </div>
@@ -164,8 +164,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=11"></script>
-  <script src="js/data.js?v=11"></script>
-  <script src="js/notebook.js?v=11"></script>
+  <script src="js/config.js?v=12"></script>
+  <script src="js/data.js?v=12"></script>
+  <script src="js/notebook.js?v=12"></script>
 </body>
 </html>
