@@ -550,16 +550,22 @@ var BULK_ALIASES = {
   tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation']
 };
 
-// SheetJS reads and writes .xlsx/.csv. Loaded only when needed, pinned to a
+// SheetJS 0.20.3 reads .xlsx/.csv uploads. Served from this site (vendor/)
+// rather than a CDN, which some networks and blockers stop, and pinned to a
 // patched version (0.18.x on cdnjs has known file-parsing vulnerabilities).
-var XLSX_SRC = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+// Loaded only when the bulk upload dialog opens.
+var XLSX_SRC = 'vendor/xlsx.full.min.js';
 var XLSX_SRI = 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT';
+// The template is a plain file so downloading it needs no script: generated
+// documents are blocked by some browsers (in-app browsers, some Safari
+// setups). Rebuild it after changing INV_CONFIG: node scripts/build-inventory-template.js
+var BULK_TEMPLATE_URL = 'assets/elias-lab-inventory-template.xlsx';
 var xlsxLoading = null;
 function loadXlsx() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
   if (!xlsxLoading) xlsxLoading = new Promise(function (resolve, reject) {
     var s = document.createElement('script');
-    s.src = XLSX_SRC; s.integrity = XLSX_SRI; s.crossOrigin = 'anonymous';
+    s.src = XLSX_SRC; s.integrity = XLSX_SRI;
     s.onload = function () { resolve(window.XLSX); };
     s.onerror = function () { xlsxLoading = null; reject(new Error('Could not load the spreadsheet reader. Check your internet connection and try again.')); };
     document.head.appendChild(s);
@@ -577,9 +583,9 @@ function bulkColumns(cat) {
 function bulkKey(s) { return String(s == null ? '' : s).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 function bulkPad(n) { return (n < 10 ? '0' : '') + n; }
 
-async function downloadInventoryTemplate() {
-  var XLSX;
-  try { XLSX = await loadXlsx(); } catch (e) { alert(e.message); return; }
+/* The template workbook. Only used by scripts/build-inventory-template.js to
+   write BULK_TEMPLATE_URL, so the template always matches INV_CONFIG. */
+function buildInventoryTemplate(XLSX) {
   var wb = XLSX.utils.book_new();
   var help = [
     ['Elias Lab inventory — bulk upload template'], [],
@@ -603,7 +609,7 @@ async function downloadInventoryTemplate() {
     ws['!cols'] = cols.map(function (c) { return { wch: Math.max(16, c.label.length + 4) }; });
     XLSX.utils.book_append_sheet(wb, ws, BULK_SHEETS[cat]);
   });
-  XLSX.writeFile(wb, 'elias-lab-inventory-template.xlsx');
+  return wb;
 }
 
 /* Map a header row to fields of one category. Returns {cols: {index: field},
@@ -699,13 +705,14 @@ function openBulkUploadModal() {
     '<p class="ln-bulk-intro">Add many items at once, to any inventory category. The template has one sheet per category; a CSV exported from an inventory page works too.</p>' +
     '<div class="ln-bulk-step"><span class="ln-bulk-num">1</span><div><strong>Download the template</strong>' +
       '<div class="hint">Sheets for Restriction Enzymes, Plasmids, Glycerol Stocks, Tissue Culture and Kits &amp; Reagents, with an example for every column. Primers are added in the Primer Generator.</div>' +
-      '<button class="ln-add-btn ghost" onclick="downloadInventoryTemplate()">↓ Download template (.xlsx)</button></div></div>' +
+      '<a class="ln-add-btn ghost ln-add-link" href="' + BULK_TEMPLATE_URL + '" download>↓ Download template (.xlsx)</a></div></div>' +
     '<div class="ln-bulk-step"><span class="ln-bulk-num">2</span><div><strong>Upload the filled-in file</strong>' +
       '<div class="hint">Excel (.xlsx) or CSV. You will see what will be added before anything is saved.</div>' +
       '<input type="file" id="m-bulk-file" accept=".xlsx,.xls,.csv" onchange="previewBulkUpload(this)"></div></div>' +
     '<div id="ln-bulk-preview"></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" id="ln-bulk-save" disabled onclick="saveBulkUpload()">Add items</button></div>';
   document.getElementById('ln-modal-bg').classList.add('open');
+  loadXlsx().catch(function () { /* reported when a file is chosen */ }); // warm up while they pick a file
 }
 
 async function previewBulkUpload(input) {
