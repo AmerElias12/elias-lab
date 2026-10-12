@@ -31,6 +31,21 @@
   function withAllCategories(inv) {
     var out = (inv && typeof inv === 'object') ? inv : {};
     INV_CATS.forEach(function (c) { if (!Array.isArray(out[c])) out[c] = []; });
+    out.stocks = out.stocks.map(upgradeStock);
+    return out;
+  }
+
+  /* Glycerol stocks used to be { strain (the clone's name), plasmid, date,
+     box, madeBy }. Show those under the current columns; the item is saved
+     in the new shape the next time someone edits it. */
+  function upgradeStock(item) {
+    if (!item || !('strain' in item || 'plasmid' in item || 'date' in item || 'madeBy' in item)) return item;
+    var out = Object.assign({}, item);
+    var desc = [item.strain, item.plasmid].filter(Boolean).join(' \u2014 ');
+    if (!out.description && desc) out.description = desc;
+    if (!out.owner && item.madeBy) out.owner = item.madeBy;
+    if (item.date) out.notes = (out.notes ? out.notes + ' \u00b7 ' : '') + 'Prepared ' + item.date;
+    delete out.strain; delete out.plasmid; delete out.date; delete out.madeBy;
     return out;
   }
   var COLLECTIONS = { protocols: 'protocols', notebooks: 'notebooks', presentations: 'presentations' };
@@ -247,12 +262,12 @@
       state.protocols = q[1].data || [];
       state.notebooks = q[2].data || [];
       state.presentations = q[3].data || [];
-      var inv = withAllCategories({});
+      var inv = {};
       (q[4].data || []).forEach(function (r) {
         var item = Object.assign({ id: r.id, addedBy: r.added_by }, r.data || {});
-        if (inv[r.category]) inv[r.category].push(item);
+        (inv[r.category] = inv[r.category] || []).push(item);
       });
-      state.inventory = inv;
+      state.inventory = withAllCategories(inv);
     },
 
     /* Re-fetch everything so edits by other members show up. Shared mode
