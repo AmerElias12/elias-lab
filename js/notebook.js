@@ -579,7 +579,7 @@ function renderInventory(tab) {
         }
         // A box name opens that box's map.
         if (f === 'box' && item.box && BOX_CATS.indexOf(currentInvTab) >= 0) {
-          val = '<a href="#" class="ln-box-link" data-box="' + esc(item.box) + '" onclick="openBoxByName(this.dataset.box);return false;" title="Open box map">' + esc(item.box) + ' ▦</a>';
+          val = '<a href="#" class="ln-box-link" data-box="' + esc(item.box) + '" onclick="openBoxByName(this.dataset.box,\'' + currentInvTab + '\');return false;" title="Open box map">' + esc(item.box) + ' ▦</a>';
         }
         // Map links open in a new tab; only http(s), so a typed "javascript:" can't run.
         if (f === 'mapLink' && /^https?:\/\//i.test(item[f] || '')) {
@@ -623,27 +623,28 @@ async function deleteInvItem(tab, id) {
 }
 
 // ── STORAGE BOXES ──────────────────────────────────────────
-/* A box is an inventory item of category 'boxes': { name, layout, freezer,
-   notes }. Its vials are the plasmids, glycerol stocks and cell lines whose
-   Box matches the box name (case and spacing ignored), placed on the grid by
-   their Position: "A3" style, or a number counted row by row (1-81 in a 9x9).
-   A box name used by vials but never set up still shows, assumed 9x9. */
+/* A box is an inventory item of category 'boxes': { name, cat, layout,
+   freezer, notes }. Each box holds one inventory type (cat: plasmids, stocks
+   or cells), so "Box 1" of glycerol stocks and "Box 1" of cell lines are two
+   different boxes. Its vials are the items of that type whose Box matches the
+   name (case and spacing ignored), placed by Position: "A3" style, or a
+   number counted row by row (1-81 in a 9x9). A box name used by vials but
+   never set up still shows, assumed 9x9.
+   Set-ups saved before boxes had a type have no `cat`; they apply to every
+   type using that name until edited, when they are saved with the type. */
 var BOX_CATS = ['plasmids', 'stocks', 'cells'];
+var BOX_TYPE_NAMES = { plasmids: 'Plasmid boxes', stocks: 'Glycerol stock boxes', cells: 'Tissue culture boxes' };
 var BOX_LAYOUTS = { '9x9': { rows: 9, cols: 9 }, '10x10': { rows: 10, cols: 10 }, '5x5': { rows: 5, cols: 5 } };
 var BOX_DEFAULT_LAYOUT = '9x9';
 var boxView = null;      // key of the open box, or null for the list of boxes
 var boxSelected = null;  // 'r,c' of the selected cell in the open box
 
-function boxKey(name) { return bulkKey(name); }
+function boxKey(cat, name) { return (cat || 'any') + ':' + bulkKey(name); }
 function boxDims(def) { return BOX_LAYOUTS[def && def.layout] || BOX_LAYOUTS[BOX_DEFAULT_LAYOUT]; }
+function boxTypeOne(cat) { return cat ? INV_LABELS[cat].one.toLowerCase() : 'any'; }
 function vialLabel(cat, it) {
   if (cat === 'stocks') return it.serial || it.description || 'Stock';
   return it.name || INV_LABELS[cat].one;
-}
-function vialSub(cat, it) {
-  if (cat === 'stocks') return it.serial ? (it.description || '') : '';
-  if (cat === 'cells') return it.passage || '';
-  return it.insert || it.backbone || '';
 }
 // Grid cell for a position, or null when it doesn't fit this box.
 function parsePosition(pos, dims) {
@@ -658,14 +659,25 @@ function parsePosition(pos, dims) {
 /* Every box: the set-up ones plus names vials use without a set-up box. */
 function boxIndex() {
   var inv = getInventory(), boxes = {}, order = [];
-  function get(name) {
-    var k = boxKey(name);
-    if (!boxes[k]) { boxes[k] = { key: k, name: String(name).trim(), def: null, vials: [] }; order.push(k); }
+  function get(cat, name) {
+    var k = boxKey(cat, name);
+    if (!boxes[k]) { boxes[k] = { key: k, cat: cat, name: String(name).trim(), def: null, vials: [] }; order.push(k); }
     return boxes[k];
   }
-  (inv.boxes || []).forEach(function (d) { if (d.name) get(d.name).def = d; });
+  var defs = inv.boxes || [];
+  defs.forEach(function (d) { if (d.name && d.cat) get(d.cat, d.name).def = d; });
   BOX_CATS.forEach(function (cat) {
-    (inv[cat] || []).forEach(function (it) { if (String(it.box || '').trim()) get(it.box).vials.push({ cat: cat, item: it }); });
+    (inv[cat] || []).forEach(function (it) { if (String(it.box || '').trim()) get(cat, it.box).vials.push({ cat: cat, item: it }); });
+  });
+  // Untyped (older) set-ups: lend the layout to every type using the name.
+  defs.forEach(function (d) {
+    if (!d.name || d.cat) return;
+    var used = BOX_CATS.filter(function (c) { return boxes[boxKey(c, d.name)]; });
+    if (!used.length) { get(null, d.name).def = d; return; }
+    used.forEach(function (c) {
+      var b = boxes[boxKey(c, d.name)];
+      if (!b.def) { b.def = d; b.sharedDef = used.length > 1; }
+    });
   });
   return order.map(function (k) {
     var b = boxes[k];
@@ -683,9 +695,11 @@ function boxIndex() {
     return b;
   }).sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); });
 }
+function findBox(key) { return boxIndex().filter(function (x) { return x.key === key; })[0] || null; }
 
 function openBoxesPage() { boxView = null; boxSelected = null; lnShow('boxes'); }
-function openBoxByName(name) { boxView = boxKey(name); boxSelected = null; lnShow('boxes'); }
+function openBox(key) { boxView = key; boxSelected = null; lnShow('boxes'); }
+function openBoxByName(name, cat) { openBox(boxKey(cat, name)); }
 function renderBoxes() {
   var el = document.getElementById('ln-boxes-body');
   if (!el) return;
@@ -707,28 +721,34 @@ function boxListBody(all, q) {
   q = String(q || '').trim().toLowerCase();
   var shown = !q ? all : all.filter(function (b) { return (b.name + ' ' + b.where).toLowerCase().indexOf(q) >= 0; });
   if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give a plasmid, glycerol stock or cell line a Box name and it appears here.</div>';
-  if (!shown.length) return '<div class="ln-empty">No box matches \u201c' + esc(q) + '\u201d.</div>';
-  return '<div class="ln-box-grid-list">' + shown.map(function (b) {
-    var total = b.dims.rows * b.dims.cols, counts = {};
-    b.vials.forEach(function (v) { counts[v.cat] = (counts[v.cat] || 0) + 1; });
-    var chips = BOX_CATS.filter(function (c) { return counts[c]; }).map(function (c) {
-      return '<span class="ln-vchip ' + c + '">' + counts[c] + ' ' + (counts[c] === 1 ? INV_LABELS[c].one.toLowerCase() : INV_LABELS[c].many) + '</span>';
-    }).join('');
-    return '<button type="button" class="ln-box-card" data-box="' + esc(b.name) + '" onclick="openBoxByName(this.dataset.box)">' +
-      '<div class="ln-box-card-name">' + esc(b.name) + '</div>' +
-      '<div class="ln-box-card-meta">' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '\u00d7') : 'Layout not set') + (b.where ? ' \u00b7 ' + esc(b.where) : '') + '</div>' +
-      '<div class="ln-box-fill"><span style="width:' + Math.round(b.placed / total * 100) + '%"></span></div>' +
-      '<div class="ln-box-card-count">' + b.placed + ' / ' + total + ' positions used' + (b.unplaced.length ? ' \u00b7 <span class="warn">' + b.unplaced.length + ' without a position</span>' : '') + '</div>' +
-      '<div class="ln-vchips">' + (chips || '<span class="ln-vchip">empty</span>') + '</div></button>';
-  }).join('') + '</div>';
+  if (!shown.length) return '<div class="ln-empty">No box matches “' + esc(q) + '”.</div>';
+  // One group per type, so same-named boxes of different types sit apart.
+  return BOX_CATS.concat([null]).map(function (cat) {
+    var group = shown.filter(function (b) { return b.cat === cat; });
+    if (!group.length) return '';
+    return '<h3 class="ln-box-group">' + (cat ? BOX_TYPE_NAMES[cat] : 'Type not set') + ' <span>' + group.length + '</span></h3>' +
+      '<div class="ln-box-grid-list">' + group.map(boxCardHtml).join('') + '</div>';
+  }).join('');
+}
+function boxCardHtml(b) {
+  var total = b.dims.rows * b.dims.cols, n = b.vials.length;
+  var content = !b.cat ? '<span class="ln-vchip">empty · type not set</span>'
+    : '<span class="ln-vchip ' + b.cat + '">' + n + ' ' + (n === 1 ? INV_LABELS[b.cat].one.toLowerCase() : INV_LABELS[b.cat].many) + '</span>';
+  return '<button type="button" class="ln-box-card" data-key="' + esc(b.key) + '" onclick="openBox(this.dataset.key)">' +
+    '<div class="ln-box-card-name">' + esc(b.name) + '</div>' +
+    '<div class="ln-box-card-meta">' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'Layout not set') + (b.where ? ' · ' + esc(b.where) : '') + '</div>' +
+    '<div class="ln-box-fill"><span style="width:' + Math.round(b.placed / total * 100) + '%"></span></div>' +
+    '<div class="ln-box-card-count">' + b.placed + ' / ' + total + ' positions used' + (b.unplaced.length ? ' · <span class="warn">' + b.unplaced.length + ' without a position</span>' : '') + '</div>' +
+    '<div class="ln-vchips">' + content + '</div></button>';
 }
 
 function boxDetailHtml(b) {
   var d = b.dims, rowsHtml = '';
+  var type = b.cat ? INV_LABELS[b.cat].one + ' box' : 'Box (type not set)';
   var head = '<div class="ln-section-header"><div><a href="#" class="ln-back-link" onclick="openBoxesPage();return false;">← All boxes</a>' +
-    '<h2>' + esc(b.name) + '</h2><p>' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') + ' box' : 'Layout not set (shown as 9×9)') +
+    '<h2>' + esc(b.name) + '</h2><p>' + type + ' · ' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'layout not set (shown as 9×9)') +
     (b.where ? ' · ' + esc(b.where) : '') + ' · ' + b.placed + ' / ' + (d.rows * d.cols) + ' positions used</p></div>' +
-    '<div class="ln-header-actions"><button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-box="' + esc(b.name) + '" onclick="openBoxModal(this.dataset.box)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
+    '<div class="ln-header-actions"><button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-key="' + esc(b.key) + '" onclick="openBoxModal(this.dataset.key)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
     (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '');
   rowsHtml += '<div class="ln-bm-corner"></div>';
   for (var c = 0; c < d.cols; c++) rowsHtml += '<div class="ln-bm-colh">' + (c + 1) + '</div>';
@@ -743,7 +763,7 @@ function boxDetailHtml(b) {
         '<span class="ln-bm-label">' + esc(label) + '</span>' + (vs.length > 1 ? '<span class="ln-bm-badge">' + vs.length + '</span>' : '') + '</button>';
     }
   }
-  var legend = '<div class="ln-bm-legend">' + BOX_CATS.map(function (c) { return '<span><i class="ln-bm-swatch ' + c + '"></i>' + INV_LABELS[c].many.replace(/^./, function (x) { return x.toUpperCase(); }) + '</span>'; }).join('') +
+  var legend = '<div class="ln-bm-legend">' + (b.cat ? '<span><i class="ln-bm-swatch ' + b.cat + '"></i>' + INV_LABELS[b.cat].one + '</span>' : '') +
     '<span><i class="ln-bm-swatch clash"></i>Two vials in one position</span></div>';
   var unplaced = b.unplaced.length ? '<div class="ln-bm-unplaced"><strong>' + b.unplaced.length + ' in this box without a usable position</strong>' +
     b.unplaced.map(function (v) {
@@ -762,7 +782,7 @@ function boxCellPanel(b) {
   var vs = b.cells[boxSelected];
   if (!vs) {
     return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + ' · empty</div><div class="ln-bm-panel-add">Add here:' +
-      BOX_CATS.map(function (c) { return '<button type="button" class="ln-icon-btn" data-box="' + esc(b.name) + '" onclick="addVialAt(\'' + c + '\',this.dataset.box,\'' + pos + '\')">+ ' + INV_LABELS[c].one + '</button>'; }).join('') +
+      (b.cat ? [b.cat] : BOX_CATS).map(function (c) { return '<button type="button" class="ln-icon-btn" data-key="' + esc(b.key) + '" onclick="addVialAt(\'' + c + '\',this.dataset.key,\'' + pos + '\')">+ ' + INV_LABELS[c].one + '</button>'; }).join('') +
       '</div></div>';
   }
   return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + (vs.length > 1 ? ' · <span class="warn">' + vs.length + ' vials share this position</span>' : '') + '</div>' +
@@ -780,27 +800,35 @@ function boxCellPanel(b) {
     }).join('') + '</div>';
 }
 function editVial(cat, id) { currentInvTab = cat; openInventoryModal(id); }
-function addVialAt(cat, boxName, pos) {
-  var b = boxIndex().filter(function (x) { return x.key === boxKey(boxName); })[0];
+function addVialAt(cat, key, pos) {
+  var b = findBox(key);
+  if (!b) return;
   currentInvTab = cat;
-  var prefill = { box: boxName, position: pos };
-  if (b && b.where) prefill[cat === 'cells' ? 'tank' : 'freezer'] = b.where;
+  var prefill = { box: b.name, position: pos };
+  if (b.where) prefill[cat === 'cells' ? 'tank' : 'freezer'] = b.where;
   openInventoryModal(null, prefill);
 }
 
-/* Set up or edit a box. Renaming offers to move its vials to the new name,
-   since vials find their box by name. */
+/* Set up or edit a box. The type is fixed once vials are in it, since they
+   decide it. Renaming offers to move its vials, which find it by name. */
 var editingBox = null;
-function openBoxModal(name) {
-  var b = name ? boxIndex().filter(function (x) { return x.key === boxKey(name); })[0] : null;
-  editingBox = b || null;
+function openBoxModal(key) {
+  var b = key ? findBox(key) : null;
+  editingBox = b;
   var def = (b && b.def) || {};
   var layout = def.layout || BOX_DEFAULT_LAYOUT;
+  var typeLocked = !!(b && b.vials.length);
+  var cat = (b && b.cat) || 'stocks';
   document.getElementById('ln-modal-content').innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (b && b.def ? 'Edit Box' : 'Set Up Box') + '</h3>' +
-    '<div class="ln-form-row"><label>Box Name</label><input id="m-boxname" value="' + esc(b ? b.name : '') + '" placeholder="e.g. Box G1"><div class="hint">Vials are placed in this box when their Box field matches this name.</div></div>' +
+    '<div class="ln-form-grid"><div class="ln-form-row"><label>Box Name</label><input id="m-boxname" value="' + esc(b ? b.name : '') + '" placeholder="e.g. Box 1"></div>' +
+    '<div class="ln-form-row"><label>Holds</label><select id="m-boxcat"' + (typeLocked ? ' disabled' : '') + '>' +
+      BOX_CATS.map(function (c) { return '<option value="' + c + '"' + (c === cat ? ' selected' : '') + '>' + INV_LABELS[c].many.replace(/^./, function (x) { return x.toUpperCase(); }) + '</option>'; }).join('') +
+    '</select></div></div>' +
+    '<div class="hint" style="margin:-.4rem 0 .9rem;font-size:12px;color:#7a877f;">' + (typeLocked ? 'The type is set by the vials already in this box. ' : '') +
+      'Vials of this type are placed here when their Box field matches the name. Boxes of different types can share a name.</div>' +
     '<div class="ln-form-grid"><div class="ln-form-row"><label>Layout</label><select id="m-boxlayout">' +
       Object.keys(BOX_LAYOUTS).map(function (k) { var d = BOX_LAYOUTS[k]; return '<option value="' + k + '"' + (k === layout ? ' selected' : '') + '>' + d.rows + ' × ' + d.cols + ' (' + d.rows * d.cols + ' positions)</option>'; }).join('') +
-    '</select></div><div class="ln-form-row"><label>Freezer / Tank</label><input id="m-boxfreezer" value="' + esc(def.freezer || (b ? b.where : '')) + '" placeholder="e.g. -80°C Freezer A, shelf 2"></div></div>' +
+    '</select></div><div class="ln-form-row"><label>Freezer / Tank</label><input id="m-boxfreezer" value="' + esc(def.freezer || (b ? b.where : '')) + '" placeholder="e.g. -80°C Freezer A, or LN2 Tank 1"></div></div>' +
     '<div class="ln-form-row"><label>Notes</label><textarea id="m-boxnotes" placeholder="e.g. Lentiviral plasmids only">' + esc(def.notes || '') + '</textarea></div>' +
     '<div class="ln-modal-actions">' + (b && b.def ? '<button class="ln-modal-cancel" style="margin-right:auto;color:#8f2a2a;" onclick="deleteBox()">Delete box</button>' : '') +
     '<button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveBox()">Save box</button></div>';
@@ -809,17 +837,22 @@ function openBoxModal(name) {
 async function saveBox() {
   var name = g('m-boxname');
   if (!name) { alert('Please give the box a name.'); return; }
-  var all = boxIndex(), b = editingBox;
-  var clash = all.filter(function (x) { return x.key === boxKey(name) && x.def && (!b || x.key !== b.key); })[0];
-  if (clash) { alert('A box called “' + clash.name + '” is already set up.'); return; }
-  var def = Object.assign({}, (b && b.def) || {}, { name: name, layout: g('m-boxlayout'), freezer: g('m-boxfreezer'), notes: g('m-boxnotes') });
+  var b = editingBox;
+  var cat = b && b.vials.length ? b.cat : g('m-boxcat');
+  var key = boxKey(cat, name);
+  var clash = boxIndex().filter(function (x) { return x.key === key && x.def && x.def.cat && (!b || x.key !== b.key); })[0];
+  if (clash) { alert('A ' + boxTypeOne(cat) + ' box called “' + clash.name + '” is already set up.'); return; }
+  // An older set-up shared by several types: give this type its own copy.
+  var base = b && b.def ? (b.sharedDef ? Object.assign({}, b.def, { id: undefined }) : b.def) : {};
+  var def = Object.assign({}, base, { name: name, cat: cat, layout: g('m-boxlayout'), freezer: g('m-boxfreezer'), notes: g('m-boxnotes') });
+  if (!def.id) delete def.id;
   if (!def.addedBy) def.addedBy = currentUser() ? currentUser().name : 'Unknown';
   // Fewer positions than before: say which vials would no longer fit.
   if (b && b.vials.length) {
     var lost = b.vials.filter(function (v) { return parsePosition(v.item.position, b.dims) && !parsePosition(v.item.position, boxDims(def)); });
     if (lost.length && !confirm(lost.length + ' vial(s) sit outside a ' + def.layout.replace('x', '×') + ' grid and will be listed as without a usable position. Continue?')) return;
   }
-  var renamed = b && b.vials.length && boxKey(name) !== b.key;
+  var renamed = b && b.vials.length && key !== b.key;
   if (renamed && !confirm('Move the ' + b.vials.length + ' vial(s) in “' + b.name + '” to the new name “' + name + '” as well?')) return;
   try {
     await DB.upsertInventory('boxes', def);
@@ -828,13 +861,16 @@ async function saveBox() {
     }
   } catch (e) { alert('Could not save the box: ' + e.message); return; }
   closeModal();
-  if (boxView) boxView = boxKey(name);
+  if (boxView) boxView = key;
   renderBoxes();
 }
 async function deleteBox() {
   var b = editingBox;
   if (!b || !b.def) return;
-  if (!confirm('Delete the box set-up for “' + b.name + '”?' + (b.vials.length ? ' Its ' + b.vials.length + ' vial(s) are not deleted and keep their Box name, so the box still appears with its layout unset.' : ''))) return;
+  var msg = 'Delete the box set-up for “' + b.name + '”?' +
+    (b.vials.length ? ' Its ' + b.vials.length + ' vial(s) are not deleted and keep their Box name, so the box still appears with its layout unset.' : '') +
+    (b.sharedDef ? ' This set-up is also used by the other boxes named “' + b.name + '”, which lose their layout too.' : '');
+  if (!confirm(msg)) return;
   await DB.removeInventory('boxes', b.def.id);
   closeModal();
   if (!b.vials.length) boxView = null;
@@ -1293,7 +1329,7 @@ function openInventoryModal(id, prefill) {
   var editing = !!editingInvItem;
   var credit = editing ? (editingInvItem.addedBy || editingInvItem.owner || '') : (user ? user.name : '');
   mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editing ? 'Edit ' : 'Add ') + tabLabel + '</h3>' + forms[currentInvTab] +
-    '<datalist id="ln-box-list">' + boxIndex().map(function (b) { return '<option value="' + esc(b.name) + '">'; }).join('') + '</datalist>' +
+    '<datalist id="ln-box-list">' + boxIndex().filter(function (b) { return !b.cat || b.cat === currentInvTab; }).map(function (b) { return '<option value="' + esc(b.name) + '">'; }).join('') + '</datalist>' +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
   // Pre-fill from the item being edited; fields without an input are skipped.
