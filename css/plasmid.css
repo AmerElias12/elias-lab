@@ -1,0 +1,104 @@
+/* ============================================================
+   Elias Lab Notebook — plasmid page
+   Maps, metadata and the sequence view. Loaded after notebook.css,
+   whose buttons, forms and tables it builds on.
+   ============================================================ */
+
+.ln-pl-name{font-family:var(--serif);font-size:30px;font-weight:600;color:#16241f;letter-spacing:-.02em;margin:.2rem 0 .7rem;}
+
+/* ---- the figures at the top ---- */
+.ln-pl-stats{display:flex;flex-wrap:wrap;gap:.5rem .4rem;margin-bottom:1.4rem;}
+.ln-pl-stat{display:inline-flex;align-items:baseline;gap:.4rem;background:#fbfaf5;border:1px solid rgba(22,36,31,.1);
+  border-radius:100px;padding:.3rem .85rem;font-size:13px;font-family:var(--mono);color:#16241f;}
+.ln-pl-stat em{font-style:normal;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#7a877f;}
+.ln-pl-stat.warn{background:#fdf6ea;border-color:rgba(168,106,18,.3);color:#7a4e0d;font-family:var(--sans);}
+
+/* ---- maps beside the details, then the linear map across the page ---- */
+.ln-pl-maps{display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:1.6rem;align-items:start;margin-bottom:1.2rem;}
+.ln-pl-circ{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:.6rem;}
+.ln-pl-meta-wrap.wide{grid-column:1/-1;}
+.ln-pl-linear{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:1rem .6rem .4rem;margin-bottom:1.6rem;overflow-x:auto;}
+.ln-pl-map{display:block;max-width:100%;height:auto;}
+
+/* map parts (the SVG is written by js/plasmid.js) */
+.pl-axis,.pl-ring{fill:none;stroke:#16241f;stroke-opacity:.35;stroke-width:1.5;}
+.pl-tick{stroke:#16241f;stroke-opacity:.3;stroke-width:1;}
+.pl-ticklabel{font-family:var(--mono);font-size:8.5px;fill:#7a877f;text-anchor:middle;}
+.pl-ticklabel.end{text-anchor:end;font-size:10px;}
+.pl-ticklabel.mid{text-anchor:middle;}
+.pl-feat{stroke:rgba(22,36,31,.45);stroke-width:.75;cursor:pointer;}
+.pl-feat:hover{stroke:#0c4a44;stroke-width:1.6;}
+.pl-featlabel{font-family:var(--sans);font-size:9.5px;fill:#16241f;text-anchor:middle;pointer-events:none;}
+.pl-featlabel.out{font-size:10.5px;text-anchor:start;}
+.pl-leader{fill:none;stroke:#16241f;stroke-opacity:.3;stroke-width:.8;}
+.pl-title{font-family:var(--serif);font-size:15px;font-weight:600;fill:#0c4a44;text-anchor:middle;}
+.pl-sub{font-family:var(--mono);font-size:10px;fill:#7a877f;text-anchor:middle;}
+
+/* ---- the details form ---- */
+.ln-pl-meta .ln-form-section:first-child{margin-top:0;}
+.ln-pl-meta .ln-form-row{margin-bottom:.7rem;}
+.ln-pl-meta input,.ln-pl-meta select,.ln-pl-meta textarea{width:100%;box-sizing:border-box;padding:.55rem .75rem;
+  border:1.5px solid #ddd;border-radius:8px;font:inherit;font-size:14px;background:#fff;}
+.ln-pl-meta textarea{min-height:64px;resize:vertical;}
+.ln-pl-meta input:focus,.ln-pl-meta select:focus,.ln-pl-meta textarea:focus{outline:none;border-color:#10b07e;}
+.ln-pl-meta .hint a{color:#0c4a44;}
+
+/* ---- panels for features and the sequence ---- */
+.ln-pl-panel{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:1.1rem 1.3rem;margin-bottom:1.4rem;}
+.ln-pl-panel-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem;}
+.ln-pl-panel-head h3{font-family:var(--serif);font-size:19px;font-weight:600;color:#0c4a44;}
+.ln-pl-panel-head h3 span{font-family:var(--mono);font-size:13px;color:#7a877f;margin-left:.3rem;}
+.pl-swatch{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid rgba(22,36,31,.3);margin-right:.45rem;vertical-align:-1px;}
+.ln-pl-panel .ln-table{background:#fff;}
+.ln-pl-check{display:inline-flex;align-items:center;gap:.35rem;font-size:13px;color:#4a5a52;white-space:nowrap;}
+.ln-search.sm{width:230px;margin:0;padding:.45rem .8rem;font-size:13px;}
+
+/* a small menu under the Export button */
+.ln-pl-menu{position:absolute;z-index:20;margin-top:.3rem;background:#fff;border:1px solid rgba(22,36,31,.15);
+  border-radius:10px;box-shadow:0 14px 30px -18px rgba(7,46,42,.5);padding:.3rem;display:flex;flex-direction:column;min-width:160px;}
+.ln-pl-menu button{font:inherit;font-size:13px;text-align:left;background:none;border:none;border-radius:7px;padding:.45rem .6rem;cursor:pointer;color:#16241f;}
+.ln-pl-menu button:hover{background:rgba(12,74,68,.07);}
+.ln-entry-bar .ln-header-actions{position:relative;}
+
+/* ---- the sequence ---- */
+.ln-pl-selnote{font-size:13px;color:#4a5a52;background:#f3f8f5;border-radius:8px;padding:.45rem .7rem;margin-bottom:.6rem;}
+.ln-pl-selnote .ok{color:#0c6b4e;font-weight:600;}
+.ln-pl-selnote .ln-icon-btn{margin-left:.3rem;}
+.pl-seq{font-family:var(--mono);font-size:13px;line-height:1.65;background:#fff;border:1px solid rgba(22,36,31,.1);
+  border-radius:10px;padding:.7rem .4rem;max-height:460px;overflow:auto;}
+.pl-line{display:flex;gap:.7rem;white-space:pre;}
+.pl-num{flex:none;width:5.5em;text-align:right;color:#aab2ac;user-select:none;}
+.pl-bases{letter-spacing:.06em;}
+.pl-b{border-radius:2px;}
+.pl-b.hit{outline:2px solid #c13a3a;outline-offset:-1px;background-image:linear-gradient(rgba(193,58,58,.18),rgba(193,58,58,.18));}
+.pl-comp{color:#8a948c;}
+.pl-seq-edit{width:100%;box-sizing:border-box;min-height:240px;font-family:var(--mono);font-size:12.5px;line-height:1.5;
+  word-break:break-all;border:1.5px solid #ddd;border-radius:8px;padding:.6rem;resize:vertical;}
+
+@media(max-width:1100px){.ln-pl-maps{grid-template-columns:1fr;}}
+@media(max-width:640px){
+  .ln-pl-name{font-size:23px;}
+  .ln-pl-panel{padding:.9rem;}
+  .ln-search.sm{width:100%;}
+  .pl-num{width:4em;}
+  .pl-seq{font-size:11.5px;}
+}
+
+/* ---- printing a plasmid ---- */
+@media print{
+  .ln-pl-maps{display:block;}
+  .ln-pl-circ,.ln-pl-linear,.ln-pl-panel{border:none;background:#fff;padding:0;break-inside:avoid;margin-bottom:10px;}
+  .ln-pl-circ{max-width:120mm;margin:0 auto;}
+  .ln-pl-meta-wrap{margin-top:10px;}
+  .ln-pl-meta input,.ln-pl-meta select,.ln-pl-meta textarea{border:none !important;padding:0 !important;
+    background:none;appearance:none;-webkit-appearance:none;font-size:12px;}
+  .ln-pl-meta .ln-form-row{margin-bottom:.2rem;}
+  .ln-pl-meta textarea{min-height:0;height:auto;}
+  /* an empty detail prints as nothing rather than an empty box */
+  .ln-pl-meta .ln-form-row:has(input:placeholder-shown:not([list])),
+  .ln-pl-meta .ln-form-row:has(textarea:empty){display:none;}
+  .ln-pl-selnote,.ln-pl-check,.ln-search,.ln-pl-menu{display:none !important;}
+  .pl-seq{max-height:none;overflow:visible;border:none;font-size:9px;line-height:1.45;padding:0;}
+  .pl-line{break-inside:avoid;}
+  .ln-pl-stat{border-color:#ccc;}
+}
