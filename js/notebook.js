@@ -402,7 +402,7 @@ async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can
    text styles are dropped. */
 var SAFE_TAGS = ['p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
   'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'a'];
-var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true };
+var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true };
 var SAFE_STYLES = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
 var safeHtmlReady = false;
 function safeHtml(html) {
@@ -423,7 +423,7 @@ function safeHtml(html) {
   }
   return DOMPurify.sanitize(String(html || ''), {
     ALLOWED_TAGS: SAFE_TAGS,
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'data-path', 'class', 'style', 'colspan', 'rowspan'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'data-path', 'data-calc', 'class', 'style', 'colspan', 'rowspan'],
     ALLOW_DATA_ATTR: false
   }).replace(/<img(?![^>]*\b(?:src|data-path)=)[^>]*>/gi, ''); // images whose source was unsafe
 }
@@ -530,6 +530,10 @@ function renderEntry(id) {
 
   var editor = document.getElementById('e-body');
   editor.innerHTML = safeHtml(n.body || '');
+  calcHydrate(editor);
+  editor.addEventListener('input', calcHandle);
+  editor.addEventListener('change', calcHandle);
+  editor.addEventListener('click', calcHandle);
   hydrateEntryImages(editor);
   initTableEditor();
   loadTablesIntoEditor((n.tables || []).map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }));
@@ -556,12 +560,16 @@ async function hydrateEntryImages(root) {
   } catch (e) { /* images stay blank; the next open retries */ }
 }
 function entryBodyForSave() {
-  var clone = document.getElementById('e-body').cloneNode(true);
+  var live = document.getElementById('e-body');
+  var clone = live.cloneNode(true);
+  // Calculation tables: save their state and a plain snapshot, not the form.
+  var liveCalcs = live.querySelectorAll('.ln-calc'), cloneCalcs = clone.querySelectorAll('.ln-calc');
+  Array.prototype.forEach.call(cloneCalcs, function (b, i) { if (liveCalcs[i] && liveCalcs[i]._calc) { b._calc = liveCalcs[i]._calc; calcSnapshot(b); } });
   // Signed links expire, so stored images keep only their storage path.
   clone.querySelectorAll('img[data-path]').forEach(function (i) { i.removeAttribute('src'); });
   var html = safeHtml(clone.innerHTML);
   var probe = document.createElement('div'); probe.innerHTML = html;
-  return probe.textContent.trim() || probe.querySelector('img,table,hr,ul.ln-checklist') ? html : '';
+  return probe.textContent.trim() || probe.querySelector('img,table,hr,ul.ln-checklist,.ln-calc') ? html : '';
 }
 
 async function saveEntry() {
@@ -607,6 +615,7 @@ function editorToolbarHtml() {
     b('quote', '\u275d', 'Quote') + b('insertHorizontalRule', '\u2015', 'Divider line') +
     '<span class="sep"></span>' + b('table', '\u229e Table', 'Insert a table') + b('tableRow', '+ Row', 'Add a row to the table you are in') + b('tableCol', '+ Col', 'Add a column to the table you are in') +
     b('image', '\ud83d\uddbc Image', 'Insert an image (you can also paste or drop one)') +
+    '<button type="button" class="ln-calc-btn" title="Insert a ready-made PCR, qPCR, transfection or electroporation table" onmousedown="event.preventDefault()" onclick="openCalcPicker()">\ud83e\uddee Calc table</button>' +
     '<span class="sep"></span>' + b('removeFormat', 'Clear', 'Clear formatting') + b('undo', '\u21ba Undo', 'Undo (Ctrl/Cmd+Z)') + b('redo', '\u21bb Redo', 'Redo') +
     '<input type="file" id="e-image-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="editorInsertImages(this.files);this.value=\'\'">' +
     '</div>';
@@ -676,6 +685,7 @@ async function editorInsertImages(files) {
   } catch (e) { alert(e.message); if (st) st.textContent = 'Unsaved changes'; }
 }
 function editorPaste(e) {
+  if (e.target.closest && e.target.closest('.ln-calc')) return; // a calc table's own fields
   var cd = e.clipboardData;
   if (!cd) return;
   if (cd.files && cd.files.length && Array.prototype.some.call(cd.files, function (f) { return /^image\//.test(f.type); })) {
@@ -685,7 +695,353 @@ function editorPaste(e) {
   if (html) { e.preventDefault(); document.execCommand('insertHTML', false, safeHtml(html)); markEntryDirty(); }
 }
 function editorDrop(e) {
+  if (e.target.closest && e.target.closest('.ln-calc')) return;
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); editorInsertImages(e.dataTransfer.files); }
+}
+
+// ── CALCULATION TABLES ─────────────────────────────────────
+/* Ready-made tables for the notebook page (PCR, qPCR, transfection,
+   electroporation). A table is a non-editable block inside the page,
+   <div class="ln-calc" data-calc="{state}">, that recalculates as the
+   number of samples, replicates, controls, extra % or plate changes.
+   The state (which recipe, the inputs and every component row) lives in
+   data-calc; on save the block's contents become a plain snapshot table,
+   and on open it is rebuilt from the state. Recipes are standard published
+   ones; every amount can be edited per entry, and the lab defaults are the
+   CALC_TEMPLATES below. */
+var CALC_FORMATS = {
+  tubes: { label: 'Tubes / strips', wells: 0 },
+  '96': { label: '96-well plate', wells: 96 }, '384': { label: '384-well plate', wells: 384 },
+  '6': { label: '6-well plate', wells: 6 }, '12': { label: '12-well plate', wells: 12 }, '24': { label: '24-well plate', wells: 24 },
+  '10cm': { label: '10 cm dish', wells: 1 }, '15cm': { label: '15 cm dish', wells: 1 },
+  neon10: { label: 'Neon 10 µL tip', wells: 0 }, neon100: { label: 'Neon 100 µL tip', wells: 0 },
+  cuv1: { label: '0.1 cm cuvette', wells: 0 }, cuv2: { label: '0.2 cm cuvette', wells: 0 }
+};
+// kind 'mix': fixed reaction volume, water fills it up, amounts scale with the volume.
+// kind 'perwell': amounts per well/reaction depend on the format (per: { format: amount }).
+// `well: true` = added to each well/tube separately, not into the master mix.
+var CALC_TEMPLATES = {
+  q5: {
+    name: 'PCR — Q5 High-Fidelity', source: 'NEB Q5 High-Fidelity DNA Polymerase (M0491), 50 µL reaction',
+    kind: 'mix', volume: 50, formats: ['tubes', '96'], format: 'tubes',
+    labels: { samples: 'Samples', controls: 'No-template controls', reps: 'Replicates' },
+    defaults: { samples: 8, reps: 1, controls: 1, extra: 10 },
+    comps: [
+      { name: '5X Q5 Reaction Buffer', stock: '5X', final: '1X', per: 10 },
+      { name: 'dNTPs', stock: '10 mM', final: '200 µM', per: 1 },
+      { name: 'Forward primer', stock: '10 µM', final: '0.5 µM', per: 2.5 },
+      { name: 'Reverse primer', stock: '10 µM', final: '0.5 µM', per: 2.5 },
+      { name: 'Q5 High-Fidelity DNA Polymerase', stock: '2 U/µL', final: '0.02 U/µL', per: 0.5 },
+      { name: 'Template DNA', stock: '', final: '< 1 µg', per: 1, well: true },
+      { name: 'Nuclease-free water', stock: '', final: '', fill: true }
+    ],
+    note: 'Cycling: 98 °C 30 s; 25–35 cycles of 98 °C 10 s, 50–72 °C 20 s, 72 °C 20–30 s/kb; 72 °C 2 min. Add the polymerase last.'
+  },
+  taq: {
+    name: 'PCR — Taq 2× Master Mix', source: 'NEB Taq 2X Master Mix (M0270), 25 µL reaction',
+    kind: 'mix', volume: 25, formats: ['tubes', '96'], format: 'tubes',
+    labels: { samples: 'Samples', controls: 'No-template controls', reps: 'Replicates' },
+    defaults: { samples: 8, reps: 1, controls: 1, extra: 10 },
+    comps: [
+      { name: 'Taq 2X Master Mix', stock: '2X', final: '1X', per: 12.5 },
+      { name: 'Forward primer', stock: '10 µM', final: '0.2 µM', per: 0.5 },
+      { name: 'Reverse primer', stock: '10 µM', final: '0.2 µM', per: 0.5 },
+      { name: 'Template DNA', stock: '', final: '< 1 µg', per: 1, well: true },
+      { name: 'Nuclease-free water', stock: '', final: '', fill: true }
+    ],
+    note: 'Cycling: 95 °C 30 s; 30 cycles of 95 °C 15–30 s, 45–68 °C 15–60 s, 68 °C 1 min/kb; 68 °C 5 min.'
+  },
+  qpcr: {
+    name: 'qRT-PCR — SYBR Green', source: '2X SYBR Green qPCR master mix (e.g. PowerUp, Luna, iTaq); 20 µL in 96-well, 10 µL in 384-well',
+    kind: 'mix', volume: 20, volumeByFormat: { '96': 20, '384': 10 }, formats: ['96', '384'], format: '96', targets: true,
+    labels: { samples: 'Samples (cDNA)', controls: 'NTC per target', reps: 'Technical replicates', targets: 'Targets (primer pairs)' },
+    defaults: { samples: 6, reps: 3, controls: 1, extra: 10, targets: 2 },
+    comps: [
+      { name: '2X SYBR Green master mix', stock: '2X', final: '1X', per: 10 },
+      { name: 'Forward primer', stock: '10 µM', final: '400 nM', per: 0.8 },
+      { name: 'Reverse primer', stock: '10 µM', final: '400 nM', per: 0.8 },
+      { name: 'cDNA (diluted)', stock: '', final: '', per: 2, well: true },
+      { name: 'Nuclease-free water', stock: '', final: '', fill: true }
+    ],
+    note: 'One master mix per target (primer pair). Dispense the mix, then add cDNA (water for NTC). Include a reference gene among the targets.'
+  },
+  lipo3000: {
+    name: 'Transfection — Lipofectamine 3000', source: 'Thermo Fisher Lipofectamine 3000 protocol, amounts per well',
+    kind: 'perwell', formats: ['96', '24', '12', '6'], format: '24',
+    labels: { samples: 'Conditions', controls: 'Mock / control wells', reps: 'Replicate wells' },
+    defaults: { samples: 3, reps: 3, controls: 1, extra: 10 },
+    comps: [
+      { name: 'Tube A — Opti-MEM', unit: 'µL', per: { '96': 5, '24': 25, '12': 50, '6': 125 } },
+      { name: 'Tube A — Lipofectamine 3000', unit: 'µL', per: { '96': 0.3, '24': 1.5, '12': 3, '6': 7.5 } },
+      { name: 'Tube B — Opti-MEM', unit: 'µL', per: { '96': 5, '24': 25, '12': 50, '6': 125 } },
+      { name: 'Tube B — Plasmid DNA', unit: 'µg', per: { '96': 0.1, '24': 0.5, '12': 1, '6': 2.5 } },
+      { name: 'Tube B — P3000 reagent', unit: 'µL', per: { '96': 0.2, '24': 1, '12': 2, '6': 5 } }
+    ],
+    note: 'Add tube B to tube A (1:1), mix gently, incubate 10–15 min at room temperature, then add the complex per well (10 / 50 / 100 / 250 µL for 96 / 24 / 12 / 6-well). Lipofectamine shown at the upper dose; Thermo suggests testing two doses.'
+  },
+  pei: {
+    name: 'Transfection — PEI (3:1)', source: 'Linear PEI 25K / PEI MAX, 1 mg/mL; PEI:DNA 3:1 (w/w)',
+    kind: 'perwell', formats: ['24', '12', '6', '10cm', '15cm'], format: '6',
+    labels: { samples: 'Conditions', controls: 'Mock / control wells', reps: 'Replicate wells' },
+    defaults: { samples: 3, reps: 2, controls: 1, extra: 10 },
+    comps: [
+      { name: 'Serum-free medium (Opti-MEM)', unit: 'µL', per: { '24': 50, '12': 100, '6': 200, '10cm': 1000, '15cm': 2000 } },
+      { name: 'Plasmid DNA (total)', unit: 'µg', per: { '24': 0.5, '12': 1, '6': 2, '10cm': 10, '15cm': 25 } },
+      { name: 'PEI (1 mg/mL)', unit: 'µL', per: { '24': 1.5, '12': 3, '6': 6, '10cm': 30, '15cm': 75 } }
+    ],
+    note: 'Dilute DNA in the medium, add PEI (3 µL per µg DNA), vortex briefly, incubate 15–20 min at room temperature, add dropwise. For lentivirus, split the DNA between transfer, packaging and envelope plasmids.'
+  },
+  neon: {
+    name: 'Electroporation — Neon (mammalian)', source: 'Thermo Fisher Neon Transfection System',
+    kind: 'perwell', formats: ['neon10', 'neon100'], format: 'neon10',
+    labels: { samples: 'Conditions', controls: 'Controls (no DNA)', reps: 'Replicates' },
+    defaults: { samples: 3, reps: 2, controls: 1, extra: 10 },
+    comps: [
+      { name: 'Cells', unit: 'cells', per: { neon10: 100000, neon100: 1000000 } },
+      { name: 'Resuspension Buffer R', unit: 'µL', per: { neon10: 10, neon100: 100 } },
+      { name: 'Plasmid DNA', unit: 'µg', per: { neon10: 1, neon100: 5 } },
+      { name: 'Pre-warmed medium, no antibiotics (receiving well)', unit: 'µL', per: { neon10: 500, neon100: 2000 } }
+    ],
+    note: 'Receiving plate: 24-well (10 µL tip) or 6-well (100 µL tip). Pulse conditions are cell-type specific (e.g. HEK293: 1,100 V, 20 ms, 2 pulses). Buffer E (10 µL tip) or E2 (100 µL tip) in the Neon tube.'
+  },
+  ecoli: {
+    name: 'Electroporation — E. coli', source: 'Electrocompetent E. coli, standard cuvette protocol',
+    kind: 'perwell', formats: ['cuv1', 'cuv2'], format: 'cuv1',
+    labels: { samples: 'Transformations', controls: 'Controls (no DNA / pUC19)', reps: 'Replicates' },
+    defaults: { samples: 4, reps: 1, controls: 1, extra: 0 },
+    comps: [
+      { name: 'Electrocompetent cells', unit: 'µL', per: { cuv1: 50, cuv2: 80 } },
+      { name: 'DNA (1–10 ng plasmid, or ≤ 2 µL desalted ligation)', unit: 'µL', per: { cuv1: 1, cuv2: 2 } },
+      { name: 'SOC recovery medium', unit: 'µL', per: { cuv1: 950, cuv2: 920 } }
+    ],
+    note: '0.1 cm cuvette: 1.8 kV; 0.2 cm cuvette: 2.5 kV; 200 Ω, 25 µF. Keep cells and cuvettes on ice, add SOC immediately after the pulse, recover 1 h at 37 °C, 250 rpm.'
+  }
+};
+var CALC_ORDER = ['q5', 'taq', 'qpcr', 'lipo3000', 'pei', 'neon', 'ecoli'];
+
+function calcNum(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+function calcFmt(v, unit) {
+  if (!isFinite(v)) return '—';
+  if (unit === 'cells') {
+    if (v < 1000) return String(Math.round(v));
+    var e = Math.floor(Math.log10(v)), m = v / Math.pow(10, e);
+    return (Math.round(m * 100) / 100) + ' × 10' + String(e).split('').map(function (d) { return '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d]; }).join('');
+  }
+  var r = Math.abs(v) >= 100 ? Math.round(v) : Math.abs(v) >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+  return String(r);
+}
+// A fresh table state for a recipe.
+function calcNew(t) {
+  var tpl = CALC_TEMPLATES[t];
+  var st = Object.assign({ t: t, format: tpl.format, volume: tpl.volume || 0, targets: 1 }, tpl.defaults);
+  st.comps = calcCompsFor(tpl, st.format);
+  return st;
+}
+function calcCompsFor(tpl, format) {
+  return tpl.comps.map(function (c) {
+    var per = typeof c.per === 'object' ? c.per[format] : c.per;
+    return { name: c.name, stock: c.stock || '', final: c.final || '', unit: c.unit || 'µL', per: per == null ? 0 : per, well: !!c.well, fill: !!c.fill };
+  });
+}
+// Rebuild a stored state defensively: it came from the page HTML.
+function calcLoad(raw) {
+  var st;
+  try { st = JSON.parse(raw); } catch (e) { return null; }
+  if (!st || !CALC_TEMPLATES[st.t]) return null;
+  var tpl = CALC_TEMPLATES[st.t], d = tpl.defaults;
+  var out = {
+    t: st.t, format: tpl.formats.indexOf(st.format) >= 0 ? st.format : tpl.format,
+    samples: Math.max(0, Math.round(calcNum(st.samples, d.samples))), reps: Math.max(1, Math.round(calcNum(st.reps, d.reps))),
+    controls: Math.max(0, Math.round(calcNum(st.controls, d.controls))), extra: Math.max(0, calcNum(st.extra, d.extra)),
+    targets: Math.max(1, Math.round(calcNum(st.targets, d.targets || 1))), volume: Math.max(0, calcNum(st.volume, tpl.volume || 0))
+  };
+  out.comps = Array.isArray(st.comps) ? st.comps.slice(0, 40).map(function (c) {
+    c = c || {};
+    return { name: String(c.name || '').slice(0, 120), stock: String(c.stock || '').slice(0, 40), final: String(c.final || '').slice(0, 40),
+      unit: ['µL', 'µg', 'cells', 'ng', 'mL'].indexOf(c.unit) >= 0 ? c.unit : 'µL', per: Math.max(0, calcNum(c.per)), well: !!c.well, fill: !!c.fill };
+  }) : calcCompsFor(tpl, out.format);
+  return out;
+}
+function calcCompute(st) {
+  var tpl = CALC_TEMPLATES[st.t];
+  var perTarget = (st.samples + st.controls) * st.reps;
+  var targets = tpl.targets ? st.targets : 1;
+  var wells = perTarget * targets;
+  var n = Math.ceil(perTarget * (1 + st.extra / 100) - 1e-9);
+  var fixed = 0, wellVol = 0;
+  st.comps.forEach(function (c) {
+    if (c.fill || c.unit !== 'µL') return;
+    if (c.well) wellVol += c.per; else fixed += c.per;
+  });
+  var water = tpl.kind === 'mix' ? st.volume - fixed - wellVol : null;
+  var cap = (CALC_FORMATS[st.format] || {}).wells || 0;
+  return { tpl: tpl, perTarget: perTarget, targets: targets, wells: wells, n: n, water: water, mixPer: tpl.kind === 'mix' ? st.volume - wellVol : null, wellVol: wellVol, cap: cap };
+}
+function calcRowPer(st, c, k) { return c.fill ? k.water : c.per; }
+
+function calcSummaryHtml(st, k) {
+  var tpl = k.tpl, unitWord = tpl.kind === 'mix' || !k.cap ? 'reactions' : 'wells';
+  var parts = [];
+  if (tpl.targets) parts.push('<strong>' + k.targets + '</strong> master mix' + (k.targets === 1 ? '' : 'es') + ' (one per target), each for <strong>' + k.n + '</strong> reactions');
+  else parts.push('Prepare for <strong>' + k.n + '</strong> ' + unitWord + ' (' + k.wells + ' + ' + calcFmt(st.extra) + '% extra)');
+  parts.push('<strong>' + k.wells + '</strong> ' + (tpl.kind === 'mix' ? 'wells/tubes' : k.cap ? 'wells' : 'reactions') + ' in total');
+  if (k.cap > 1) {
+    var plates = Math.ceil(k.wells / k.cap);
+    parts.push(plates <= 1 ? k.wells + ' of ' + k.cap + ' wells on one plate' : '<span class="warn">needs ' + plates + ' plates (' + k.cap + ' wells each)</span>');
+  } else if (k.cap === 1) parts.push(k.wells + ' dish' + (k.wells === 1 ? '' : 'es'));
+  if (k.water != null && k.water < 0) parts.push('<span class="warn">components exceed the ' + calcFmt(st.volume) + ' µL reaction volume</span>');
+  return parts.join(' · ');
+}
+function calcFootHtml(st, k) {
+  if (k.tpl.kind !== 'mix') return '';
+  var wellComps = st.comps.filter(function (c) { return c.well && !c.fill; });
+  return 'Per well/tube: <strong>' + calcFmt(k.mixPer) + ' µL</strong> master mix' +
+    (wellComps.length ? ' + ' + wellComps.map(function (c) { return calcFmt(c.per, c.unit) + ' ' + c.unit + ' ' + esc(c.name); }).join(' + ') : '') +
+    ' = ' + calcFmt(st.volume) + ' µL';
+}
+
+// The interactive table, built from the state.
+function calcRender(block) {
+  var st = block._calc, k = calcCompute(st), tpl = k.tpl, L = tpl.labels;
+  function num(key, label, step) {
+    return '<label>' + esc(label) + '<input type="number" min="0" step="' + (step || 1) + '" data-k="' + key + '" value="' + esc(String(st[key])) + '"></label>';
+  }
+  var perHead = tpl.kind === 'mix' ? 'Per reaction' : 'Per well / reaction';
+  var mixHead = tpl.kind === 'mix' ? (tpl.targets ? 'Master mix (each)' : 'Master mix') + ' ×' + k.n : 'Total ×' + k.n;
+  block.innerHTML =
+    '<div class="ln-calc-head"><div><strong>' + esc(tpl.name) + '</strong><span>' + esc(tpl.source) + '</span></div>' +
+      '<button type="button" class="ln-calc-x" data-act="remove" title="Remove this table">✕</button></div>' +
+    '<div class="ln-calc-ctrls">' +
+      num('samples', L.samples) + num('reps', L.reps) + num('controls', L.controls) + (tpl.targets ? num('targets', L.targets) : '') +
+      num('extra', 'Extra %', 1) +
+      '<label>Format<select data-k="format">' + tpl.formats.map(function (f) { return '<option value="' + f + '"' + (f === st.format ? ' selected' : '') + '>' + CALC_FORMATS[f].label + '</option>'; }).join('') + '</select></label>' +
+      (tpl.kind === 'mix' ? num('volume', 'Reaction volume (µL)', 0.5) : '') +
+    '</div>' +
+    '<div class="ln-calc-sum" data-out="sum">' + calcSummaryHtml(st, k) + '</div>' +
+    '<div class="ln-calc-scroll"><table class="ln-calc-tbl"><thead><tr><th>Component</th>' + (tpl.kind === 'mix' ? '<th>Stock</th><th>Final</th>' : '') +
+      '<th>' + perHead + '</th><th>' + mixHead + '</th><th></th></tr></thead><tbody>' +
+    st.comps.map(function (c, i) {
+      var per = calcRowPer(st, c, k);
+      return '<tr' + (c.well ? ' class="well"' : '') + '><td><input data-ci="' + i + '" data-f="name" value="' + esc(c.name) + '"></td>' +
+        (tpl.kind === 'mix' ? '<td><input class="sm" data-ci="' + i + '" data-f="stock" value="' + esc(c.stock) + '"></td><td><input class="sm" data-ci="' + i + '" data-f="final" value="' + esc(c.final) + '"></td>' : '') +
+        '<td class="num">' + (c.fill ? '<span data-out="per' + i + '" class="' + (per < 0 ? 'warn' : '') + '">' + calcFmt(per) + '</span> µL <em>to ' + calcFmt(st.volume) + '</em>'
+          : '<input type="number" min="0" step="any" class="num" data-ci="' + i + '" data-f="per" value="' + esc(String(c.per)) + '"> ' + esc(c.unit)) + '</td>' +
+        '<td class="num total" data-out="tot' + i + '">' + calcTotalCell(st, c, k) + '</td>' +
+        '<td><button type="button" class="ln-calc-x sm" data-act="del" data-ci="' + i + '" title="Remove row">✕</button></td></tr>';
+    }).join('') +
+    '</tbody></table></div>' +
+    '<div class="ln-calc-foot"><span data-out="foot">' + calcFootHtml(st, k) + '</span>' +
+      '<button type="button" class="tbl-btn" data-act="add">+ Component</button></div>' +
+    (tpl.note ? '<div class="ln-calc-note">' + esc(tpl.note) + '</div>' : '');
+}
+function calcTotalCell(st, c, k) {
+  var per = calcRowPer(st, c, k);
+  if (k.tpl.kind === 'mix' && c.well) return '<em>per well · ' + calcFmt(per * k.wells, c.unit) + ' ' + esc(c.unit) + ' total</em>';
+  return '<strong>' + calcFmt(per * k.n, c.unit) + '</strong> ' + esc(c.unit);
+}
+// After typing in a field: update the numbers only, so the field keeps focus.
+function calcRefresh(block) {
+  var st = block._calc, k = calcCompute(st);
+  block.querySelector('[data-out="sum"]').innerHTML = calcSummaryHtml(st, k);
+  block.querySelector('[data-out="foot"]').innerHTML = calcFootHtml(st, k);
+  st.comps.forEach(function (c, i) {
+    var t = block.querySelector('[data-out="tot' + i + '"]'); if (t) t.innerHTML = calcTotalCell(st, c, k);
+    var p = block.querySelector('[data-out="per' + i + '"]');
+    if (p) { var per = calcRowPer(st, c, k); p.textContent = calcFmt(per); p.className = per < 0 ? 'warn' : ''; }
+  });
+  var head = block.querySelector('thead th:nth-last-child(2)');
+  if (head) head.textContent = (k.tpl.kind === 'mix' ? (k.tpl.targets ? 'Master mix (each)' : 'Master mix') : 'Total') + ' ×' + k.n;
+}
+function calcHandle(e) {
+  var block = e.target.closest && e.target.closest('.ln-calc');
+  if (!block || !block._calc) return;
+  var st = block._calc, el = e.target, tpl = CALC_TEMPLATES[st.t];
+  if (e.type === 'click') {
+    var act = el.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'remove') { if (confirm('Remove this ' + tpl.name + ' table from the page?')) { block.remove(); markEntryDirty(); } return; }
+    if (act.dataset.act === 'del') st.comps.splice(+act.dataset.ci, 1);
+    if (act.dataset.act === 'add') st.comps.splice(st.comps.findIndex(function (c) { return c.fill; }) >= 0 ? st.comps.findIndex(function (c) { return c.fill; }) : st.comps.length, 0,
+      { name: 'New component', stock: '', final: '', unit: 'µL', per: 0, well: false, fill: false });
+    calcRender(block); markEntryDirty(); return;
+  }
+  if (el.dataset.k) {
+    var key = el.dataset.k;
+    if (key === 'format') {
+      st.format = el.value;
+      if (tpl.kind === 'perwell') st.comps = calcCompsFor(tpl, st.format).map(function (c, i) { return st.comps[i] ? Object.assign({}, c, { name: st.comps[i].name }) : c; });
+      else if (tpl.volumeByFormat && tpl.volumeByFormat[st.format]) calcScale(st, tpl.volumeByFormat[st.format]);
+      calcRender(block); markEntryDirty(); return;
+    }
+    if (key === 'volume') {
+      if (e.type !== 'change') return; // scale once the new volume is complete
+      calcScale(st, Math.max(0, calcNum(el.value, st.volume)));
+      calcRender(block); markEntryDirty(); return;
+    }
+    st[key] = key === 'extra' ? Math.max(0, calcNum(el.value)) : Math.max(key === 'reps' || key === 'targets' ? 1 : 0, Math.round(calcNum(el.value)));
+  } else if (el.dataset.ci != null && el.dataset.f) {
+    var c = st.comps[+el.dataset.ci];
+    if (!c) return;
+    c[el.dataset.f] = el.dataset.f === 'per' ? Math.max(0, calcNum(el.value)) : el.value;
+  } else return;
+  calcRefresh(block); markEntryDirty();
+}
+// New reaction volume: every amount keeps its proportion of the reaction.
+function calcScale(st, vol) {
+  var f = st.volume > 0 ? vol / st.volume : 1;
+  st.comps.forEach(function (c) { if (!c.fill) c.per = Math.round(c.per * f * 1000) / 1000; });
+  st.volume = vol;
+}
+// Turn stored blocks in a page into live tables.
+function calcHydrate(root) {
+  root.querySelectorAll('.ln-calc').forEach(function (block) {
+    if (block._calc) return;
+    var st = calcLoad(block.getAttribute('data-calc'));
+    if (!st) return; // unreadable state: the stored snapshot stays as it is
+    block._calc = st;
+    block.setAttribute('contenteditable', 'false');
+    calcRender(block);
+  });
+}
+// For saving: the state, plus a plain table anyone can read without the app.
+function calcSnapshot(block) {
+  var st = block._calc, k = calcCompute(st), tpl = k.tpl;
+  block.setAttribute('data-calc', JSON.stringify(st));
+  block.removeAttribute('contenteditable');
+  block.innerHTML = '<p><strong>' + esc(tpl.name) + '</strong> — ' + calcSummaryHtml(st, k).replace(/<[^>]+>/g, '') + '</p>' +
+    '<table><thead><tr><th>Component</th><th>Per reaction</th><th>Total</th></tr></thead><tbody>' +
+    st.comps.map(function (c) { var per = calcRowPer(st, c, k); return '<tr><td>' + esc(c.name) + '</td><td>' + calcFmt(per, c.unit) + ' ' + esc(c.unit) + '</td><td>' + calcTotalCell(st, c, k).replace(/<[^>]+>/g, '') + '</td></tr>'; }).join('') +
+    '</tbody></table>';
+}
+
+// Picker: choose a recipe, insert it where the cursor was on the page.
+var editorRange = null;
+document.addEventListener('selectionchange', function () {
+  var ed = document.getElementById('e-body'), sel = window.getSelection();
+  if (ed && sel.rangeCount && ed.contains(sel.getRangeAt(0).startContainer)) editorRange = sel.getRangeAt(0).cloneRange();
+});
+function openCalcPicker() {
+  document.getElementById('ln-modal-content').innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Insert a calculation table</h3>' +
+    '<p class="ln-bulk-intro">Amounts update as you change the number of samples, replicates, controls or the plate. Every amount can be edited in the table.</p>' +
+    '<div class="ln-calc-pick">' + CALC_ORDER.map(function (t) {
+      var tpl = CALC_TEMPLATES[t];
+      return '<button type="button" class="ln-box-card" onclick="insertCalc(\'' + t + '\')"><div class="ln-calc-pick-name">' + esc(tpl.name) + '</div><div class="ln-box-card-meta">' + esc(tpl.source) + '</div></button>';
+    }).join('') + '</div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+function insertCalc(t) {
+  closeModal();
+  var ed = document.getElementById('e-body');
+  ed.focus();
+  var sel = window.getSelection();
+  if (editorRange && ed.contains(editorRange.startContainer)) { sel.removeAllRanges(); sel.addRange(editorRange); }
+  else { sel.selectAllChildren(ed); sel.collapseToEnd(); }
+  var holder = document.createElement('div');
+  holder.className = 'ln-calc';
+  holder.setAttribute('data-calc', JSON.stringify(calcNew(t)));
+  document.execCommand('insertHTML', false, holder.outerHTML + '<p><br></p>');
+  calcHydrate(ed);
+  markEntryDirty();
 }
 
 // ── TABLE EDITOR ───────────────────────────────────────────
