@@ -292,6 +292,9 @@
       var row = Object.assign({}, obj, { created_by: state.currentUser ? state.currentUser.id : null });
       if (row.files) row.files = filesForDb(row.files);
       var r = await sb.from(COLLECTIONS[collection]).upsert(row).select().single();
+      if (r.error && /'body' column/.test(r.error.message)) {
+        throw new Error('The database needs a one-time update for notebook pages. In Supabase, open SQL Editor and run:  alter table public.notebooks add column if not exists body text;');
+      }
       if (r.error) throw new Error(r.error.message);
       await signFiles([r.data]);
       var arr2 = state[collection];
@@ -405,6 +408,16 @@
       var users = lsGet('users') || []; var u = users.find(function (x) { return x.id === id; });
       if (u) { u.pwHash = djb2(pw); lsSet('users', users); state.users = users; }
       return { ok: true };
+    },
+
+    /* Signed links for storage paths (images placed in a notebook page).
+       Returns { path: url }; local mode has no paths, so it is empty. */
+    signPaths: async function (paths) {
+      var out = {};
+      if (this.mode !== 'supabase' || !paths.length) return out;
+      var r = await sb.storage.from('lab-files').createSignedUrls(paths, SIGNED_URL_TTL);
+      (r.data || []).forEach(function (d) { if (d.signedUrl) out[d.path] = d.signedUrl; });
+      return out;
     },
 
     // ---- file uploads ----

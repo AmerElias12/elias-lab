@@ -112,9 +112,12 @@ create table if not exists public.notebooks (
   tables jsonb default '[]'::jsonb,
   files jsonb default '[]'::jsonb,
   archived boolean default false,
+  body text,                              -- the free-form notebook page (sanitised HTML)
   created_by uuid references auth.users(id),
   created_at timestamptz not null default now()
 );
+-- Added after the first release: projects created earlier get the column here.
+alter table public.notebooks add column if not exists body text;
 
 create table if not exists public.presentations (
   id uuid primary key default gen_random_uuid(),
