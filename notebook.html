@@ -11,7 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=19">
+    <link rel="stylesheet" href="css/notebook.css?v=20">
+    <link rel="stylesheet" href="css/plasmid.css?v=20">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -117,6 +118,8 @@
         </div>
         <!-- EXPERIMENT ENTRY — one entry as a full page (renderEntry), addressed #entry/<id> -->
         <div id="ln-entry" class="ln-section"><div id="ln-entry-body"></div></div>
+        <!-- PLASMID — one plasmid as a full page (renderPlasmid), addressed #plasmid/<id> -->
+        <div id="ln-plasmid" class="ln-section"><div id="ln-plasmid-body"></div></div>
         <!-- STORAGE BOXES — list of boxes, or one box's map (rendered by renderBoxes) -->
         <div id="ln-boxes" class="ln-section"><div id="ln-boxes-body"></div></div>
         <!-- INVENTORY — one page per category -->
@@ -131,7 +134,7 @@
           <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html" title="Primer Generator"></iframe>
         </div>
         <div id="ln-inv-plasmids" class="ln-section">
-          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Backbone, insert, resistance and storage box for every construct</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('plasmids')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Plasmid</button></div></div>
+          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Sequence, maps and annotations for every construct — open one for its full map and molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportPlasmidsCSV()">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid()">+ New Plasmid</button></div></div>
           <input class="ln-search" id="ln-invsearch-plasmids" placeholder="🔍 Search plasmids..." oninput="renderInventory('plasmids')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-plasmids"></div>
         </div>
@@ -173,8 +176,10 @@
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
   <script src="vendor/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx"></script>
-  <script src="js/config.js?v=19"></script>
-  <script src="js/data.js?v=19"></script>
-  <script src="js/notebook.js?v=19"></script>
+  <script src="js/plasmid.js?v=20"></script>
+  <script src="js/plasmid-ui.js?v=20"></script>
+  <script src="js/config.js?v=20"></script>
+  <script src="js/data.js?v=20"></script>
+  <script src="js/notebook.js?v=20"></script>
 </body>
 </html>

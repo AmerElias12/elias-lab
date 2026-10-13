@@ -1,0 +1,253 @@
+#!/usr/bin/env node
+/* Checks js/plasmid.js: file reading, sequence maths, editing and map drawing.
+   Run it after changing that file:  node scripts/test-plasmid.js           */
+'use strict';
+var assert = require('assert/strict');
+var path = require('path');
+var P = require(path.join(__dirname, '..', 'js', 'plasmid.js'));
+
+var pass = 0;
+function check(what, fn) { fn(); pass++; console.log('  ok  ' + what); }
+
+// A 120 bp test sequence whose every base is known.
+var SEQ = ('ATGCATGCAT GCATGCATGC TTTTCCCCAA GGGGTTTTAA CCCCGGGGAT ' +
+           'CGATCGATCG TACGTACGTA CCCCTTTTGG GGAAAACCCC ATATATGCGC ' +
+           'GGGGCCCCAA TTTTGGGGCC').replace(/\s/g, '');
+assert.equal(SEQ.length, 120);
+
+function genbank(locus, extra) {
+  var out = ['LOCUS       ' + locus + '              120 bp ds-DNA     circular SYN 13-OCT-2026',
+    'DEFINITION  A test construct.',
+    'FEATURES             Location/Qualifiers',
+    '     source          1..120',
+    '                     /organism="synthetic DNA construct"',
+    '     CDS             11..40',
+    '                     /gene="bla"',
+    '                     /label="AmpR fragment"',
+    '     promoter        complement(51..80)',
+    '                     /label="lac promoter"',
+    '     misc_feature    join(111..120,1..10)',
+    '                     /label="origin-spanning"',
+    '                     /note="this note runs onto',
+    '                     a second line"'];
+  if (extra) out = out.concat(extra);
+  out.push('ORIGIN');
+  for (var i = 0; i < SEQ.length; i += 60) {
+    var chunks = [];
+    for (var j = 0; j < 60; j += 10) { var c = SEQ.toLowerCase().substr(i + j, 10); if (c) chunks.push(c); }
+    out.push(String(i + 1).padStart(9) + ' ' + chunks.join(' '));
+  }
+  out.push('//');
+  return out.join('\n');
+}
+
+console.log('GenBank');
+var gb = P.parseGenBank(genbank('pTEST'));
+check('sequence and topology', function () {
+  assert.equal(gb.seq, SEQ);
+  assert.equal(gb.topology, 'circular');
+  assert.equal(gb.name, 'pTEST');
+});
+check('a plain feature uses /label and 0-based start', function () {
+  var f = gb.features.filter(function (x) { return x.name === 'AmpR fragment'; })[0];
+  assert.deepEqual([f.start, f.end, f.strand, f.type], [10, 40, 1, 'CDS']);
+  assert.equal(P.featureLen(f, 120), 30);
+  assert.equal(P.featureSeq(gb, f), SEQ.slice(10, 40));
+});
+check('complement(...) reads as the reverse strand', function () {
+  var f = gb.features.filter(function (x) { return x.name === 'lac promoter'; })[0];
+  assert.deepEqual([f.start, f.end, f.strand], [50, 80, -1]);
+  assert.equal(P.featureSeq(gb, f), P.revcomp(SEQ.slice(50, 80)));
+});
+check('a join across the origin becomes one wrapped feature', function () {
+  var f = gb.features.filter(function (x) { return x.name === 'origin-spanning'; })[0];
+  assert.deepEqual([f.start, f.end], [110, 10]);
+  assert.ok(P.wraps(f));
+  assert.equal(P.featureLen(f, 120), 20);
+  assert.equal(P.featureSeq(gb, f), SEQ.slice(110) + SEQ.slice(0, 10));
+  assert.match(f.note, /runs onto a second line/);   // the qualifier was joined up
+});
+check('a source feature over the whole plasmid is kept but not drawn', function () {
+  assert.ok(gb.features.some(function (f) { return f.type === 'source'; }));
+  assert.ok(!P.drawable(gb.features, 120).some(function (f) { return f.type === 'source'; }));
+});
+check('partial ends (< and >) are accepted', function () {
+  var p = P.parseGenBank(genbank('pTEST', ['     CDS             <5..>25', '                     /label="partial"']));
+  var f = p.features.filter(function (x) { return x.name === 'partial'; })[0];
+  assert.deepEqual([f.start, f.end], [4, 25]);
+});
+check('a join that does not cross the origin keeps its outer span', function () {
+  var loc = P.parseLocation('join(20..30,60..70)', 120);
+  assert.deepEqual([loc.start, loc.end, loc.joined], [19, 70, true]);
+});
+
+console.log('GenBank round trip');
+check('writing and reading back gives the same plasmid', function () {
+  var again = P.parseGenBank(P.toGenBank(gb));
+  assert.equal(again.seq, gb.seq);
+  assert.equal(again.topology, 'circular');
+  var want = gb.features.filter(function (f) { return f.type !== 'source'; });
+  want.forEach(function (f) {
+    var got = again.features.filter(function (x) { return x.name === f.name; })[0];
+    assert.ok(got, 'lost feature ' + f.name);
+    assert.deepEqual([got.start, got.end, got.strand], [f.start, f.end, f.strand], f.name);
+  });
+});
+
+console.log('SnapGene');
+function snap(blocks) {
+  var parts = [];
+  blocks.forEach(function (b) {
+    var body = Buffer.isBuffer(b.data) ? b.data : Buffer.from(b.data, 'binary');
+    var head = Buffer.alloc(5);
+    head.writeUInt8(b.type, 0); head.writeUInt32BE(body.length, 1);
+    parts.push(head, body);
+  });
+  return new Uint8Array(Buffer.concat(parts));
+}
+var featuresXml = '<?xml version="1.0"?><Features nextValidID="3">' +
+  '<Feature recentID="0" name="AmpR" type="CDS" directionality="1">' +
+    '<Segment range="11-40" color="#ccffcc" type="standard"/>' +
+    '<Q name="label"><V text="AmpR"/></Q></Feature>' +
+  '<Feature recentID="1" name="rev tag" type="promoter" directionality="2">' +
+    '<Segment range="51-80" color="#ffd9b3" type="standard"/></Feature>' +
+  '<Feature recentID="2" name="wrapped &amp; odd" type="misc_feature" directionality="1">' +
+    '<Segment range="111-120" color="#d7d7d7" type="standard"/>' +
+    '<Segment range="1-10" color="#d7d7d7" type="standard"/></Feature>' +
+  '</Features>';
+var dna = snap([
+  { type: 9, data: 'SnapGene\x00\x01\x00\x0f\x00\x11' },
+  { type: 0, data: String.fromCharCode(1) + SEQ },           // flag bit 0 = circular
+  { type: 10, data: featuresXml },
+  { type: 6, data: '<Notes><CustomMapLabel>pSnapTest</CustomMapLabel></Notes>' }
+]);
+var sg = P.parseSnapGene(dna);
+check('sequence, name and circular flag', function () {
+  assert.equal(sg.seq, SEQ);
+  assert.equal(sg.topology, 'circular');
+  assert.equal(sg.name, 'pSnapTest');
+});
+check('ranges are 1-based inclusive, direction 2 is reverse', function () {
+  var a = sg.features.filter(function (f) { return f.name === 'AmpR'; })[0];
+  assert.deepEqual([a.start, a.end, a.strand, a.color], [10, 40, 1, '#ccffcc']);
+  var r = sg.features.filter(function (f) { return f.name === 'rev tag'; })[0];
+  assert.equal(r.strand, -1);
+});
+check('two segments touching both ends become one wrapped feature', function () {
+  var w = sg.features.filter(function (f) { return /wrapped/.test(f.name); })[0];
+  assert.deepEqual([w.start, w.end], [110, 10]);
+  assert.equal(w.name, 'wrapped & odd');                     // XML entity decoded
+});
+check('a file that is not SnapGene is refused', function () {
+  assert.equal(P.parseSnapGene(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])), null);
+});
+
+console.log('Picking the format');
+check('by extension and by content', function () {
+  assert.equal(P.parseFile('x.dna', dna).format, 'SnapGene');
+  assert.equal(P.parseFile('x.gb', genbank('pTEST')).format, 'GenBank');
+  assert.equal(P.parseFile('x.txt', 'LOCUS  pX  120 bp\nORIGIN\n  1 ' + SEQ.toLowerCase() + '\n//').format, 'GenBank');
+  assert.equal(P.parseFile('x.fasta', '>pFas description here\n' + SEQ).format, 'FASTA');
+  assert.equal(P.parseFile('x.seq', '>pFas\n' + SEQ).plasmid.name, 'pFas');
+  var raw = P.parseFile('pasted.txt', '  atgc atgc\n123 atgcatgcatgcatgc  ');
+  assert.equal(raw.format, 'plain sequence');
+  assert.equal(raw.plasmid.seq, 'ATGCATGCATGCATGCATGCATGC');   // digits and spaces dropped
+  assert.equal(P.parseFile('x.gb', 'not a sequence at all').ok, false);
+});
+
+console.log('Sequence maths');
+check('reverse complement, GC and translation', function () {
+  assert.equal(P.revcomp('ATGCN'), 'NGCAT');
+  assert.equal(P.revcomp(P.revcomp(SEQ)), SEQ);
+  assert.equal(Math.round(P.gc('GGCCAATT')), 50);
+  assert.equal(P.translate('ATGGCGTAA'), 'MA*');
+  assert.equal(P.translate('ATGGC'), 'M');            // a trailing part-codon is ignored
+  assert.equal(P.clean('atg-cat n'), 'ATGCATN');
+});
+check('melting temperature and mass', function () {
+  assert.equal(P.tm('ATGCATGCAT'), 28);                 // short: 2(A+T) + 4(G+C) = 12 + 16
+  assert.ok(Math.abs(P.tm('ATGCATGCATGCATGCATGC') - 51.8) < 0.2);   // 20-mer, 50% GC
+  assert.ok(P.molWeight('ATGC', 'linear') > P.molWeight('ATGC', 'circular'));
+});
+
+console.log('Editing the sequence');
+check('a change is described as one edit', function () {
+  assert.deepEqual(P.diffEdit('AAACCCGGG', 'AAATTTCCCGGG'), { pos: 3, del: 0, ins: 'TTT' });
+  assert.deepEqual(P.diffEdit('AAACCCGGG', 'AAAGGG'), { pos: 3, del: 3, ins: '' });
+  assert.equal(P.diffEdit('AAA', 'AAA'), null);
+});
+check('features move with an insertion before them', function () {
+  var r = P.applyEdit(gb, { pos: 0, del: 0, ins: 'TTTTT' });
+  assert.equal(r.seq.length, 125);
+  var f = r.features.filter(function (x) { return x.name === 'AmpR fragment'; })[0];
+  assert.deepEqual([f.start, f.end], [15, 45]);
+  assert.equal(r.dropped.length, 0);
+});
+check('a deletion inside a feature shortens it and says so', function () {
+  var r = P.applyEdit(gb, { pos: 20, del: 10, ins: '' });
+  var f = r.features.filter(function (x) { return x.name === 'AmpR fragment'; })[0];
+  assert.deepEqual([f.start, f.end], [10, 30]);
+  assert.ok(r.changed.indexOf('AmpR fragment') >= 0);
+});
+check('a feature whose bases all go is dropped, not left behind', function () {
+  var r = P.applyEdit(gb, { pos: 10, del: 30, ins: '' });
+  assert.ok(r.dropped.indexOf('AmpR fragment') >= 0);
+  assert.ok(!r.features.some(function (f) { return f.name === 'AmpR fragment'; }));
+});
+check('a feature after the edit keeps its length', function () {
+  var r = P.applyEdit(gb, { pos: 45, del: 0, ins: 'AAAA' });
+  var f = r.features.filter(function (x) { return x.name === 'lac promoter'; })[0];
+  assert.deepEqual([f.start, f.end], [54, 84]);
+  assert.equal(r.changed.indexOf('lac promoter'), -1);
+});
+
+console.log('Maps');
+function svgOk(svg, label) {
+  assert.ok(svg.indexOf('<svg') === 0, label + ': starts with <svg');
+  assert.ok(svg.indexOf('</svg>') > 0, label + ': is closed');
+  assert.ok(!/NaN|undefined|Infinity/.test(svg), label + ': no broken numbers');
+  var open = (svg.match(/<(?!\/)[a-z]/g) || []).length, close = (svg.match(/<\/[a-z]+>|\/>/g) || []).length;
+  assert.equal(open, close, label + ': every tag closed');
+}
+check('linear map', function () {
+  var svg = P.linearMapSvg(gb);
+  svgOk(svg, 'linear');
+  // 3 drawable features, and the wrapped one is drawn as two pieces
+  assert.equal((svg.match(/class="pl-feat"/g) || []).length, 4);
+  assert.ok(svg.indexOf('AmpR fragment') > 0);
+});
+check('circular map', function () {
+  var svg = P.circularMapSvg(gb);
+  svgOk(svg, 'circular');
+  assert.equal((svg.match(/class="pl-feat"/g) || []).length, 3);  // arcs can cross the origin
+  assert.ok(svg.indexOf('120 bp') > 0);
+});
+check('maps of awkward plasmids still come out clean', function () {
+  svgOk(P.linearMapSvg({ name: 'bare', seq: 'ATGC'.repeat(50), topology: 'linear', features: [] }), 'no features');
+  svgOk(P.circularMapSvg({ name: 'bare', seq: 'ATGC'.repeat(50), topology: 'circular', features: [] }), 'no features');
+  var tiny = { name: 't', seq: SEQ, topology: 'circular',
+    features: [P.normFeature({ name: 'one base', type: 'misc_feature', start: 5, end: 6, strand: 1 }, 120),
+               P.normFeature({ name: 'whole', type: 'CDS', start: 0, end: 120, strand: 1 }, 120)] };
+  assert.equal(P.featureLen(tiny.features[1], 120), 120);
+  svgOk(P.linearMapSvg(tiny), 'tiny + whole');
+  svgOk(P.circularMapSvg(tiny), 'tiny + whole');
+});
+check('crowded maps put features in separate rows', function () {
+  var many = [];
+  for (var i = 0; i < 12; i++) many.push(P.normFeature({ name: 'f' + i, type: 'CDS', start: i * 2, end: i * 2 + 30, strand: 1 }, 120));
+  var packed = P.assignLanes(many, 120, 1);
+  assert.ok(packed.lanes > 1);
+  svgOk(P.linearMapSvg({ name: 'busy', seq: SEQ, topology: 'circular', features: many }), 'busy');
+});
+
+console.log('CSV');
+check('features export with headers and sequences', function () {
+  var csv = P.featuresCsv(gb);
+  var lines = csv.split('\r\n');
+  assert.equal(lines.length, gb.features.length + 1);
+  assert.ok(lines[0].indexOf('"Name","Type","Start","End"') === 0);
+  assert.ok(csv.indexOf('"AmpR fragment"') > 0);
+  assert.ok(P.csvCell('=cmd').indexOf("'=") === 1);          // Excel formula guard
+});
+
+console.log('\n' + pass + ' checks passed');

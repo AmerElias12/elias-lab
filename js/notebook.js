@@ -120,7 +120,7 @@ function lnShowApp(user) {
   // to it; showing the dashboard first would clear that address.
   var target = location.hash;
   lnShow('dashboard');
-  if (/^#entry\//.test(target)) { history.replaceState(null, '', target); routeHash(); }
+  if (/^#(entry|plasmid)\//.test(target)) { history.replaceState(null, '', target); routeHash(); }
 }
 
 // ── SHARED-MODE REFRESH ────────────────────────────────────
@@ -135,7 +135,7 @@ async function lnRefreshFromServer() {
   if (document.visibilityState !== 'visible') return;
   if (Date.now() - lnLastRefresh < LN_REFRESH_MIN_GAP) return;
   if (document.getElementById('ln-modal-bg').classList.contains('open')) return;
-  if (lnCurrentSection === 'entry') return; // an open entry may hold unsaved edits
+  if (lnCurrentSection === 'entry' || lnCurrentSection === 'plasmid') return; // may hold unsaved edits
   lnRefreshing = true;
   try {
     if (await DB.refresh()) { lnLastRefresh = Date.now(); lnRerender(); }
@@ -173,13 +173,17 @@ function lnShow(section) {
   if (section !== 'entry') {
     if (!leaveEntryOk()) return;
     entryDirty = false;
-    if (/^#entry\//.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  }
+  if (section !== 'plasmid' && window.leavePlasmidOk && !leavePlasmidOk()) return;
+  if (section !== 'entry' && section !== 'plasmid' && /^#(entry|plasmid)\//.test(location.hash)) {
+    history.replaceState(null, '', location.pathname + location.search);
   }
   lnCurrentSection = section;
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
   var sec = document.getElementById('ln-' + section); if (sec) sec.classList.add('active');
-  document.querySelectorAll('.ln-nav-item').forEach(function (n) { var oc = n.getAttribute('onclick'); if (oc && oc.indexOf("'" + (section === 'entry' ? 'notebooks' : section) + "'") >= 0) n.classList.add('active'); });
+  document.querySelectorAll('.ln-nav-item').forEach(function (n) { var oc = n.getAttribute('onclick'), nav = section === 'entry' ? 'notebooks' : section === 'plasmid' ? 'inv-plasmids' : section;
+    if (oc && oc.indexOf("'" + nav + "'") >= 0) n.classList.add('active'); });
   if (section === 'dashboard') renderDashboard();
   else if (section === 'protocols') renderProtocols();
   else if (section === 'notebooks') renderNotebooks();
@@ -463,6 +467,7 @@ function openEntry(id) {
 }
 // Show the entry named in the address bar, if any.
 function routeHash() {
+  if (/^#plasmid\//.test(location.hash)) { if (window.routePlasmid) routePlasmid(); return; }
   var m = /^#entry\/(.+)$/.exec(location.hash);
   if (!m || !currentUser()) return;
   var id = m[1] === 'new' ? null : decodeURIComponent(m[1]);
@@ -1178,7 +1183,7 @@ var INV_LABELS = {
 var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
-  plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'freezer', 'box', 'position', 'location', 'addedBy'] },
+  plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'location', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
@@ -1259,6 +1264,9 @@ function renderInventory(tab) {
     items.map(function (item) {
       return '<tr>' + cfg.fields.map(function (f) {
         var val = esc(item[f] || '\u2014');
+        if (f === 'name' && currentInvTab === 'plasmids' && item.name) {
+          val = '<a href="#plasmid/' + esc(item.id) + '" class="ln-box-link" onclick="openPlasmid(\'' + item.id + '\');return false;">' + esc(item.name) + '</a>';
+        }
         if (f === 'expiry') {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
@@ -1275,6 +1283,7 @@ function renderInventory(tab) {
         return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</td>';
       }).join('') +
       '<td class="ln-row-actions">' +
+        (currentInvTab === 'plasmids' ? '<button class="ln-icon-btn" title="Open the plasmid page" onclick="openPlasmid(\'' + item.id + '\')">Open</button>' : '') +
         '<button class="ln-icon-btn" title="Edit" onclick="openInventoryModal(\'' + item.id + '\')">\u270e</button>' +
         '<button class="ln-icon-btn danger" title="Remove" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">\u2715</button>' +
       '</td></tr>';
@@ -1668,7 +1677,7 @@ function loadXlsx() {
 function bulkColumns(cat) {
   var cfg = INV_CONFIG[cat];
   return cfg.fields.map(function (f, i) { return { field: f, label: cfg.cols[i] }; })
-    .filter(function (c) { return c.field !== 'addedBy'; });
+    .filter(function (c) { return c.field !== 'addedBy' && c.field !== 'len'; }); // len comes from the sequence
 }
 function bulkKey(s) { return String(s == null ? '' : s).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 function bulkPad(n) { return (n < 10 ? '0' : '') + n; }
@@ -2004,31 +2013,14 @@ function nextStockSerial() {
    sets fields on a new item, e.g. the box and position clicked on a box map. */
 var editingInvItem = null;
 function openInventoryModal(id, prefill) {
+  // Plasmids have a page of their own: maps, sequence and the molecular tools.
+  if (currentInvTab === 'plasmids') { if (id) openPlasmid(id); else newPlasmid(); return; }
   editingInvItem = id ? (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0] || null : null;
   var bg = document.getElementById('ln-modal-bg'), mc = document.getElementById('ln-modal-content');
   var user = currentUser(), today = new Date().toISOString().split('T')[0];
   var forms = {
     enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div><div class="ln-form-row"><label>Storage Location</label><input id="m-storage" placeholder="e.g. -20°C Box 2A"></div>',
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
-    plasmids: '<div class="ln-form-row"><label>Plasmid Name</label><input id="m-name" placeholder="e.g. pUC19-HK022"></div><div class="ln-form-row"><label>Backbone</label><input id="m-backbone" placeholder="e.g. pUC19"></div><div class="ln-form-row"><label>Insert</label><input id="m-insert" placeholder="e.g. HK022 integrase CDS"></div><div class="ln-form-row"><label>Antibiotic Resistance</label><input id="m-resistance" placeholder="e.g. AmpR, KanR"></div><div class="ln-form-section">Location</div><div class="ln-form-grid"><div class="ln-form-row"><label>Freezer</label><input id="m-freezer" placeholder="e.g. Freezer A"></div><div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Plasmid Box 1"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div><div class="ln-form-row"><label>Other location detail</label><input id="m-location" placeholder="optional"></div></div>',
-    stocks: '<div class="ln-form-grid">' +
-      '<div class="ln-form-row"><label>Serial #</label><input id="m-serial" placeholder="e.g. GS-0001"></div>' +
-      '<div class="ln-form-row"><label>Strain</label><input id="m-hostStrain" list="ln-strain-list" placeholder="e.g. ' + STOCK_STRAINS[0] + '"></div></div>' +
-      '<div class="ln-form-row"><label>Description</label><input id="m-description" placeholder="e.g. pUC19-HK022 attB, clone 3"></div>' +
-      '<div class="ln-form-grid">' +
-      '<div class="ln-form-row"><label>Resistance</label><input id="m-resistance" list="ln-resistance-list" placeholder="e.g. AmpR"></div>' +
-      '<div class="ln-form-row"><label>Owner</label><input id="m-owner"></div></div>' +
-      '<div class="ln-form-row"><label>Sequenced (QC)</label><input id="m-qc" placeholder="Primers used, e.g. M13F + M13R, sequence correct"></div>' +
-      '<div class="ln-form-section">Location</div><div class="ln-form-grid">' +
-      '<div class="ln-form-row"><label>Freezer (-80°C)</label><input id="m-freezer" placeholder="e.g. Freezer A"></div>' +
-      '<div class="ln-form-row"><label>Rack_Shelf</label><input id="m-shelf" placeholder="e.g. R2_S3"></div>' +
-      '<div class="ln-form-row"><label>Position on Drawer</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
-      '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box G1"></div>' +
-      '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div></div>' +
-      '<div class="ln-form-row"><label>Map Link</label><input id="m-mapLink" type="url" placeholder="https://… (Benchling, SnapGene, Drive)"></div>' +
-      '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes"></textarea></div>' +
-      '<datalist id="ln-strain-list">' + STOCK_STRAINS.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>' +
-      '<datalist id="ln-resistance-list">' + RESISTANCES.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>',
     cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
@@ -2061,7 +2053,6 @@ async function saveInvItem() {
   var item = editingInvItem ? Object.assign({}, editingInvItem) : { id: uid(), addedBy: addedBy };
   if (tab === 'enzymes') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'), storage: g('m-storage') });
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
-  else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), freezer: g('m-freezer'), box: g('m-box'), position: g('m-position'), location: g('m-location') });
   else if (tab === 'stocks') {
     INV_CONFIG.stocks.fields.forEach(function (f) { item[f] = g('m-' + f); });
     if (!item.serial) { alert('Please fill in the serial number.'); return; }
