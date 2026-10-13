@@ -240,6 +240,61 @@ check('crowded maps put features in separate rows', function () {
   svgOk(P.linearMapSvg({ name: 'busy', seq: SEQ, topology: 'circular', features: many }), 'busy');
 });
 
+console.log('Restriction enzymes');
+check('a palindromic site cuts where the enzyme says', function () {
+  var seq = 'AAAA' + 'GAATTC' + 'TTTT';                 // EcoRI G^AATTC
+  var h = P.findSites(seq, 'linear').filter(function (x) { return x.name === 'EcoRI'; });
+  assert.equal(h.length, 1);
+  assert.deepEqual([h[0].start, h[0].end, h[0].cutTop, h[0].cutBottom, h[0].blunt], [4, 10, 5, 9, false]);
+});
+check('a blunt cutter reports the same cut on both strands', function () {
+  var h = P.findSites('TTTT' + 'GATATC' + 'TTTT', 'linear').filter(function (x) { return x.name === 'EcoRV'; });
+  assert.deepEqual([h[0].cutTop, h[0].cutBottom, h[0].blunt], [7, 7, true]);
+});
+check('a type IIS enzyme cuts outside its site, on the strand it reads from', function () {
+  // BsaI GGTCTC(1/5): forward, the cut is downstream of the site
+  var fwd = P.findSites('AAAAA' + 'GGTCTC' + 'ACGTACGTAA', 'linear').filter(function (x) { return x.name === 'BsaI'; })[0];
+  assert.equal(fwd.strand, 1);
+  assert.deepEqual([fwd.cutTop, fwd.cutBottom], [12, 16]);   // 5 + 7 and 5 + 11
+  // the same site written backwards is found on the other strand, cutting the other way
+  var rev = P.findSites('AAAAAAAAAA' + 'GAGACC' + 'AAAAA', 'linear').filter(function (x) { return x.name === 'BsaI'; })[0];
+  assert.equal(rev.strand, -1);
+  assert.deepEqual([rev.cutTop, rev.cutBottom], [9, 5]);     // 16 - 7 and 16 - 11
+});
+check('ambiguous letters in a site match any of their bases', function () {
+  var hits = P.findSites('GGTCACC', 'linear').filter(function (x) { return x.name === 'BstEII'; });  // GGTNACC
+  assert.equal(hits.length, 1);
+  assert.equal(P.findSites('GGTGACC', 'linear').filter(function (x) { return x.name === 'BstEII'; }).length, 1);
+  assert.equal(P.findSites('GGTTTCC', 'linear').filter(function (x) { return x.name === 'BstEII'; }).length, 0);
+});
+check('a site crossing the origin is found on a circular plasmid only', function () {
+  var seq = 'ATTC' + 'A'.repeat(40) + 'GA';               // GA|ATTC straddles the origin
+  var circ = P.findSites(seq, 'circular').filter(function (x) { return x.name === 'EcoRI'; });
+  assert.equal(circ.length, 1);
+  assert.equal(circ[0].start, 44);
+  assert.equal(circ[0].cutTop, 45);                        // one base into the site, which wraps
+  assert.equal(P.findSites(seq, 'linear').filter(function (x) { return x.name === 'EcoRI'; }).length, 0);
+});
+check('counting and filtering by how often an enzyme cuts', function () {
+  var seq = 'GAATTC' + 'A'.repeat(20) + 'GAATTC' + 'A'.repeat(20) + 'GGATCC';
+  var all = P.findSites(seq, 'linear');
+  var counts = P.siteCounts(all);
+  assert.equal(counts.EcoRI, 2);
+  assert.equal(counts.BamHI, 1);
+  var unique = P.filterSites(all, 'unique').map(function (h) { return h.name; });
+  assert.ok(unique.indexOf('BamHI') >= 0);
+  assert.equal(unique.indexOf('EcoRI'), -1);              // two sites, so not unique
+  assert.equal(P.filterSites(all, 'two').filter(function (h) { return h.name === 'EcoRI'; }).length, 2);
+  assert.ok(P.nonCutters(all).indexOf('XhoI') >= 0);      // no CTCGAG anywhere
+  assert.equal(P.nonCutters(all).indexOf('BamHI'), -1);
+});
+check('overlapping copies of a site are all found', function () {
+  var hits = P.findSites('AAAAAAAAAA', 'linear');          // no site
+  assert.equal(hits.length, 0);
+  var dra = P.findSites('TTTAAATTTAAA', 'linear').filter(function (x) { return x.name === 'DraI'; });
+  assert.equal(dra.length, 2);
+});
+
 console.log('CSV');
 check('features export with headers and sequences', function () {
   var csv = P.featuresCsv(gb);

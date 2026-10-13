@@ -492,6 +492,121 @@
     return { seq: seq, features: features, dropped: dropped, changed: changed };
   }
 
+  // ---------- restriction enzymes ----------
+  /* The enzymes a cloning lab reaches for. For each: the recognition site in
+     IUPAC letters, and where the cut falls counted from the start of the site
+     — `t` on the top strand, `b` on the bottom. For the type IIS enzymes
+     (BsaI, BsmBI, BbsI, SapI…) the cut is outside the site, so the offsets
+     are larger than the site itself. Sticky ends follow from t and b: t < b
+     leaves a 5' overhang, t > b a 3' overhang, and t === b is blunt. */
+  var ENZYMES = [
+    { n: 'AatII', s: 'GACGTC', t: 5, b: 1 }, { n: 'Acc65I', s: 'GGTACC', t: 1, b: 5 },
+    { n: 'AflII', s: 'CTTAAG', t: 1, b: 5 }, { n: 'AflIII', s: 'ACRYGT', t: 1, b: 5 },
+    { n: 'AgeI', s: 'ACCGGT', t: 1, b: 5 }, { n: 'AleI', s: 'CACNNNNGTG', t: 5, b: 5 },
+    { n: 'ApaI', s: 'GGGCCC', t: 5, b: 1 }, { n: 'ApaLI', s: 'GTGCAC', t: 1, b: 5 },
+    { n: 'AscI', s: 'GGCGCGCC', t: 2, b: 6 }, { n: 'AseI', s: 'ATTAAT', t: 2, b: 4 },
+    { n: 'AvrII', s: 'CCTAGG', t: 1, b: 5 }, { n: 'BamHI', s: 'GGATCC', t: 1, b: 5 },
+    { n: 'BbsI', s: 'GAAGAC', t: 8, b: 12 }, { n: 'BclI', s: 'TGATCA', t: 1, b: 5 },
+    { n: 'BglII', s: 'AGATCT', t: 1, b: 5 }, { n: 'BmtI', s: 'GCTAGC', t: 5, b: 1 },
+    { n: 'BsaI', s: 'GGTCTC', t: 7, b: 11 }, { n: 'BsaBI', s: 'GATNNNNATC', t: 5, b: 5 },
+    { n: 'BsiEI', s: 'CGRYCG', t: 4, b: 2 }, { n: 'BsiWI', s: 'CGTACG', t: 1, b: 5 },
+    { n: 'BsmBI', s: 'CGTCTC', t: 7, b: 11 }, { n: 'BspEI', s: 'TCCGGA', t: 1, b: 5 },
+    { n: 'BspHI', s: 'TCATGA', t: 1, b: 5 }, { n: 'BsrGI', s: 'TGTACA', t: 1, b: 5 },
+    { n: 'BssHII', s: 'GCGCGC', t: 1, b: 5 }, { n: 'BstBI', s: 'TTCGAA', t: 2, b: 4 },
+    { n: 'BstEII', s: 'GGTNACC', t: 1, b: 6 }, { n: 'BstXI', s: 'CCANNNNNNTGG', t: 8, b: 4 },
+    { n: 'BstZ17I', s: 'GTATAC', t: 3, b: 3 }, { n: 'ClaI', s: 'ATCGAT', t: 2, b: 4 },
+    { n: 'DraI', s: 'TTTAAA', t: 3, b: 3 }, { n: 'DraIII', s: 'CACNNNGTG', t: 6, b: 3 },
+    { n: 'EagI', s: 'CGGCCG', t: 1, b: 5 }, { n: 'Eco47III', s: 'AGCGCT', t: 3, b: 3 },
+    { n: 'EcoRI', s: 'GAATTC', t: 1, b: 5 }, { n: 'EcoRV', s: 'GATATC', t: 3, b: 3 },
+    { n: 'FseI', s: 'GGCCGGCC', t: 6, b: 2 }, { n: 'HincII', s: 'GTYRAC', t: 3, b: 3 },
+    { n: 'HindIII', s: 'AAGCTT', t: 1, b: 5 }, { n: 'HpaI', s: 'GTTAAC', t: 3, b: 3 },
+    { n: 'KpnI', s: 'GGTACC', t: 5, b: 1 }, { n: 'MfeI', s: 'CAATTG', t: 1, b: 5 },
+    { n: 'MluI', s: 'ACGCGT', t: 1, b: 5 }, { n: 'MscI', s: 'TGGCCA', t: 3, b: 3 },
+    { n: 'NaeI', s: 'GCCGGC', t: 3, b: 3 }, { n: 'NarI', s: 'GGCGCC', t: 2, b: 4 },
+    { n: 'NcoI', s: 'CCATGG', t: 1, b: 5 }, { n: 'NdeI', s: 'CATATG', t: 2, b: 4 },
+    { n: 'NheI', s: 'GCTAGC', t: 1, b: 5 }, { n: 'NotI', s: 'GCGGCCGC', t: 2, b: 6 },
+    { n: 'NruI', s: 'TCGCGA', t: 3, b: 3 }, { n: 'NsiI', s: 'ATGCAT', t: 5, b: 1 },
+    { n: 'NspI', s: 'RCATGY', t: 5, b: 1 }, { n: 'PacI', s: 'TTAATTAA', t: 5, b: 3 },
+    { n: 'PciI', s: 'ACATGT', t: 1, b: 5 }, { n: 'PflMI', s: 'CCANNNNNTGG', t: 7, b: 4 },
+    { n: 'PmeI', s: 'GTTTAAAC', t: 4, b: 4 }, { n: 'PmlI', s: 'CACGTG', t: 3, b: 3 },
+    { n: 'PstI', s: 'CTGCAG', t: 5, b: 1 }, { n: 'PvuI', s: 'CGATCG', t: 4, b: 2 },
+    { n: 'PvuII', s: 'CAGCTG', t: 3, b: 3 }, { n: 'SacI', s: 'GAGCTC', t: 5, b: 1 },
+    { n: 'SacII', s: 'CCGCGG', t: 4, b: 2 }, { n: 'SalI', s: 'GTCGAC', t: 1, b: 5 },
+    { n: 'SapI', s: 'GCTCTTC', t: 8, b: 11 }, { n: 'SbfI', s: 'CCTGCAGG', t: 6, b: 2 },
+    { n: 'ScaI', s: 'AGTACT', t: 3, b: 3 }, { n: 'SgrAI', s: 'CRCCGGYG', t: 2, b: 6 },
+    { n: 'SmaI', s: 'CCCGGG', t: 3, b: 3 }, { n: 'SnaBI', s: 'TACGTA', t: 3, b: 3 },
+    { n: 'SpeI', s: 'ACTAGT', t: 1, b: 5 }, { n: 'SphI', s: 'GCATGC', t: 5, b: 1 },
+    { n: 'SspI', s: 'AATATT', t: 3, b: 3 }, { n: 'StuI', s: 'AGGCCT', t: 3, b: 3 },
+    { n: 'StyI', s: 'CCWWGG', t: 1, b: 5 }, { n: 'SwaI', s: 'ATTTAAAT', t: 4, b: 4 },
+    { n: 'Tth111I', s: 'GACNNNGTC', t: 4, b: 5 }, { n: 'XbaI', s: 'TCTAGA', t: 1, b: 5 },
+    { n: 'XhoI', s: 'CTCGAG', t: 1, b: 5 }, { n: 'XmaI', s: 'CCCGGG', t: 1, b: 5 },
+    { n: 'ZraI', s: 'GACGTC', t: 3, b: 3 }
+  ];
+  var IUPAC_SET = { A: 'A', C: 'C', G: 'G', T: 'TU', U: 'TU', R: 'AGR', Y: 'CTUY', S: 'CGS', W: 'ATUW',
+    K: 'GTUK', M: 'ACM', B: 'CGTUBYKS', D: 'AGTUDRKW', H: 'ACTUHYMW', V: 'ACGVRSM', N: IUPAC };
+  function siteRegex(site) {
+    var src = '';
+    for (var i = 0; i < site.length; i++) src += '[' + (IUPAC_SET[site[i]] || site[i]) + ']';
+    return new RegExp(src, 'g');
+  }
+  var _reCache = {};
+  function cachedRe(site) { return _reCache[site] || (_reCache[site] = siteRegex(site)); }
+
+  /* Where each enzyme cuts. Returns one entry per site, with the cut positions
+     on both strands. On a circular plasmid a site straddling the origin is
+     found too, and its positions come back inside 0..len-1. */
+  function findSites(seq, topology, list) {
+    seq = clean(seq);
+    var len = seq.length;
+    if (!len) return [];
+    var circular = topology === 'circular';
+    var longest = (list || ENZYMES).reduce(function (m, e) { return Math.max(m, e.s.length); }, 0);
+    // Repeat the start so a site crossing the origin still matches.
+    var hay = circular && len > longest ? seq + seq.slice(0, longest - 1) : seq;
+    var out = [];
+    (list || ENZYMES).forEach(function (e) {
+      var strands = [[e.s, 1]];
+      if (revcomp(e.s) !== e.s) strands.push([revcomp(e.s), -1]);
+      strands.forEach(function (pair) {
+        var re = cachedRe(pair[0]), m;
+        re.lastIndex = 0;
+        while ((m = re.exec(hay))) {
+          var at = m.index;
+          re.lastIndex = at + 1;                 // overlapping sites count too
+          if (at >= len) break;
+          // Cuts are measured from the start of the site as written, so a site
+          // found on the bottom strand is measured back from its far end.
+          var top = pair[1] === 1 ? at + e.t : at + pair[0].length - e.t;
+          var bot = pair[1] === 1 ? at + e.b : at + pair[0].length - e.b;
+          if (!circular && (top < 0 || top > len || bot < 0 || bot > len)) continue;
+          out.push({ name: e.n, site: e.s, start: at % len, end: (at + pair[0].length) % len || len,
+            cutTop: ((top % len) + len) % len, cutBottom: ((bot % len) + len) % len,
+            strand: pair[1], blunt: e.t === e.b });
+        }
+      });
+    });
+    out.sort(function (a, b) { return a.cutTop - b.cutTop || a.name.localeCompare(b.name); });
+    return out;
+  }
+  function siteCounts(sites) {
+    var counts = {};
+    (sites || []).forEach(function (h) { counts[h.name] = (counts[h.name] || 0) + 1; });
+    return counts;
+  }
+  /* Keep only the enzymes cutting a chosen number of times: 'unique' for one
+     site, 'two' for one or two, 'all' for everything that cuts. */
+  function filterSites(sites, mode) {
+    if (mode === 'all' || !mode) return sites;
+    var counts = siteCounts(sites);
+    var max = mode === 'unique' ? 1 : mode === 'two' ? 2 : 1e9;
+    return sites.filter(function (h) { return counts[h.name] <= max; });
+  }
+  // Enzymes with no site at all, which is what you want for a cloning site.
+  function nonCutters(sites, list) {
+    var counts = siteCounts(sites);
+    return (list || ENZYMES).filter(function (e) { return !counts[e.n]; }).map(function (e) { return e.n; });
+  }
+
   // ---------- maps ----------
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -669,6 +784,7 @@
     parseFile: parseFile, parseLocation: parseLocation,
     toGenBank: toGenBank, toFasta: toFasta, featuresCsv: featuresCsv, csvCell: csvCell,
     diffEdit: diffEdit, applyEdit: applyEdit,
+    ENZYMES: ENZYMES, findSites: findSites, siteCounts: siteCounts, filterSites: filterSites, nonCutters: nonCutters, siteRegex: siteRegex,
     linearMapSvg: linearMapSvg, circularMapSvg: circularMapSvg,
     xmlElements: xmlElements, unescapeXml: unescapeXml
   };
