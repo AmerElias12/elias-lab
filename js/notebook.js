@@ -116,7 +116,11 @@ function lnShowApp(user) {
   document.getElementById('ln-welcome-msg').textContent = 'Welcome back, ' + user.name.split(' ').slice(-1)[0] + '!';
   document.getElementById('ln-admin-nav').style.display = user.role === 'admin' ? 'block' : 'none';
   lnLastRefresh = Date.now();
+  // A link to an entry (#entry/<id>, e.g. opened in a new tab) goes straight
+  // to it; showing the dashboard first would clear that address.
+  var target = location.hash;
   lnShow('dashboard');
+  if (/^#entry\//.test(target)) { history.replaceState(null, '', target); routeHash(); }
 }
 
 // ── SHARED-MODE REFRESH ────────────────────────────────────
@@ -131,6 +135,7 @@ async function lnRefreshFromServer() {
   if (document.visibilityState !== 'visible') return;
   if (Date.now() - lnLastRefresh < LN_REFRESH_MIN_GAP) return;
   if (document.getElementById('ln-modal-bg').classList.contains('open')) return;
+  if (lnCurrentSection === 'entry') return; // an open entry may hold unsaved edits
   lnRefreshing = true;
   try {
     if (await DB.refresh()) { lnLastRefresh = Date.now(); lnRerender(); }
@@ -150,13 +155,31 @@ document.addEventListener('visibilitychange', lnRefreshFromServer);
 window.addEventListener('focus', lnRefreshFromServer);
 setInterval(lnRefreshFromServer, 30 * 60 * 1000);
 
+// ── PRINTING ───────────────────────────────────────────────
+/* Every page has a Print button (window.print). Print CSS hides the sidebar,
+   buttons and search boxes; this header says what was printed, when, by whom. */
+window.addEventListener('beforeprint', function () {
+  var head = document.getElementById('ln-print-head');
+  if (!head) return;
+  var sec = document.querySelector('.ln-section.active');
+  var title = sec && sec.id === 'ln-entry' ? (document.getElementById('e-title') || {}).value : (sec && sec.querySelector('h2') ? sec.querySelector('h2').textContent : '');
+  var user = currentUser();
+  head.textContent = 'Elias Lab \u00b7 Lab Notebook' + (title ? ' \u2014 ' + title : '') + ' \u00b7 printed ' +
+    new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + (user ? ' by ' + user.name : '');
+});
+
 // ── NAVIGATION ─────────────────────────────────────────────
 function lnShow(section) {
+  if (section !== 'entry') {
+    if (!leaveEntryOk()) return;
+    entryDirty = false;
+    if (/^#entry\//.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  }
   lnCurrentSection = section;
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
   var sec = document.getElementById('ln-' + section); if (sec) sec.classList.add('active');
-  document.querySelectorAll('.ln-nav-item').forEach(function (n) { var oc = n.getAttribute('onclick'); if (oc && oc.indexOf("'" + section + "'") >= 0) n.classList.add('active'); });
+  document.querySelectorAll('.ln-nav-item').forEach(function (n) { var oc = n.getAttribute('onclick'); if (oc && oc.indexOf("'" + (section === 'entry' ? 'notebooks' : section) + "'") >= 0) n.classList.add('active'); });
   if (section === 'dashboard') renderDashboard();
   else if (section === 'protocols') renderProtocols();
   else if (section === 'notebooks') renderNotebooks();
@@ -359,9 +382,9 @@ function renderNotebooks(filter) {
   el.innerHTML = nbs.slice().reverse().map(function (n) {
     return '<div class="ln-card" style="' + (n.archived ? 'opacity:.65;' : '') + '"><div class="ln-card-header"><div>' +
       '<div class="ln-card-title">' + esc(n.title) + ' ' + (n.archived ? '<span class="ln-badge archived">Archived</span>' : '') + '</div>' +
-      '<div class="ln-card-meta">👤 ' + esc(n.researcher) + ' · 📅 ' + esc(n.date) + '</div></div>' +
-      '<div class="ln-card-actions"><button class="ln-icon-btn" onclick="viewNotebook(\'' + n.id + '\')">View</button>' +
-      '<button class="ln-icon-btn" onclick="openModal(\'notebook\',\'' + n.id + '\')">Edit</button>' +
+      '<div class="ln-card-meta">👤 ' + esc(n.researcher) + ' · 📅 ' + esc(n.date) + (n.body ? ' · \ud83d\udcc4 notebook page' : '') + '</div></div>' +
+      '<div class="ln-card-actions"><button class="ln-icon-btn" onclick="openEntry(\'' + n.id + '\')">Open</button>' +
+      '<a class="ln-icon-btn" href="#entry/' + n.id + '" target="_blank" rel="noopener" title="Open in a new tab">\u2197</a>' +
       (isAdmin ? '<button class="ln-icon-btn" onclick="archiveNotebook(\'' + n.id + '\')">' + (n.archived ? 'Restore' : 'Archive') + '</button>' : '') +
       (isAdmin ? '<button class="ln-icon-btn danger" onclick="deleteNotebook(\'' + n.id + '\')">✕ Delete</button>' : '') +
       '</div></div><div style="font-size:13px;color:#555;">' + (n.hypothesis ? '<strong>Hypothesis:</strong> ' + esc(n.hypothesis).slice(0, 120) + (n.hypothesis.length > 120 ? '…' : '') : '') + '</div>' +
@@ -371,21 +394,298 @@ function renderNotebooks(filter) {
 async function deleteNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can delete experiments.'); return; } if (confirm('Permanently delete this experiment entry?')) { await DB.remove('notebooks', id); renderNotebooks(); renderDashboard(); } }
 async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can archive experiments.'); return; } var n = getNotebooks().find(function (x) { return x.id === id; }); if (n) { n.archived = !n.archived; await DB.upsert('notebooks', n); renderNotebooks(); } }
 
-function viewNotebook(id) {
-  var n = getNotebooks().find(function (x) { return x.id === id; }); if (!n) return;
-  var tablesHtml = n.tables && n.tables.length ? n.tables.map(function (t, i) { return '<h4 style="margin:.75rem 0 .5rem;">Table ' + (i + 1) + (t.label ? ' – ' + esc(t.label) : '') + '</h4><div style="overflow-x:auto;"><table class="ln-table">' + t.html + '</table></div>'; }).join('') : '';
-  var mc = document.getElementById('ln-modal-content');
-  mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + esc(n.title) + '</h3>' +
-    '<div style="font-size:12px;color:#888;margin-bottom:1.5rem;">👤 ' + esc(n.researcher) + ' · 📅 ' + esc(n.date) + '</div>' +
-    (n.hypothesis ? '<h4>Hypothesis</h4><p style="color:#555;margin:.5rem 0 1rem;line-height:1.7;">' + esc(n.hypothesis) + '</p>' : '') +
-    (n.methods ? '<h4>Materials &amp; Methods</h4><pre style="white-space:pre-wrap;font-size:13px;color:#555;background:#f9f9f9;padding:1rem;border-radius:6px;margin:.5rem 0 1rem;">' + esc(n.methods) + '</pre>' : '') +
-    (n.results ? '<h4>Results &amp; Observations</h4><pre style="white-space:pre-wrap;font-size:13px;color:#555;background:#f9f9f9;padding:1rem;border-radius:6px;margin:.5rem 0 1rem;">' + esc(n.results) + '</pre>' : '') +
-    tablesHtml +
-    (n.conclusions ? '<h4>Conclusions</h4><p style="color:#555;margin:.5rem 0 1rem;line-height:1.7;">' + esc(n.conclusions) + '</p>' : '') +
-    (n.nextsteps ? '<h4>Next Steps</h4><p style="color:#555;margin:.5rem 0;line-height:1.7;">' + esc(n.nextsteps) + '</p>' : '') +
-    renderAttachments(n.files) +
-    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
-  document.getElementById('ln-modal-bg').classList.add('open');
+// ── SAFE HTML ──────────────────────────────────────────────
+/* Notebook pages and data tables are HTML that other members' browsers
+   render, so every stored or pasted fragment goes through DOMPurify
+   (vendor/purify.min.js) with a short allowlist: formatting, lists, tables,
+   links and images. Scripts, event handlers, iframes and CSS beyond a few
+   text styles are dropped. */
+var SAFE_TAGS = ['p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
+  'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'a'];
+var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true };
+var SAFE_STYLES = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
+var safeHtmlReady = false;
+function safeHtml(html) {
+  if (!window.DOMPurify) { var d = document.createElement('div'); d.textContent = String(html || ''); return d.innerHTML; }
+  if (!safeHtmlReady) {
+    DOMPurify.addHook('uponSanitizeAttribute', function (node, data) {
+      if (data.attrName === 'class') data.attrValue = data.attrValue.split(/\s+/).filter(function (c) { return SAFE_CLASSES[c]; }).join(' ');
+      if (data.attrName === 'style') data.attrValue = data.attrValue.split(';').filter(function (decl) {
+        return SAFE_STYLES.indexOf(decl.split(':')[0].trim().toLowerCase()) >= 0 && !/url\s*\(|expression|@import/i.test(decl);
+      }).join(';');
+    });
+    DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+      if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+      // Images: https, or pasted/uploaded data URLs of plain image types only.
+      if (node.tagName === 'IMG' && node.hasAttribute('src') && !/^(https:|data:image\/(png|jpe?g|gif|webp);)/i.test(node.getAttribute('src'))) node.removeAttribute('src');
+    });
+    safeHtmlReady = true;
+  }
+  return DOMPurify.sanitize(String(html || ''), {
+    ALLOWED_TAGS: SAFE_TAGS,
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'data-path', 'class', 'style', 'colspan', 'rowspan'],
+    ALLOW_DATA_ATTR: false
+  }).replace(/<img(?![^>]*\b(?:src|data-path)=)[^>]*>/gi, ''); // images whose source was unsafe
+}
+
+// Data tables are stored as a <table>'s inner HTML (thead/tbody). Out of a
+// table those elements are dropped by the HTML parser, so clean them inside one.
+function safeTableHtml(inner) {
+  var t = document.createElement('template');
+  t.innerHTML = safeHtml('<table>' + String(inner || '') + '</table>');
+  var table = t.content.querySelector('table');
+  return table ? table.innerHTML : '';
+}
+
+// ── EXPERIMENT ENTRY PAGE ──────────────────────────────────
+/* An entry opens as its own page, addressed #entry/<id> (#entry/new for a
+   new one), so it can also be opened in a separate browser tab. The built-in
+   structure comes first; below it is a blank free-form page, like a paper
+   notebook, for anything else: notes, checklists, tables, pasted images. */
+var ENTRY_FIELDS = [
+  ['hypothesis', 'Hypothesis', 'What are you testing and why?'],
+  ['methods', 'Materials & Methods', 'Reagents, conditions, protocol used…'],
+  ['results', 'Results & Observations', 'Data, observations, gel results…'],
+  ['conclusions', 'Conclusions', 'What do the results mean?'],
+  ['nextsteps', 'Next Steps', 'Follow-up experiments or actions…']
+];
+var entryId = null, entryDirty = false;
+
+function viewNotebook(id) { openEntry(id); }
+function openEntry(id) {
+  var hash = '#entry/' + (id || 'new');
+  if (location.hash === hash) routeHash(); else location.hash = hash;
+}
+// Show the entry named in the address bar, if any.
+function routeHash() {
+  var m = /^#entry\/(.+)$/.exec(location.hash);
+  if (!m || !currentUser()) return;
+  var id = m[1] === 'new' ? null : decodeURIComponent(m[1]);
+  if (lnCurrentSection === 'entry' && entryId === id && id) return;
+  if (!leaveEntryOk()) { history.replaceState(null, '', entryId ? '#entry/' + entryId : '#entry/new'); return; }
+  renderEntry(id);
+  lnShow('entry');
+  // Text boxes can only measure their content once the page is visible.
+  document.querySelectorAll('#ln-paper textarea').forEach(autoGrow);
+}
+window.addEventListener('hashchange', routeHash);
+function leaveEntryOk() {
+  if (lnCurrentSection !== 'entry' || !entryDirty) return true;
+  if (!confirm('This entry has unsaved changes. Leave without saving them?')) return false;
+  entryDirty = false;
+  return true;
+}
+window.addEventListener('beforeunload', function (e) {
+  if (lnCurrentSection === 'entry' && entryDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+document.addEventListener('keydown', function (e) {
+  if (lnCurrentSection === 'entry' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveEntry(); }
+});
+function markEntryDirty() {
+  if (entryDirty) return;
+  entryDirty = true;
+  var st = document.getElementById('ln-entry-status');
+  if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+}
+function autoGrow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+
+function renderEntry(id) {
+  var el = document.getElementById('ln-entry-body');
+  var n = id ? getNotebooks().filter(function (x) { return x.id === id; })[0] : null;
+  if (id && !n) {
+    entryId = null; entryDirty = false;
+    el.innerHTML = '<div class="ln-entry-bar"><a href="#" class="ln-back-link" onclick="lnShow(\'notebooks\');return false;">\u2190 Experiment Notebooks</a></div>' +
+      '<div class="ln-empty">This entry could not be found. It may have been deleted.</div>';
+    return;
+  }
+  entryId = n ? n.id : null; entryDirty = false;
+  var user = currentUser(), today = new Date().toISOString().split('T')[0];
+  n = n || {};
+  el.innerHTML =
+    '<div class="ln-entry-bar">' +
+      '<a href="#" class="ln-back-link" onclick="lnShow(\'notebooks\');return false;">\u2190 Experiment Notebooks</a>' +
+      '<span id="ln-entry-status" class="ln-entry-status">' + (entryId ? 'Saved' : 'New entry \u2014 not saved yet') + '</span>' +
+      '<div class="ln-header-actions">' +
+        '<a id="ln-entry-newtab" class="ln-add-btn ghost ln-add-link" href="#entry/' + (entryId || 'new') + '" target="_blank" rel="noopener"' + (entryId ? '' : ' hidden') + '>Open in new tab \u2197</a>' +
+        '<button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button>' +
+        '<button class="ln-add-btn" id="ln-entry-save" onclick="saveEntry()">Save</button>' +
+      '</div></div>' +
+    '<article class="ln-paper" id="ln-paper">' +
+      '<input id="e-title" class="ln-paper-title" placeholder="Untitled experiment" value="' + esc(n.title || '') + '">' +
+      '<div class="ln-paper-meta">' +
+        '<div class="ln-paper-metaitem"><label>Researcher</label>' + userSelect('e-researcher', n.researcher || (user ? user.name : '')) + '</div>' +
+        '<div class="ln-paper-metaitem"><label>Date</label><input type="date" id="e-date" value="' + esc(n.date || today) + '"></div>' +
+        (n.archived ? '<span class="ln-badge archived">Archived</span>' : '') +
+      '</div>' +
+      ENTRY_FIELDS.map(function (f) {
+        return '<section class="ln-paper-field"><h3>' + esc(f[1]) + '</h3><textarea id="e-' + f[0] + '" rows="2" placeholder="' + esc(f[2]) + '">' + esc(n[f[0]] || '') + '</textarea></section>';
+      }).join('') +
+      '<section class="ln-paper-field ln-paper-tables"><h3>Data Tables</h3><div id="ln-tables-editor"></div><button class="tbl-btn" onclick="addTableToEditor()">+ Add Table</button></section>' +
+      '<section class="ln-paper-field"><h3>Attachments</h3><div id="e-attachments">' + (renderAttachments(n.files) || '<div class="ln-paper-none">No attachments yet.</div>') + '</div>' +
+        '<input type="file" id="e-files" multiple accept="image/*,.pdf,.fcs,.xlsx,.csv,.docx,.pptx"><div class="hint">Files are uploaded when you save.</div></section>' +
+      '<section class="ln-paper-page"><h3>Notebook Page</h3>' + editorToolbarHtml() +
+        '<div id="e-body" class="ln-page-editor" contenteditable="true" spellcheck="true" data-placeholder="A blank page \u2014 write freely: notes, observations, plate layouts, checklists, pasted images\u2026"></div>' +
+      '</section>' +
+    '</article>';
+
+  var editor = document.getElementById('e-body');
+  editor.innerHTML = safeHtml(n.body || '');
+  hydrateEntryImages(editor);
+  initTableEditor();
+  loadTablesIntoEditor((n.tables || []).map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }));
+  var paper = document.getElementById('ln-paper');
+  paper.querySelectorAll('textarea').forEach(autoGrow);
+  paper.addEventListener('input', function (e) { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); markEntryDirty(); });
+  paper.addEventListener('change', markEntryDirty);
+  paper.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.tbl-btn')) markEntryDirty(); });
+  // Enter starts a new paragraph (<p>), not a bare <div>.
+  editor.addEventListener('focus', function () { document.execCommand('defaultParagraphSeparator', false, 'p'); });
+  editor.addEventListener('click', toggleChecklistItem);
+  editor.addEventListener('paste', editorPaste);
+  editor.addEventListener('drop', editorDrop);
+  if (!entryId) setTimeout(function () { document.getElementById('e-title').focus(); }, 50);
+}
+
+// Pages store images by storage path; give them fresh signed links to show.
+async function hydrateEntryImages(root) {
+  var imgs = Array.prototype.slice.call(root.querySelectorAll('img[data-path]'));
+  if (!imgs.length) return;
+  try {
+    var urls = await DB.signPaths(imgs.map(function (i) { return i.getAttribute('data-path'); }));
+    imgs.forEach(function (i) { var u = urls[i.getAttribute('data-path')]; if (u) i.src = u; });
+  } catch (e) { /* images stay blank; the next open retries */ }
+}
+function entryBodyForSave() {
+  var clone = document.getElementById('e-body').cloneNode(true);
+  // Signed links expire, so stored images keep only their storage path.
+  clone.querySelectorAll('img[data-path]').forEach(function (i) { i.removeAttribute('src'); });
+  var html = safeHtml(clone.innerHTML);
+  var probe = document.createElement('div'); probe.innerHTML = html;
+  return probe.textContent.trim() || probe.querySelector('img,table,hr,ul.ln-checklist') ? html : '';
+}
+
+async function saveEntry() {
+  var titleEl = document.getElementById('e-title');
+  var title = (titleEl.value || '').trim();
+  if (!title) { alert('Please give the entry a title.'); titleEl.focus(); return; }
+  var btn = document.getElementById('ln-entry-save'), st = document.getElementById('ln-entry-status');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try {
+    var newFiles = await collectFiles('e-files');
+    if (newFiles === null) return;
+    var ex = entryId ? (getNotebooks().filter(function (x) { return x.id === entryId; })[0] || {}) : {};
+    var obj = {
+      id: entryId || undefined, title: title, researcher: getSelectOrManual('e-researcher'), date: g('e-date'),
+      tables: serializeTables().map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }),
+      files: (ex.files || []).concat(newFiles), archived: ex.archived || false, body: entryBodyForSave()
+    };
+    ENTRY_FIELDS.forEach(function (f) { obj[f[0]] = document.getElementById('e-' + f[0]).value; });
+    var saved = await DB.upsert('notebooks', obj);
+    entryId = saved.id; entryDirty = false;
+    history.replaceState(null, '', '#entry/' + entryId);
+    document.getElementById('e-files').value = '';
+    document.getElementById('e-attachments').innerHTML = renderAttachments(saved.files) || '<div class="ln-paper-none">No attachments yet.</div>';
+    var nt = document.getElementById('ln-entry-newtab'); nt.href = '#entry/' + entryId; nt.hidden = false;
+    st.textContent = 'Saved \u2713 ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    st.className = 'ln-entry-status saved';
+  } catch (e) {
+    st.textContent = 'Not saved'; st.className = 'ln-entry-status dirty';
+    alert('Could not save the entry: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+// ── NOTEBOOK PAGE EDITOR ───────────────────────────────────
+function editorToolbarHtml() {
+  function b(cmd, label, title) { return '<button type="button" title="' + title + '" onmousedown="event.preventDefault()" onclick="editorCmd(\'' + cmd + '\')">' + label + '</button>'; }
+  return '<div class="ln-editor-toolbar" role="toolbar" aria-label="Page formatting">' +
+    '<select title="Text style" onchange="editorCmd(\'block\',this.value);this.value=\'\'"><option value="">Text style</option><option value="p">Normal text</option><option value="h2">Heading 1</option><option value="h3">Heading 2</option><option value="h4">Heading 3</option><option value="pre">Code / sequence</option></select>' +
+    '<span class="sep"></span>' + b('bold', '<b>B</b>', 'Bold (Ctrl/Cmd+B)') + b('italic', '<i>I</i>', 'Italic (Ctrl/Cmd+I)') + b('underline', '<u>U</u>', 'Underline') + b('strikeThrough', '<s>S</s>', 'Strikethrough') +
+    b('highlight', '<mark>H</mark>', 'Highlight') + b('subscript', 'x\u2082', 'Subscript') + b('superscript', 'x\u00b2', 'Superscript') +
+    '<span class="sep"></span>' + b('insertUnorderedList', '\u2022 List', 'Bulleted list') + b('insertOrderedList', '1. List', 'Numbered list') + b('checklist', '\u2611 Checklist', 'Checklist') +
+    b('quote', '\u275d', 'Quote') + b('insertHorizontalRule', '\u2015', 'Divider line') +
+    '<span class="sep"></span>' + b('table', '\u229e Table', 'Insert a table') + b('tableRow', '+ Row', 'Add a row to the table you are in') + b('tableCol', '+ Col', 'Add a column to the table you are in') +
+    b('image', '\ud83d\uddbc Image', 'Insert an image (you can also paste or drop one)') +
+    '<span class="sep"></span>' + b('removeFormat', 'Clear', 'Clear formatting') + b('undo', '\u21ba Undo', 'Undo (Ctrl/Cmd+Z)') + b('redo', '\u21bb Redo', 'Redo') +
+    '<input type="file" id="e-image-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="editorInsertImages(this.files);this.value=\'\'">' +
+    '</div>';
+}
+function editorSelectionNode() {
+  var sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  var n = sel.getRangeAt(0).startContainer;
+  var editor = document.getElementById('e-body');
+  return editor && editor.contains(n) ? (n.nodeType === 1 ? n : n.parentNode) : null;
+}
+function editorCmd(cmd, arg) {
+  var editor = document.getElementById('e-body');
+  if (cmd !== 'image') editor.focus();
+  var here = editorSelectionNode();
+  if (cmd === 'block') { if (arg) document.execCommand('formatBlock', false, '<' + arg + '>'); }
+  else if (cmd === 'quote') document.execCommand('formatBlock', false, '<blockquote>');
+  else if (cmd === 'highlight') { if (!document.execCommand('hiliteColor', false, '#fff1a8')) document.execCommand('backColor', false, '#fff1a8'); }
+  else if (cmd === 'checklist') {
+    var ul = here && here.closest('ul');
+    if (!ul) { document.execCommand('insertUnorderedList'); ul = (editorSelectionNode() || editor).closest('ul'); }
+    if (ul) ul.classList.toggle('ln-checklist');
+  }
+  else if (cmd === 'table') {
+    var cells = function (tag) { return '<tr>' + [0, 1, 2].map(function () { return '<' + tag + '><br></' + tag + '>'; }).join('') + '</tr>'; };
+    document.execCommand('insertHTML', false, '<table><thead>' + cells('th') + '</thead><tbody>' + cells('td') + cells('td') + '</tbody></table><p><br></p>');
+  }
+  else if (cmd === 'tableRow' || cmd === 'tableCol') {
+    var cell = here && here.closest('td,th');
+    if (!cell) { alert('Click inside a table on the page first.'); return; }
+    var table = cell.closest('table');
+    if (cmd === 'tableRow') {
+      var tr = cell.closest('tr'), row = document.createElement('tr');
+      for (var i = 0; i < tr.cells.length; i++) { var td = document.createElement('td'); td.innerHTML = '<br>'; row.appendChild(td); }
+      (tr.parentNode.tagName === 'THEAD' ? (table.tBodies[0] || table.createTBody()).insertBefore(row, (table.tBodies[0] || {}).firstChild || null) : tr.parentNode.insertBefore(row, tr.nextSibling));
+    } else {
+      var col = cell.cellIndex;
+      Array.prototype.forEach.call(table.rows, function (r) { var c = document.createElement(r.parentNode.tagName === 'THEAD' ? 'th' : 'td'); c.innerHTML = '<br>'; r.insertBefore(c, r.cells[col + 1] || null); });
+    }
+  }
+  else if (cmd === 'image') { document.getElementById('e-image-input').click(); return; }
+  else document.execCommand(cmd, false, null);
+  markEntryDirty();
+}
+function toggleChecklistItem(e) {
+  var li = e.target.closest && e.target.closest('ul.ln-checklist > li');
+  if (!li) return;
+  var box = li.getBoundingClientRect();
+  if (e.clientX - box.left > 26) return; // only the checkbox area toggles
+  li.classList.toggle('checked');
+  markEntryDirty();
+}
+// Images go to storage (shared mode) or inline (local mode), then onto the page.
+async function editorInsertImages(files) {
+  var imgs = Array.prototype.filter.call(files || [], function (f) { return /^image\/(png|jpeg|gif|webp)$/.test(f.type); });
+  if (!imgs.length) return;
+  var st = document.getElementById('ln-entry-status');
+  if (st) st.textContent = 'Uploading image\u2026';
+  try {
+    var up = await DB.uploadFiles(imgs);
+    document.getElementById('e-body').focus();
+    document.execCommand('insertHTML', false, up.map(function (f) {
+      return '<img src="' + esc(f.data) + '"' + (f.path ? ' data-path="' + esc(f.path) + '"' : '') + ' alt="' + esc(f.name) + '">';
+    }).join('') + '<p><br></p>');
+    markEntryDirty();
+    if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+  } catch (e) { alert(e.message); if (st) st.textContent = 'Unsaved changes'; }
+}
+function editorPaste(e) {
+  var cd = e.clipboardData;
+  if (!cd) return;
+  if (cd.files && cd.files.length && Array.prototype.some.call(cd.files, function (f) { return /^image\//.test(f.type); })) {
+    e.preventDefault(); editorInsertImages(cd.files); return;
+  }
+  var html = cd.getData('text/html');
+  if (html) { e.preventDefault(); document.execCommand('insertHTML', false, safeHtml(html)); markEntryDirty(); }
+}
+function editorDrop(e) {
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); editorInsertImages(e.dataTransfer.files); }
 }
 
 // ── TABLE EDITOR ───────────────────────────────────────────
@@ -424,7 +724,8 @@ function loadTablesIntoEditor(tables) {
     addTableToEditor();
     setTimeout(function () {
       var labelEl = document.getElementById('tbl-label-' + idx); if (labelEl) labelEl.value = t.label || '';
-      var tbl = document.getElementById('tbl-' + idx); if (tbl) tbl.innerHTML = t.html;
+      var tbl = document.getElementById('tbl-' + idx);
+      if (tbl) { tbl.innerHTML = t.html; tbl.querySelectorAll('th,td').forEach(function (c) { c.contentEditable = 'true'; }); }
     }, 50);
   });
 }
@@ -569,7 +870,7 @@ function renderInventory(tab) {
   var count = q ? '<div class="ln-inv-count">' + items.length + ' of ' + all.length + ' shown</div>' : '';
 
   el.innerHTML = banner + count + '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
-    cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th>Actions</th></tr></thead><tbody>' +
+    cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th class="ln-row-actions">Actions</th></tr></thead><tbody>' +
     items.map(function (item) {
       return '<tr>' + cfg.fields.map(function (f) {
         var val = esc(item[f] || '\u2014');
@@ -713,7 +1014,7 @@ function boxListHtml(all) {
   var box = document.getElementById('ln-boxsearch');
   var q = box ? box.value : '';
   return '<div class="ln-section-header"><div><h2>Storage Boxes</h2><p>Freezer and liquid-nitrogen boxes: open one to see where every vial sits</p></div>' +
-    '<div class="ln-header-actions"><button class="ln-add-btn" onclick="openBoxModal()">+ New Box</button></div></div>' +
+    '<div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button><button class="ln-add-btn" onclick="openBoxModal()">+ New Box</button></div></div>' +
     '<input class="ln-search" id="ln-boxsearch" placeholder="🔍 Search boxes or freezers..." value="' + esc(q) + '" oninput="document.getElementById(\'ln-box-listbody\').innerHTML = boxListBody(boxIndex(), this.value)" style="margin-bottom:1.5rem;">' +
     '<div id="ln-box-listbody">' + boxListBody(all, q) + '</div>';
 }
@@ -748,7 +1049,9 @@ function boxDetailHtml(b) {
   var head = '<div class="ln-section-header"><div><a href="#" class="ln-back-link" onclick="openBoxesPage();return false;">← All boxes</a>' +
     '<h2>' + esc(b.name) + '</h2><p>' + type + ' · ' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'layout not set (shown as 9×9)') +
     (b.where ? ' · ' + esc(b.where) : '') + ' · ' + b.placed + ' / ' + (d.rows * d.cols) + ' positions used</p></div>' +
-    '<div class="ln-header-actions"><button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-key="' + esc(b.key) + '" onclick="openBoxModal(this.dataset.key)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
+    '<div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button>' +
+      '<button class="ln-add-btn ghost" data-key="' + esc(b.key) + '" onclick="exportBoxCSV(this.dataset.key)">\u2193 CSV</button>' +
+      '<button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-key="' + esc(b.key) + '" onclick="openBoxModal(this.dataset.key)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
     (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '');
   rowsHtml += '<div class="ln-bm-corner"></div>';
   for (var c = 0; c < d.cols; c++) rowsHtml += '<div class="ln-bm-colh">' + (c + 1) + '</div>';
@@ -771,7 +1074,52 @@ function boxDetailHtml(b) {
         ' <span>' + (v.item.position ? 'position “' + esc(v.item.position) + '” does not fit' : 'no position') + '</span></button>';
     }).join('') + '</div>' : '';
   return head + '<div class="ln-bm-wrap"><div class="ln-bm" style="grid-template-columns:22px repeat(' + d.cols + ',minmax(26px,1fr));">' + rowsHtml + '</div>' +
-    '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced;
+    '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced + boxContentsHtml(b);
+}
+
+/* What is in a box, position by position: shown under the map, printed with
+   it, and exported as CSV. Fields are the box type's columns minus Box. */
+function boxContentRows(b) {
+  var rows = [];
+  Object.keys(b.cells).forEach(function (k) {
+    var rc = k.split(',');
+    b.cells[k].forEach(function (v) { rows.push({ r: +rc[0], c: +rc[1], pos: String.fromCharCode(65 + +rc[0]) + (+rc[1] + 1), v: v }); });
+  });
+  rows.sort(function (x, y) { return x.r - y.r || x.c - y.c; });
+  b.unplaced.forEach(function (v) { rows.push({ pos: v.item.position ? v.item.position + ' (does not fit)' : '\u2014', v: v }); });
+  return rows;
+}
+function boxContentCols(b) {
+  var cat = b.cat || (b.vials[0] && b.vials[0].cat);
+  if (!cat) return [];
+  var cfg = INV_CONFIG[cat];
+  return cfg.fields.map(function (f, i) { return { f: f, label: cfg.cols[i] }; })
+    .filter(function (c) { return c.f !== 'box' && c.f !== 'position' && c.f !== 'addedBy'; });
+}
+function boxContentsHtml(b) {
+  var rows = boxContentRows(b), cols = boxContentCols(b);
+  if (!rows.length) return '';
+  return '<h3 class="ln-box-group" style="margin-top:2rem;">Contents <span>' + rows.length + '</span></h3>' +
+    '<div style="overflow-x:auto;"><table class="ln-table ln-box-contents"><thead><tr><th>Position</th>' +
+    cols.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+    rows.map(function (row) {
+      return '<tr><td class="ln-nowrap"><strong>' + esc(row.pos) + '</strong></td>' + cols.map(function (c) { return '<td>' + esc(row.v.item[c.f] || '\u2014') + '</td>'; }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>';
+}
+function exportBoxCSV(key) {
+  var b = findBox(key);
+  if (!b) return;
+  var rows = boxContentRows(b), cols = boxContentCols(b);
+  if (!rows.length) { alert('This box is empty, so there is nothing to export.'); return; }
+  var lines = [['Box', 'Layout', 'Position'].concat(cols.map(function (c) { return c.label; }))].concat(rows.map(function (row) {
+    return [b.name, (b.def && b.def.layout) || BOX_DEFAULT_LAYOUT, row.pos].concat(cols.map(function (c) { return String(row.v.item[c.f] == null ? '' : row.v.item[c.f]); }));
+  }));
+  var csv = lines.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  var url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
+  var a = document.createElement('a');
+  a.href = url; a.download = 'elias-lab-box-' + b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
 }
 
 function selectBoxCell(key) { boxSelected = boxSelected === key ? null : key; renderBoxes(); }
@@ -1189,7 +1537,6 @@ function openModal(type, editId) {
   var existing = null;
   if (editId) {
     if (type === 'protocol') existing = getProtocols().find(function (p) { return p.id === editId; });
-    else if (type === 'notebook') existing = getNotebooks().find(function (n) { return n.id === editId; });
     else if (type === 'presentation') existing = getPresentations().find(function (p) { return p.id === editId; });
   }
   var ex = existing || {}, html = '';
@@ -1206,21 +1553,6 @@ function openModal(type, editId) {
       '<div class="ln-form-row"><label>Notes &amp; Troubleshooting</label><textarea id="m-notes" placeholder="Tips, issues, variations...">' + esc(ex.notes || '') + '</textarea></div>' +
       '<div class="ln-form-row"><label>Upload Files (images, PDFs)</label><input type="file" id="m-files" multiple accept="image/*,.pdf,.doc,.docx,.xlsx"><div class="hint">Existing files are preserved when editing.</div></div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveProtocol(\'' + (editId || '') + '\')">Save Protocol</button></div>';
-  } else if (type === 'notebook') {
-    initTableEditor();
-    html = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editId ? 'Edit' : 'New') + ' Experiment Entry</h3>' +
-      '<div class="ln-form-row"><label>Experiment Title</label><input id="m-title" value="' + esc(ex.title || '') + '" placeholder="e.g. HK022 attB integration test in HEK293"></div>' +
-      '<div class="ln-form-row"><label>Researcher</label>' + userSelect('m-researcher-sel', ex.researcher || (user ? user.name : '')) + '</div>' +
-      '<div class="ln-form-row"><label>Date</label><input type="date" id="m-date" value="' + esc(ex.date || today) + '"></div>' +
-      '<div class="ln-form-row"><label>Hypothesis</label><textarea id="m-hypothesis" placeholder="What are you testing and why?">' + esc(ex.hypothesis || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Materials &amp; Methods</label><textarea id="m-methods" style="min-height:100px;" placeholder="Detailed methods used...">' + esc(ex.methods || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Results &amp; Observations</label><textarea id="m-results" style="min-height:100px;" placeholder="Data, observations, gel results...">' + esc(ex.results || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Data Tables</label><div id="ln-tables-editor"></div><button class="tbl-btn" onclick="addTableToEditor()" style="margin-top:.5rem;">+ Add Table</button></div>' +
-      '<div class="ln-form-row"><label>Conclusions</label><textarea id="m-conclusions" placeholder="What do the results mean?">' + esc(ex.conclusions || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Next Steps</label><textarea id="m-nextsteps" placeholder="Follow-up experiments or actions...">' + esc(ex.nextsteps || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Upload Files (gel images, FACS plots, charts)</label><input type="file" id="m-files" multiple accept="image/*,.pdf,.fcs,.xlsx"><div class="hint">Existing attachments are preserved.</div></div>' +
-      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveNotebook(\'' + (editId || '') + '\')">Save Entry</button></div>';
-    setTimeout(function () { if (editId && ex.tables && ex.tables.length) loadTablesIntoEditor(ex.tables); }, 100);
   } else if (type === 'presentation') {
     html = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editId ? 'Edit' : 'Add') + ' Presentation</h3>' +
       '<div class="ln-form-row"><label>Title</label><input id="m-title" value="' + esc(ex.title || '') + '" placeholder="Presentation title"></div>' +
@@ -1251,16 +1583,6 @@ async function saveProtocol(editId) {
   var ex = editId ? (getProtocols().find(function (p) { return p.id === editId; }) || {}) : {};
   var obj = { id: editId || undefined, title: title, category: g('m-category'), author: author, date: g('m-date'), link: g('m-link'), summary: g('m-summary'), materials: g('m-materials'), steps: g('m-steps'), notes: g('m-notes'), files: (ex.files || []).concat(newFiles) };
   await DB.upsert('protocols', obj); closeModal(); renderProtocols(); renderDashboard();
-}
-async function saveNotebook(editId) {
-  var title = (document.getElementById('m-title').value || '').trim();
-  if (!title) { alert('Please enter a title.'); return; }
-  var researcher = getSelectOrManual('m-researcher-sel');
-  var newFiles = await collectFiles('m-files'); if (newFiles === null) return;
-  var tables = serializeTables();
-  var ex = editId ? (getNotebooks().find(function (n) { return n.id === editId; }) || {}) : {};
-  var obj = { id: editId || undefined, title: title, researcher: researcher, date: g('m-date'), hypothesis: g('m-hypothesis'), methods: g('m-methods'), results: g('m-results'), conclusions: g('m-conclusions'), nextsteps: g('m-nextsteps'), tables: tables, files: (ex.files || []).concat(newFiles), archived: ex.archived || false };
-  await DB.upsert('notebooks', obj); closeModal(); renderNotebooks(); renderDashboard();
 }
 async function savePresentation(editId) {
   var title = (document.getElementById('m-title').value || '').trim();
