@@ -21,9 +21,10 @@
     protocols: [],
     notebooks: [],
     presentations: [],
-    inventory: { enzymes: [], primers: [], plasmids: [], stocks: [], cells: [], kits: [] }
+    inventory: { enzymes: [], primers: [], plasmids: [], stocks: [], cells: [], kits: [], boxes: [] }
   };
-  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits'];
+  // 'boxes' holds storage box set-ups (name, layout, freezer); the rest are vials and reagents.
+  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes'];
 
   /* An inventory saved before a category existed has no array for it, so
      adding the first item of a new category would throw. Fill in whatever is

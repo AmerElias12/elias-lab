@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=14">
+    <link rel="stylesheet" href="css/notebook.css?v=15">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -60,6 +60,7 @@
         <div class="ln-nav-item" onclick="lnShow('presentations')"><span class="ni">🖥️</span><span>Presentations</span></div>
         <div class="ln-nav-item" onclick="lnShow('webapps')"><span class="ni">🌐</span><span>Webapps &amp; Tools</span></div>
         <div class="ln-nav-section">Inventory</div>
+        <div class="ln-nav-item" onclick="boxView=null;boxSelected=null;lnShow('boxes')"><span class="ni">🗃️</span><span>Storage Boxes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-enzymes')"><span class="ni">✂️</span><span>Restriction Enzymes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-primers')"><span class="ni">🧬</span><span>Primers</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-plasmids')"><span class="ni">⭕</span><span>Plasmids</span></div>
@@ -113,6 +114,8 @@
           <h3 class="ln-webapp-sub" style="color:#444;">🌐 External Bioinformatics Tools</h3>
           <div class="ln-webapp-grid" id="ln-webapp-grid"></div>
         </div>
+        <!-- STORAGE BOXES — list of boxes, or one box's map (rendered by renderBoxes) -->
+        <div id="ln-boxes" class="ln-section"><div id="ln-boxes-body"></div></div>
         <!-- INVENTORY — one page per category -->
         <div id="ln-inv-enzymes" class="ln-section">
           <div class="ln-section-header"><div><h2>Restriction Enzymes</h2><p>Supplier, recognition site, concentration and where each one is stored</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('enzymes')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Enzyme</button></div></div>
@@ -165,8 +168,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=14"></script>
-  <script src="js/data.js?v=14"></script>
-  <script src="js/notebook.js?v=14"></script>
+  <script src="js/config.js?v=15"></script>
+  <script src="js/data.js?v=15"></script>
+  <script src="js/notebook.js?v=15"></script>
 </body>
 </html>
