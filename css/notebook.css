@@ -275,3 +275,6 @@ button.ln-dash-row:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
 .ln-bm-uitem span{color:#7a877f;}
 @media(max-width:1180px){.ln-bm-wrap{grid-template-columns:1fr;}}
 @media(max-width:640px){.ln-bm{padding:.6rem;gap:3px;}.ln-bm-cell{min-width:24px;}.ln-bm-label{display:none;}}
+.ln-box-group{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#7a877f;margin:1.6rem 0 .8rem;}
+.ln-box-group:first-child{margin-top:0;}
+.ln-box-group span{font-family:var(--mono);font-weight:600;color:#0c4a44;margin-left:.3rem;}
