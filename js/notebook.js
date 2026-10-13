@@ -163,6 +163,7 @@ function lnShow(section) {
   else if (section === 'presentations') renderPresentations();
   else if (section === 'webapps') renderWebapps();
   else if (section.indexOf('inv-') === 0) showInventoryPage(section.slice(4));
+  else if (section === 'boxes') renderBoxes();
   else if (section === 'admin') { renderAdmin(); refreshAdmin(); }
 }
 // pull fresh user list (catches new sign-ups), then re-render
@@ -491,7 +492,7 @@ var INV_LABELS = {
 var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
-  plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'location', 'addedBy'] },
+  plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'freezer', 'box', 'position', 'location', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
@@ -576,6 +577,10 @@ function renderInventory(tab) {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
         }
+        // A box name opens that box's map.
+        if (f === 'box' && item.box && BOX_CATS.indexOf(currentInvTab) >= 0) {
+          val = '<a href="#" class="ln-box-link" data-box="' + esc(item.box) + '" onclick="openBoxByName(this.dataset.box);return false;" title="Open box map">' + esc(item.box) + ' ▦</a>';
+        }
         // Map links open in a new tab; only http(s), so a typed "javascript:" can't run.
         if (f === 'mapLink' && /^https?:\/\//i.test(item[f] || '')) {
           val = '<a href="' + esc(item[f]) + '" target="_blank" rel="noopener" class="ln-map-link">Map \u2197</a>';
@@ -611,7 +616,230 @@ function csvCell(v) {
   if (/^[=+\-@]/.test(v)) v = "'" + v;
   return '"' + v.replace(/"/g, '""') + '"';
 }
-async function deleteInvItem(tab, id) { if (confirm('Remove this item?')) { await DB.removeInventory(tab, id); renderInventory(tab); } }
+async function deleteInvItem(tab, id) {
+  if (!confirm('Remove this item?')) return;
+  await DB.removeInventory(tab, id); renderInventory(tab);
+  if (lnCurrentSection === 'boxes') renderBoxes();
+}
+
+// ── STORAGE BOXES ──────────────────────────────────────────
+/* A box is an inventory item of category 'boxes': { name, layout, freezer,
+   notes }. Its vials are the plasmids, glycerol stocks and cell lines whose
+   Box matches the box name (case and spacing ignored), placed on the grid by
+   their Position: "A3" style, or a number counted row by row (1-81 in a 9x9).
+   A box name used by vials but never set up still shows, assumed 9x9. */
+var BOX_CATS = ['plasmids', 'stocks', 'cells'];
+var BOX_LAYOUTS = { '9x9': { rows: 9, cols: 9 }, '10x10': { rows: 10, cols: 10 }, '5x5': { rows: 5, cols: 5 } };
+var BOX_DEFAULT_LAYOUT = '9x9';
+var boxView = null;      // key of the open box, or null for the list of boxes
+var boxSelected = null;  // 'r,c' of the selected cell in the open box
+
+function boxKey(name) { return bulkKey(name); }
+function boxDims(def) { return BOX_LAYOUTS[def && def.layout] || BOX_LAYOUTS[BOX_DEFAULT_LAYOUT]; }
+function vialLabel(cat, it) {
+  if (cat === 'stocks') return it.serial || it.description || 'Stock';
+  return it.name || INV_LABELS[cat].one;
+}
+function vialSub(cat, it) {
+  if (cat === 'stocks') return it.serial ? (it.description || '') : '';
+  if (cat === 'cells') return it.passage || '';
+  return it.insert || it.backbone || '';
+}
+// Grid cell for a position, or null when it doesn't fit this box.
+function parsePosition(pos, dims) {
+  var s = String(pos == null ? '' : pos).trim().toUpperCase().replace(/[\s\-_:]/g, '');
+  var r, c, m;
+  if ((m = /^([A-Z])0*(\d{1,2})$/.exec(s))) { r = m[1].charCodeAt(0) - 65; c = +m[2] - 1; }
+  else if ((m = /^0*(\d{1,3})$/.exec(s))) { var i = +m[1] - 1; r = Math.floor(i / dims.cols); c = i % dims.cols; }
+  else return null;
+  return r >= 0 && c >= 0 && r < dims.rows && c < dims.cols ? { r: r, c: c } : null;
+}
+
+/* Every box: the set-up ones plus names vials use without a set-up box. */
+function boxIndex() {
+  var inv = getInventory(), boxes = {}, order = [];
+  function get(name) {
+    var k = boxKey(name);
+    if (!boxes[k]) { boxes[k] = { key: k, name: String(name).trim(), def: null, vials: [] }; order.push(k); }
+    return boxes[k];
+  }
+  (inv.boxes || []).forEach(function (d) { if (d.name) get(d.name).def = d; });
+  BOX_CATS.forEach(function (cat) {
+    (inv[cat] || []).forEach(function (it) { if (String(it.box || '').trim()) get(it.box).vials.push({ cat: cat, item: it }); });
+  });
+  return order.map(function (k) {
+    var b = boxes[k];
+    if (b.def) b.name = b.def.name;
+    b.dims = boxDims(b.def);
+    b.cells = {}; b.unplaced = [];
+    b.vials.forEach(function (v) {
+      var p = parsePosition(v.item.position, b.dims);
+      if (!p) { b.unplaced.push(v); return; }
+      (b.cells[p.r + ',' + p.c] = b.cells[p.r + ',' + p.c] || []).push(v);
+    });
+    b.placed = Object.keys(b.cells).length;
+    // Where it is: the box's own freezer, else what its vials say.
+    b.where = (b.def && b.def.freezer) || (b.vials.map(function (v) { return v.item.freezer || v.item.tank || ''; }).filter(Boolean)[0] || '');
+    return b;
+  }).sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); });
+}
+
+function openBoxesPage() { boxView = null; boxSelected = null; lnShow('boxes'); }
+function openBoxByName(name) { boxView = boxKey(name); boxSelected = null; lnShow('boxes'); }
+function renderBoxes() {
+  var el = document.getElementById('ln-boxes-body');
+  if (!el) return;
+  var all = boxIndex();
+  var box = boxView && all.filter(function (b) { return b.key === boxView; })[0];
+  if (boxView && !box) boxView = null; // renamed or emptied
+  el.innerHTML = box ? boxDetailHtml(box) : boxListHtml(all);
+}
+
+function boxListHtml(all) {
+  var box = document.getElementById('ln-boxsearch');
+  var q = box ? box.value : '';
+  return '<div class="ln-section-header"><div><h2>Storage Boxes</h2><p>Freezer and liquid-nitrogen boxes: open one to see where every vial sits</p></div>' +
+    '<div class="ln-header-actions"><button class="ln-add-btn" onclick="openBoxModal()">+ New Box</button></div></div>' +
+    '<input class="ln-search" id="ln-boxsearch" placeholder="🔍 Search boxes or freezers..." value="' + esc(q) + '" oninput="document.getElementById(\'ln-box-listbody\').innerHTML = boxListBody(boxIndex(), this.value)" style="margin-bottom:1.5rem;">' +
+    '<div id="ln-box-listbody">' + boxListBody(all, q) + '</div>';
+}
+function boxListBody(all, q) {
+  q = String(q || '').trim().toLowerCase();
+  var shown = !q ? all : all.filter(function (b) { return (b.name + ' ' + b.where).toLowerCase().indexOf(q) >= 0; });
+  if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give a plasmid, glycerol stock or cell line a Box name and it appears here.</div>';
+  if (!shown.length) return '<div class="ln-empty">No box matches \u201c' + esc(q) + '\u201d.</div>';
+  return '<div class="ln-box-grid-list">' + shown.map(function (b) {
+    var total = b.dims.rows * b.dims.cols, counts = {};
+    b.vials.forEach(function (v) { counts[v.cat] = (counts[v.cat] || 0) + 1; });
+    var chips = BOX_CATS.filter(function (c) { return counts[c]; }).map(function (c) {
+      return '<span class="ln-vchip ' + c + '">' + counts[c] + ' ' + (counts[c] === 1 ? INV_LABELS[c].one.toLowerCase() : INV_LABELS[c].many) + '</span>';
+    }).join('');
+    return '<button type="button" class="ln-box-card" data-box="' + esc(b.name) + '" onclick="openBoxByName(this.dataset.box)">' +
+      '<div class="ln-box-card-name">' + esc(b.name) + '</div>' +
+      '<div class="ln-box-card-meta">' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '\u00d7') : 'Layout not set') + (b.where ? ' \u00b7 ' + esc(b.where) : '') + '</div>' +
+      '<div class="ln-box-fill"><span style="width:' + Math.round(b.placed / total * 100) + '%"></span></div>' +
+      '<div class="ln-box-card-count">' + b.placed + ' / ' + total + ' positions used' + (b.unplaced.length ? ' \u00b7 <span class="warn">' + b.unplaced.length + ' without a position</span>' : '') + '</div>' +
+      '<div class="ln-vchips">' + (chips || '<span class="ln-vchip">empty</span>') + '</div></button>';
+  }).join('') + '</div>';
+}
+
+function boxDetailHtml(b) {
+  var d = b.dims, rowsHtml = '';
+  var head = '<div class="ln-section-header"><div><a href="#" class="ln-back-link" onclick="openBoxesPage();return false;">← All boxes</a>' +
+    '<h2>' + esc(b.name) + '</h2><p>' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') + ' box' : 'Layout not set (shown as 9×9)') +
+    (b.where ? ' · ' + esc(b.where) : '') + ' · ' + b.placed + ' / ' + (d.rows * d.cols) + ' positions used</p></div>' +
+    '<div class="ln-header-actions"><button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-box="' + esc(b.name) + '" onclick="openBoxModal(this.dataset.box)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
+    (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '');
+  rowsHtml += '<div class="ln-bm-corner"></div>';
+  for (var c = 0; c < d.cols; c++) rowsHtml += '<div class="ln-bm-colh">' + (c + 1) + '</div>';
+  for (var r = 0; r < d.rows; r++) {
+    rowsHtml += '<div class="ln-bm-rowh">' + String.fromCharCode(65 + r) + '</div>';
+    for (c = 0; c < d.cols; c++) {
+      var key = r + ',' + c, vs = b.cells[key], pos = String.fromCharCode(65 + r) + (c + 1);
+      var sel = boxSelected === key ? ' selected' : '';
+      if (!vs) { rowsHtml += '<button type="button" class="ln-bm-cell empty' + sel + '" title="' + pos + ' — empty" onclick="selectBoxCell(\'' + key + '\')"></button>'; continue; }
+      var v = vs[0], label = vialLabel(v.cat, v.item);
+      rowsHtml += '<button type="button" class="ln-bm-cell ' + v.cat + (vs.length > 1 ? ' clash' : '') + sel + '" title="' + pos + ' — ' + esc(vs.map(function (x) { return vialLabel(x.cat, x.item); }).join(' / ')) + '" onclick="selectBoxCell(\'' + key + '\')">' +
+        '<span class="ln-bm-label">' + esc(label) + '</span>' + (vs.length > 1 ? '<span class="ln-bm-badge">' + vs.length + '</span>' : '') + '</button>';
+    }
+  }
+  var legend = '<div class="ln-bm-legend">' + BOX_CATS.map(function (c) { return '<span><i class="ln-bm-swatch ' + c + '"></i>' + INV_LABELS[c].many.replace(/^./, function (x) { return x.toUpperCase(); }) + '</span>'; }).join('') +
+    '<span><i class="ln-bm-swatch clash"></i>Two vials in one position</span></div>';
+  var unplaced = b.unplaced.length ? '<div class="ln-bm-unplaced"><strong>' + b.unplaced.length + ' in this box without a usable position</strong>' +
+    b.unplaced.map(function (v) {
+      return '<button type="button" class="ln-bm-uitem ' + v.cat + '" onclick="editVial(\'' + v.cat + '\',\'' + v.item.id + '\')">' + esc(vialLabel(v.cat, v.item)) +
+        ' <span>' + (v.item.position ? 'position “' + esc(v.item.position) + '” does not fit' : 'no position') + '</span></button>';
+    }).join('') + '</div>' : '';
+  return head + '<div class="ln-bm-wrap"><div class="ln-bm" style="grid-template-columns:22px repeat(' + d.cols + ',minmax(26px,1fr));">' + rowsHtml + '</div>' +
+    '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced;
+}
+
+function selectBoxCell(key) { boxSelected = boxSelected === key ? null : key; renderBoxes(); }
+// The panel beside the map: what is in the selected position, or how to fill it.
+function boxCellPanel(b) {
+  if (!boxSelected) return '<div class="ln-bm-panel muted">Click a position to see what is in it, or to add a vial there.</div>';
+  var rc = boxSelected.split(','), pos = String.fromCharCode(65 + +rc[0]) + (+rc[1] + 1);
+  var vs = b.cells[boxSelected];
+  if (!vs) {
+    return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + ' · empty</div><div class="ln-bm-panel-add">Add here:' +
+      BOX_CATS.map(function (c) { return '<button type="button" class="ln-icon-btn" data-box="' + esc(b.name) + '" onclick="addVialAt(\'' + c + '\',this.dataset.box,\'' + pos + '\')">+ ' + INV_LABELS[c].one + '</button>'; }).join('') +
+      '</div></div>';
+  }
+  return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + (vs.length > 1 ? ' · <span class="warn">' + vs.length + ' vials share this position</span>' : '') + '</div>' +
+    vs.map(function (v) {
+      var cfg = INV_CONFIG[v.cat];
+      var rows = cfg.fields.map(function (f, i) {
+        var val = v.item[f];
+        if (!val || f === 'box' || f === 'position' || val === vialLabel(v.cat, v.item)) return '';
+        if (f === 'mapLink' && /^https?:\/\//i.test(val)) return '<div><span>' + cfg.cols[i] + '</span><a href="' + esc(val) + '" target="_blank" rel="noopener" class="ln-map-link">Map ↗</a></div>';
+        return '<div><span>' + cfg.cols[i] + '</span>' + esc(val) + '</div>';
+      }).join('');
+      return '<div class="ln-bm-vial"><span class="ln-vchip ' + v.cat + '">' + INV_LABELS[v.cat].one + '</span>' +
+        '<div class="ln-bm-vial-name">' + esc(vialLabel(v.cat, v.item)) + '</div><div class="ln-bm-fields">' + rows + '</div>' +
+        '<button type="button" class="ln-icon-btn" onclick="editVial(\'' + v.cat + '\',\'' + v.item.id + '\')">✎ Edit</button></div>';
+    }).join('') + '</div>';
+}
+function editVial(cat, id) { currentInvTab = cat; openInventoryModal(id); }
+function addVialAt(cat, boxName, pos) {
+  var b = boxIndex().filter(function (x) { return x.key === boxKey(boxName); })[0];
+  currentInvTab = cat;
+  var prefill = { box: boxName, position: pos };
+  if (b && b.where) prefill[cat === 'cells' ? 'tank' : 'freezer'] = b.where;
+  openInventoryModal(null, prefill);
+}
+
+/* Set up or edit a box. Renaming offers to move its vials to the new name,
+   since vials find their box by name. */
+var editingBox = null;
+function openBoxModal(name) {
+  var b = name ? boxIndex().filter(function (x) { return x.key === boxKey(name); })[0] : null;
+  editingBox = b || null;
+  var def = (b && b.def) || {};
+  var layout = def.layout || BOX_DEFAULT_LAYOUT;
+  document.getElementById('ln-modal-content').innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (b && b.def ? 'Edit Box' : 'Set Up Box') + '</h3>' +
+    '<div class="ln-form-row"><label>Box Name</label><input id="m-boxname" value="' + esc(b ? b.name : '') + '" placeholder="e.g. Box G1"><div class="hint">Vials are placed in this box when their Box field matches this name.</div></div>' +
+    '<div class="ln-form-grid"><div class="ln-form-row"><label>Layout</label><select id="m-boxlayout">' +
+      Object.keys(BOX_LAYOUTS).map(function (k) { var d = BOX_LAYOUTS[k]; return '<option value="' + k + '"' + (k === layout ? ' selected' : '') + '>' + d.rows + ' × ' + d.cols + ' (' + d.rows * d.cols + ' positions)</option>'; }).join('') +
+    '</select></div><div class="ln-form-row"><label>Freezer / Tank</label><input id="m-boxfreezer" value="' + esc(def.freezer || (b ? b.where : '')) + '" placeholder="e.g. -80°C Freezer A, shelf 2"></div></div>' +
+    '<div class="ln-form-row"><label>Notes</label><textarea id="m-boxnotes" placeholder="e.g. Lentiviral plasmids only">' + esc(def.notes || '') + '</textarea></div>' +
+    '<div class="ln-modal-actions">' + (b && b.def ? '<button class="ln-modal-cancel" style="margin-right:auto;color:#8f2a2a;" onclick="deleteBox()">Delete box</button>' : '') +
+    '<button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveBox()">Save box</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+async function saveBox() {
+  var name = g('m-boxname');
+  if (!name) { alert('Please give the box a name.'); return; }
+  var all = boxIndex(), b = editingBox;
+  var clash = all.filter(function (x) { return x.key === boxKey(name) && x.def && (!b || x.key !== b.key); })[0];
+  if (clash) { alert('A box called “' + clash.name + '” is already set up.'); return; }
+  var def = Object.assign({}, (b && b.def) || {}, { name: name, layout: g('m-boxlayout'), freezer: g('m-boxfreezer'), notes: g('m-boxnotes') });
+  if (!def.addedBy) def.addedBy = currentUser() ? currentUser().name : 'Unknown';
+  // Fewer positions than before: say which vials would no longer fit.
+  if (b && b.vials.length) {
+    var lost = b.vials.filter(function (v) { return parsePosition(v.item.position, b.dims) && !parsePosition(v.item.position, boxDims(def)); });
+    if (lost.length && !confirm(lost.length + ' vial(s) sit outside a ' + def.layout.replace('x', '×') + ' grid and will be listed as without a usable position. Continue?')) return;
+  }
+  var renamed = b && b.vials.length && boxKey(name) !== b.key;
+  if (renamed && !confirm('Move the ' + b.vials.length + ' vial(s) in “' + b.name + '” to the new name “' + name + '” as well?')) return;
+  try {
+    await DB.upsertInventory('boxes', def);
+    if (renamed) for (var i = 0; i < b.vials.length; i++) {
+      await DB.upsertInventory(b.vials[i].cat, Object.assign({}, b.vials[i].item, { box: name }));
+    }
+  } catch (e) { alert('Could not save the box: ' + e.message); return; }
+  closeModal();
+  if (boxView) boxView = boxKey(name);
+  renderBoxes();
+}
+async function deleteBox() {
+  var b = editingBox;
+  if (!b || !b.def) return;
+  if (!confirm('Delete the box set-up for “' + b.name + '”?' + (b.vials.length ? ' Its ' + b.vials.length + ' vial(s) are not deleted and keep their Box name, so the box still appears with its layout unset.' : ''))) return;
+  await DB.removeInventory('boxes', b.def.id);
+  closeModal();
+  if (!b.vials.length) boxView = null;
+  renderBoxes();
+}
 
 // ── INVENTORY BULK UPLOAD ──────────────────────────────────
 /* One spreadsheet covers every table category: the template has a sheet per
@@ -625,7 +853,7 @@ var BULK_DATE_FIELDS = { expiry: true };
 var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
   enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials', storage: '-20°C Box 2A' },
-  plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', location: '-80°C Plasmid Box 1' },
+  plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', freezer: 'Freezer A', box: 'Plasmid Box 1', position: 'A3 (or 1-81)', location: 'Any other location detail' },
   stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps', expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
@@ -1029,16 +1257,17 @@ function nextStockSerial() {
   return best.prefix + next;
 }
 
-/* Called with no argument to add, or with an item id to edit it. */
+/* Called with no argument to add, or with an item id to edit it. `prefill`
+   sets fields on a new item, e.g. the box and position clicked on a box map. */
 var editingInvItem = null;
-function openInventoryModal(id) {
+function openInventoryModal(id, prefill) {
   editingInvItem = id ? (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0] || null : null;
   var bg = document.getElementById('ln-modal-bg'), mc = document.getElementById('ln-modal-content');
   var user = currentUser(), today = new Date().toISOString().split('T')[0];
   var forms = {
     enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div><div class="ln-form-row"><label>Storage Location</label><input id="m-storage" placeholder="e.g. -20°C Box 2A"></div>',
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
-    plasmids: '<div class="ln-form-row"><label>Plasmid Name</label><input id="m-name" placeholder="e.g. pUC19-HK022"></div><div class="ln-form-row"><label>Backbone</label><input id="m-backbone" placeholder="e.g. pUC19"></div><div class="ln-form-row"><label>Insert</label><input id="m-insert" placeholder="e.g. HK022 integrase CDS"></div><div class="ln-form-row"><label>Antibiotic Resistance</label><input id="m-resistance" placeholder="e.g. AmpR, KanR"></div><div class="ln-form-row"><label>Box / Location</label><input id="m-location" placeholder="e.g. -80°C Plasmid Box 1"></div>',
+    plasmids: '<div class="ln-form-row"><label>Plasmid Name</label><input id="m-name" placeholder="e.g. pUC19-HK022"></div><div class="ln-form-row"><label>Backbone</label><input id="m-backbone" placeholder="e.g. pUC19"></div><div class="ln-form-row"><label>Insert</label><input id="m-insert" placeholder="e.g. HK022 integrase CDS"></div><div class="ln-form-row"><label>Antibiotic Resistance</label><input id="m-resistance" placeholder="e.g. AmpR, KanR"></div><div class="ln-form-section">Location</div><div class="ln-form-grid"><div class="ln-form-row"><label>Freezer</label><input id="m-freezer" placeholder="e.g. Freezer A"></div><div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Plasmid Box 1"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div><div class="ln-form-row"><label>Other location detail</label><input id="m-location" placeholder="optional"></div></div>',
     stocks: '<div class="ln-form-grid">' +
       '<div class="ln-form-row"><label>Serial #</label><input id="m-serial" placeholder="e.g. GS-0001"></div>' +
       '<div class="ln-form-row"><label>Strain</label><input id="m-hostStrain" list="ln-strain-list" placeholder="e.g. ' + STOCK_STRAINS[0] + '"></div></div>' +
@@ -1051,19 +1280,20 @@ function openInventoryModal(id) {
       '<div class="ln-form-row"><label>Freezer (-80°C)</label><input id="m-freezer" placeholder="e.g. Freezer A"></div>' +
       '<div class="ln-form-row"><label>Rack_Shelf</label><input id="m-shelf" placeholder="e.g. R2_S3"></div>' +
       '<div class="ln-form-row"><label>Position on Drawer</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
-      '<div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box G1"></div>' +
+      '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box G1"></div>' +
       '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div></div>' +
       '<div class="ln-form-row"><label>Map Link</label><input id="m-mapLink" type="url" placeholder="https://… (Benchling, SnapGene, Drive)"></div>' +
       '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes"></textarea></div>' +
       '<datalist id="ln-strain-list">' + STOCK_STRAINS.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>' +
       '<datalist id="ln-resistance-list">' + RESISTANCES.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>',
-    cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
+    cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
   var editing = !!editingInvItem;
   var credit = editing ? (editingInvItem.addedBy || editingInvItem.owner || '') : (user ? user.name : '');
   mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editing ? 'Edit ' : 'Add ') + tabLabel + '</h3>' + forms[currentInvTab] +
+    '<datalist id="ln-box-list">' + boxIndex().map(function (b) { return '<option value="' + esc(b.name) + '">'; }).join('') + '</datalist>' +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
   // Pre-fill from the item being edited; fields without an input are skipped.
@@ -1076,6 +1306,10 @@ function openInventoryModal(id) {
     document.getElementById('m-serial').value = nextStockSerial();
     document.getElementById('m-owner').value = user ? user.name : '';
   }
+  if (!editing && prefill) Object.keys(prefill).forEach(function (f) {
+    var input = document.getElementById('m-' + f);
+    if (input && prefill[f]) input.value = prefill[f];
+  });
   bg.classList.add('open');
 }
 async function saveInvItem() {
@@ -1084,7 +1318,7 @@ async function saveInvItem() {
   var item = editingInvItem ? Object.assign({}, editingInvItem) : { id: uid(), addedBy: addedBy };
   if (tab === 'enzymes') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'), storage: g('m-storage') });
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
-  else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), location: g('m-location') });
+  else if (tab === 'plasmids') Object.assign(item, { name: g('m-name'), backbone: g('m-backbone'), insert: g('m-insert'), resistance: g('m-resistance'), freezer: g('m-freezer'), box: g('m-box'), position: g('m-position'), location: g('m-location') });
   else if (tab === 'stocks') {
     INV_CONFIG.stocks.fields.forEach(function (f) { item[f] = g('m-' + f); });
     if (!item.serial) { alert('Please fill in the serial number.'); return; }
@@ -1095,6 +1329,7 @@ async function saveInvItem() {
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);
+  if (lnCurrentSection === 'boxes') renderBoxes();
 }
 
 // ── BOOT ───────────────────────────────────────────────────
