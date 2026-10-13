@@ -415,7 +415,7 @@ var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'location', 'addedBy'] },
-  stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Shelf', 'Place on Shelf', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
+  stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
 };
@@ -549,7 +549,7 @@ var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
   enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials', storage: '-20°C Box 2A' },
   plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', location: '-80°C Plasmid Box 1' },
-  stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: '2', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
+  stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps', expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
 };
@@ -561,7 +561,8 @@ var BULK_ALIASES = {
   tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation'],
   serial: ['serialnumber', 'serialno', 'serial', 'stocknumber', 'stockno'], description: ['desc'],
   qc: ['sequenced', 'sequencing', 'sequencingqc', 'qcprimers', 'sequencedwith'], hostStrain: ['strain', 'ecolistrain', 'bacterialstrain'],
-  freezer: ['freezer', 'freezername', 'freezer80c', 'freezer80'], shelfPlace: ['placeofshelf', 'shelfplace', 'placeonshelf', 'shelfposition'],
+  freezer: ['freezer', 'freezername', 'freezer80c', 'freezer80'], shelf: ['rack', 'rackshelf', 'shelf'],
+  shelfPlace: ['positionondrawer', 'drawerposition', 'drawer', 'placeofshelf', 'placeonshelf', 'shelfplace', 'shelfposition'],
   owner: ['madeby'], mapLink: ['map', 'maplink', 'plasmidmap', 'link', 'mapurl']
 };
 
@@ -971,8 +972,8 @@ function openInventoryModal(id) {
       '<div class="ln-form-row"><label>Sequenced (QC)</label><input id="m-qc" placeholder="Primers used, e.g. M13F + M13R, sequence correct"></div>' +
       '<div class="ln-form-section">Location</div><div class="ln-form-grid">' +
       '<div class="ln-form-row"><label>Freezer (-80°C)</label><input id="m-freezer" placeholder="e.g. Freezer A"></div>' +
-      '<div class="ln-form-row"><label>Shelf</label><input id="m-shelf" placeholder="e.g. 2"></div>' +
-      '<div class="ln-form-row"><label>Place on Shelf</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
+      '<div class="ln-form-row"><label>Rack_Shelf</label><input id="m-shelf" placeholder="e.g. R2_S3"></div>' +
+      '<div class="ln-form-row"><label>Position on Drawer</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
       '<div class="ln-form-row"><label>Box</label><input id="m-box" placeholder="e.g. Box G1"></div>' +
       '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div></div>' +
       '<div class="ln-form-row"><label>Map Link</label><input id="m-mapLink" type="url" placeholder="https://… (Benchling, SnapGene, Drive)"></div>' +
