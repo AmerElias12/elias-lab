@@ -172,12 +172,89 @@ async function refreshAdmin() {
 }
 
 // ── DASHBOARD ──────────────────────────────────────────────
+/* Each stat card is a category; clicking it opens a breakdown underneath
+   (presentations per lab member, protocols per category, ...). One open at
+   a time; clicking a row goes to that page, filtered when it has a search. */
+var dashOpen = null;
+var DASH_INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits'];
+var DASH_INV_NAMES = { enzymes: 'Restriction Enzymes', primers: 'Primers', plasmids: 'Plasmids', stocks: 'Glycerol Stocks', cells: 'Tissue Culture', kits: 'Kits & Reagents' };
+
+// Count items by a free-text field, merging case and spacing differences.
+// Names in `always` (lab members) are listed even with a count of zero.
+function dashCountBy(items, field, always) {
+  var rows = {}, order = [];
+  function row(raw) {
+    var name = String(raw || '').trim(), key = name.toLowerCase();
+    if (!rows[key]) { rows[key] = { name: name || 'Not specified', query: name, count: 0 }; order.push(key); }
+    return rows[key];
+  }
+  (always || []).forEach(function (n) { if (String(n || '').trim()) row(n); });
+  items.forEach(function (it) { row(it[field]).count++; });
+  return order.map(function (k) { return rows[k]; })
+    // Most first; entries with no name go last whatever their count.
+    .sort(function (a, b) { return (!a.query - !b.query) || b.count - a.count || a.name.localeCompare(b.name); });
+}
+function dashSearch(section, q) {
+  lnShow(section);
+  var box = document.querySelector('#ln-' + section + ' .ln-search');
+  if (box) box.value = q;
+  if (section === 'protocols') renderProtocols(q); else renderNotebooks(q);
+}
+function dashGroups() {
+  var members = getApprovedUserNames(), inv = getInventory();
+  var notebooks = getNotebooks();
+  var active = notebooks.filter(function (n) { return !n.archived; });
+  var archived = notebooks.length - active.length;
+  return [
+    { key: 'protocols', label: 'Protocols', by: 'by category', rows: dashCountBy(getProtocols(), 'category'),
+      go: function (r) { dashSearch('protocols', r.query); } },
+    { key: 'experiments', label: 'Active Experiments', by: 'by researcher', rows: dashCountBy(active, 'researcher', members),
+      note: archived ? archived + ' archived experiment' + (archived === 1 ? '' : 's') + ' not counted' : '',
+      go: function (r) { dashSearch('notebooks', r.query); } },
+    { key: 'presentations', label: 'Presentations', by: 'by presenter', rows: dashCountBy(getPresentations(), 'presenter', members),
+      go: function () { lnShow('presentations'); } },
+    { key: 'inventory', label: 'Inventory Items', by: 'by inventory page',
+      // Primers live in the Primer Generator, so list them only if the inventory holds any.
+      rows: DASH_INV_CATS.filter(function (c) { return c !== 'primers' || (inv.primers || []).length; })
+        .map(function (c) { return { name: DASH_INV_NAMES[c], query: c, count: (inv[c] || []).length }; }),
+      go: function (r) { lnShow('inv-' + r.query); } }
+  ].map(function (grp) {
+    grp.total = grp.rows.reduce(function (a, r) { return a + r.count; }, 0);
+    return grp;
+  });
+}
+function toggleDash(key) { dashOpen = dashOpen === key ? null : key; renderDashboard(); }
+function dashGo(key, i) {
+  var grp = dashGroups().filter(function (x) { return x.key === key; })[0];
+  if (grp && grp.rows[i] && grp.rows[i].query) grp.go(grp.rows[i]);
+}
+
 function renderDashboard() {
-  var inv = getInventory();
-  var invTotal = Object.keys(inv).reduce(function (a, k) { return a + (inv[k] || []).length; }, 0);
-  document.getElementById('ln-stats-grid').innerHTML =
-    [{ num: getProtocols().length, label: 'Protocols' }, { num: getNotebooks().filter(function (n) { return !n.archived; }).length, label: 'Active Experiments' }, { num: getPresentations().length, label: 'Presentations' }, { num: invTotal, label: 'Inventory Items' }]
-      .map(function (s) { return '<div class="ln-stat-card"><div class="ln-stat-num">' + s.num + '</div><div class="ln-stat-label">' + s.label + '</div></div>'; }).join('');
+  var groups = dashGroups();
+  document.getElementById('ln-stats-grid').innerHTML = groups.map(function (grp) {
+    var open = dashOpen === grp.key;
+    return '<button type="button" class="ln-stat-card' + (open ? ' open' : '') + '" aria-expanded="' + open + '" aria-controls="ln-dash-detail" onclick="toggleDash(\'' + grp.key + '\')">' +
+      '<div class="ln-stat-num">' + grp.total + '</div><div class="ln-stat-label">' + grp.label + '</div>' +
+      '<div class="ln-stat-by">' + grp.by + ' <span class="ln-stat-chev">' + (open ? '▴' : '▾') + '</span></div></button>';
+  }).join('');
+
+  var detail = document.getElementById('ln-dash-detail');
+  var grp = groups.filter(function (x) { return x.key === dashOpen; })[0];
+  if (!grp) { detail.innerHTML = ''; detail.hidden = true; }
+  else {
+    var max = grp.rows.reduce(function (m, r) { return Math.max(m, r.count); }, 0) || 1;
+    detail.hidden = false;
+    detail.innerHTML = '<div class="ln-dash-head"><strong>' + grp.label + '</strong> ' + grp.by + ' · ' + grp.total + ' total</div>' +
+      (grp.rows.length ? grp.rows.map(function (r, i) {
+        var inner = '<span class="ln-dash-name">' + esc(r.name) + '</span>' +
+          '<span class="ln-dash-bar"><span style="width:' + Math.round(r.count / max * 100) + '%"></span></span>' +
+          '<span class="ln-dash-count">' + r.count + '</span>';
+        return r.query
+          ? '<button type="button" class="ln-dash-row" onclick="dashGo(\'' + grp.key + '\',' + i + ')">' + inner + '</button>'
+          : '<div class="ln-dash-row">' + inner + '</div>';
+      }).join('') : '<div class="ln-empty" style="padding:.5rem 0;">Nothing here yet.</div>') +
+      (grp.note ? '<div class="ln-dash-note">' + esc(grp.note) + '</div>' : '');
+  }
   var rp = getProtocols().slice(-3).reverse();
   document.getElementById('ln-recent-protocols').innerHTML = rp.length ? rp.map(function (p) { return '<div class="ln-card" style="padding:1rem;margin-bottom:.6rem;"><div class="ln-card-title" style="font-size:14px;">' + esc(p.title) + '</div><div class="ln-card-meta">' + esc(p.category) + ' · ' + esc(p.date) + '</div></div>'; }).join('') : '<div class="ln-empty" style="padding:0;">No protocols yet.</div>';
   var rn = getNotebooks().filter(function (n) { return !n.archived; }).slice(-3).reverse();

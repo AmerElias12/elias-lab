@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=13">
+    <link rel="stylesheet" href="css/notebook.css?v=14">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -82,6 +82,7 @@
         <div id="ln-dashboard" class="ln-section active">
           <div class="ln-section-header"><div><h2 id="ln-welcome-msg">Welcome!</h2><p>Elias Lab · Molecular Biology &amp; Gene Therapy</p></div></div>
           <div class="ln-stats-grid" id="ln-stats-grid"></div>
+          <div class="ln-dash-detail" id="ln-dash-detail" hidden></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div><h3 style="font-size:15px;font-weight:700;margin-bottom:1rem;color:#444;">Recent Protocols</h3><div id="ln-recent-protocols"></div></div>
             <div><h3 style="font-size:15px;font-weight:700;margin-bottom:1rem;color:#444;">Recent Experiments</h3><div id="ln-recent-notebooks"></div></div>
@@ -164,8 +165,8 @@
   <!-- MODAL -->
   <div class="ln-modal-bg" id="ln-modal-bg"><div class="ln-modal" id="ln-modal-content"></div></div>
 
-  <script src="js/config.js?v=13"></script>
-  <script src="js/data.js?v=13"></script>
-  <script src="js/notebook.js?v=13"></script>
+  <script src="js/config.js?v=14"></script>
+  <script src="js/data.js?v=14"></script>
+  <script src="js/notebook.js?v=14"></script>
 </body>
 </html>
