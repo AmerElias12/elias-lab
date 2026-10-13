@@ -402,7 +402,7 @@ async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can
    text styles are dropped. */
 var SAFE_TAGS = ['p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
   'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'a'];
-var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true };
+var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true, 'ln-file': true };
 var SAFE_STYLES = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
 var safeHtmlReady = false;
 function safeHtml(html) {
@@ -415,7 +415,11 @@ function safeHtml(html) {
       }).join(';');
     });
     DOMPurify.addHook('afterSanitizeAttributes', function (node) {
-      if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+      if (node.tagName === 'A') {
+        node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer');
+        // data: links only as downloads (files attached in local mode), never to open.
+        if (/^\s*data:/i.test(node.getAttribute('href') || '') && !node.hasAttribute('download')) node.removeAttribute('href');
+      }
       // Images: https, or pasted/uploaded data URLs of plain image types only.
       if (node.tagName === 'IMG' && node.hasAttribute('src') && !/^(https:|data:image\/(png|jpe?g|gif|webp);)/i.test(node.getAttribute('src'))) node.removeAttribute('src');
     });
@@ -423,7 +427,8 @@ function safeHtml(html) {
   }
   return DOMPurify.sanitize(String(html || ''), {
     ALLOWED_TAGS: SAFE_TAGS,
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'data-path', 'data-calc', 'class', 'style', 'colspan', 'rowspan'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'download', 'data-path', 'data-calc', 'class', 'style', 'colspan', 'rowspan'],
+    ADD_DATA_URI_TAGS: ['a'],
     ALLOW_DATA_ATTR: false
   }).replace(/<img(?![^>]*\b(?:src|data-path)=)[^>]*>/gi, ''); // images whose source was unsafe
 }
@@ -534,7 +539,7 @@ function renderEntry(id) {
   editor.addEventListener('input', calcHandle);
   editor.addEventListener('change', calcHandle);
   editor.addEventListener('click', calcHandle);
-  hydrateEntryImages(editor);
+  hydrateEntryFiles(editor);
   initTableEditor();
   loadTablesIntoEditor((n.tables || []).map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }));
   var paper = document.getElementById('ln-paper');
@@ -545,19 +550,25 @@ function renderEntry(id) {
   // Enter starts a new paragraph (<p>), not a bare <div>.
   editor.addEventListener('focus', function () { document.execCommand('defaultParagraphSeparator', false, 'p'); });
   editor.addEventListener('click', toggleChecklistItem);
+  editor.addEventListener('click', openPageFile);
   editor.addEventListener('paste', editorPaste);
   editor.addEventListener('drop', editorDrop);
   if (!entryId) setTimeout(function () { document.getElementById('e-title').focus(); }, 50);
 }
 
-// Pages store images by storage path; give them fresh signed links to show.
-async function hydrateEntryImages(root) {
-  var imgs = Array.prototype.slice.call(root.querySelectorAll('img[data-path]'));
-  if (!imgs.length) return;
+// Pages store images and attached files by storage path; give them fresh
+// signed links to show or open.
+async function hydrateEntryFiles(root) {
+  root.querySelectorAll('a.ln-file').forEach(function (a) { a.contentEditable = 'false'; });
+  var els = Array.prototype.slice.call(root.querySelectorAll('img[data-path], a[data-path]'));
+  if (!els.length) return;
   try {
-    var urls = await DB.signPaths(imgs.map(function (i) { return i.getAttribute('data-path'); }));
-    imgs.forEach(function (i) { var u = urls[i.getAttribute('data-path')]; if (u) i.src = u; });
-  } catch (e) { /* images stay blank; the next open retries */ }
+    var urls = await DB.signPaths(els.map(function (el) { return el.getAttribute('data-path'); }));
+    els.forEach(function (el) {
+      var u = urls[el.getAttribute('data-path')];
+      if (u) el.setAttribute(el.tagName === 'IMG' ? 'src' : 'href', u);
+    });
+  } catch (e) { /* they stay without a link; the next open retries */ }
 }
 function entryBodyForSave() {
   var live = document.getElementById('e-body');
@@ -565,11 +576,12 @@ function entryBodyForSave() {
   // Calculation tables: save their state and a plain snapshot, not the form.
   var liveCalcs = live.querySelectorAll('.ln-calc'), cloneCalcs = clone.querySelectorAll('.ln-calc');
   Array.prototype.forEach.call(cloneCalcs, function (b, i) { if (liveCalcs[i] && liveCalcs[i]._calc) { b._calc = liveCalcs[i]._calc; calcSnapshot(b); } });
-  // Signed links expire, so stored images keep only their storage path.
+  // Signed links expire, so stored images and files keep only their storage path.
   clone.querySelectorAll('img[data-path]').forEach(function (i) { i.removeAttribute('src'); });
+  clone.querySelectorAll('a[data-path]').forEach(function (a) { a.removeAttribute('href'); });
   var html = safeHtml(clone.innerHTML);
   var probe = document.createElement('div'); probe.innerHTML = html;
-  return probe.textContent.trim() || probe.querySelector('img,table,hr,ul.ln-checklist,.ln-calc') ? html : '';
+  return probe.textContent.trim() || probe.querySelector('img,table,hr,ul.ln-checklist,.ln-calc,a.ln-file') ? html : '';
 }
 
 async function saveEntry() {
@@ -614,10 +626,10 @@ function editorToolbarHtml() {
     '<span class="sep"></span>' + b('insertUnorderedList', '\u2022 List', 'Bulleted list') + b('insertOrderedList', '1. List', 'Numbered list') + b('checklist', '\u2611 Checklist', 'Checklist') +
     b('quote', '\u275d', 'Quote') + b('insertHorizontalRule', '\u2015', 'Divider line') +
     '<span class="sep"></span>' + b('table', '\u229e Table', 'Insert a table') + b('tableRow', '+ Row', 'Add a row to the table you are in') + b('tableCol', '+ Col', 'Add a column to the table you are in') +
-    b('image', '\ud83d\uddbc Image', 'Insert an image (you can also paste or drop one)') +
+    b('file', '\ud83d\udcce File', 'Attach any file: images appear on the page, other files as a link (you can also paste or drop files)') +
     '<button type="button" class="ln-calc-btn" title="Insert a ready-made PCR, qPCR, transfection or electroporation table" onmousedown="event.preventDefault()" onclick="openCalcPicker()">\ud83e\uddee Calc table</button>' +
     '<span class="sep"></span>' + b('removeFormat', 'Clear', 'Clear formatting') + b('undo', '\u21ba Undo', 'Undo (Ctrl/Cmd+Z)') + b('redo', '\u21bb Redo', 'Redo') +
-    '<input type="file" id="e-image-input" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="editorInsertImages(this.files);this.value=\'\'">' +
+    '<input type="file" id="e-file-input" multiple hidden onchange="editorInsertFiles(this.files);this.value=\'\'">' +
     '</div>';
 }
 function editorSelectionNode() {
@@ -629,7 +641,7 @@ function editorSelectionNode() {
 }
 function editorCmd(cmd, arg) {
   var editor = document.getElementById('e-body');
-  if (cmd !== 'image') editor.focus();
+  if (cmd !== 'file') editor.focus();
   var here = editorSelectionNode();
   if (cmd === 'block') { if (arg) document.execCommand('formatBlock', false, '<' + arg + '>'); }
   else if (cmd === 'quote') document.execCommand('formatBlock', false, '<blockquote>');
@@ -656,7 +668,7 @@ function editorCmd(cmd, arg) {
       Array.prototype.forEach.call(table.rows, function (r) { var c = document.createElement(r.parentNode.tagName === 'THEAD' ? 'th' : 'td'); c.innerHTML = '<br>'; r.insertBefore(c, r.cells[col + 1] || null); });
     }
   }
-  else if (cmd === 'image') { document.getElementById('e-image-input').click(); return; }
+  else if (cmd === 'file') { document.getElementById('e-file-input').click(); return; }
   else document.execCommand(cmd, false, null);
   markEntryDirty();
 }
@@ -668,35 +680,52 @@ function toggleChecklistItem(e) {
   li.classList.toggle('checked');
   markEntryDirty();
 }
-// Images go to storage (shared mode) or inline (local mode), then onto the page.
-async function editorInsertImages(files) {
-  var imgs = Array.prototype.filter.call(files || [], function (f) { return /^image\/(png|jpeg|gif|webp)$/.test(f.type); });
-  if (!imgs.length) return;
+// Files go to storage (shared mode) or inline (local mode), then onto the
+// page: images as pictures, everything else as a file chip with name and size.
+var PAGE_IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/;
+function fmtBytes(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : (n || 0) + ' B'; }
+async function editorInsertFiles(files) {
+  files = Array.prototype.slice.call(files || []);
+  if (!files.length) return;
   var st = document.getElementById('ln-entry-status');
-  if (st) st.textContent = 'Uploading image\u2026';
+  if (st) st.textContent = 'Uploading ' + (files.length === 1 ? files[0].name : files.length + ' files') + '\u2026';
   try {
-    var up = await DB.uploadFiles(imgs);
-    document.getElementById('e-body').focus();
+    var up = await DB.uploadFiles(files);
+    var editor = document.getElementById('e-body');
+    editor.focus();
     document.execCommand('insertHTML', false, up.map(function (f) {
-      return '<img src="' + esc(f.data) + '"' + (f.path ? ' data-path="' + esc(f.path) + '"' : '') + ' alt="' + esc(f.name) + '">';
+      var path = f.path ? ' data-path="' + esc(f.path) + '"' : '';
+      if (PAGE_IMAGE_TYPES.test(f.type)) return '<img src="' + esc(f.data) + '"' + path + ' alt="' + esc(f.name) + '">';
+      return '<a class="ln-file" href="' + esc(f.data) + '"' + path + ' download="' + esc(f.name) + '">\ud83d\udcce ' + esc(f.name) + ' \u00b7 ' + fmtBytes(f.size) + '</a>&nbsp;';
     }).join('') + '<p><br></p>');
+    editor.querySelectorAll('a.ln-file').forEach(function (a) { a.contentEditable = 'false'; });
     markEntryDirty();
     if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
   } catch (e) { alert(e.message); if (st) st.textContent = 'Unsaved changes'; }
+}
+// Links don't open on click inside an editable page, so open file chips here.
+function openPageFile(e) {
+  var a = e.target.closest && e.target.closest('a.ln-file');
+  if (!a) return;
+  e.preventDefault();
+  var href = a.getAttribute('href');
+  if (!href) { alert('This file\u2019s link is still loading. Try again in a moment.'); return; }
+  var tmp = document.createElement('a');
+  tmp.href = href; tmp.rel = 'noopener';
+  if (/^data:/i.test(href)) tmp.download = a.getAttribute('download') || 'file'; else tmp.target = '_blank';
+  document.body.appendChild(tmp); tmp.click(); document.body.removeChild(tmp);
 }
 function editorPaste(e) {
   if (e.target.closest && e.target.closest('.ln-calc')) return; // a calc table's own fields
   var cd = e.clipboardData;
   if (!cd) return;
-  if (cd.files && cd.files.length && Array.prototype.some.call(cd.files, function (f) { return /^image\//.test(f.type); })) {
-    e.preventDefault(); editorInsertImages(cd.files); return;
-  }
+  if (cd.files && cd.files.length) { e.preventDefault(); editorInsertFiles(cd.files); return; }
   var html = cd.getData('text/html');
   if (html) { e.preventDefault(); document.execCommand('insertHTML', false, safeHtml(html)); markEntryDirty(); }
 }
 function editorDrop(e) {
   if (e.target.closest && e.target.closest('.ln-calc')) return;
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); editorInsertImages(e.dataTransfer.files); }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); editorInsertFiles(e.dataTransfer.files); }
 }
 
 // ── CALCULATION TABLES ─────────────────────────────────────

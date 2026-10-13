@@ -406,3 +406,7 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
   .ln-page-editor .ln-calc{break-inside:avoid;background:#fff;}
   .ln-calc input,.ln-calc select{border:none !important;background:none !important;padding:0 !important;appearance:none;-webkit-appearance:none;}
 }
+/* Files attached on a notebook page */
+.ln-page-editor a.ln-file{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .6rem;margin:.1rem 0;border:1px solid rgba(12,74,68,.25);border-radius:100px;background:#f3f8f5;color:#0c4a44;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;line-height:1.5;}
+.ln-page-editor a.ln-file:hover{background:#e3f1ea;border-color:#10b07e;}
+@media print{.ln-page-editor a.ln-file{background:none;border-color:#999;}}
