@@ -13,7 +13,7 @@
   var plDraft = null;         // a working copy: edits only reach the inventory on Save
   var plDirty = false;
   var plSel = null;           // { start, end } of the selected bases, 0-based
-  var plOpts = { wrap: 60, find: '', enzymes: 'unique', frame: 'off' };
+  var plOpts = { wrap: 60, find: '', enzymes: 'unique', frame: 'off', enzymeNames: [] };
   var plImport = null;        // files waiting in the import dialog
 
   // The record being edited. Everything on the page changes this copy, so
@@ -412,22 +412,34 @@
     }
     return '<div class="pl-strand aa">' + esc(row) + '</div>';
   }
+  /* Which cut sites the sequence shows: by how often the enzyme cuts, or a
+     list chosen by hand in the enzyme dialog. */
+  function shownSites() {
+    if (plOpts.enzymes === 'none') return [];
+    if (plOpts.enzymes === 'custom') {
+      var want = plOpts.enzymeNames;
+      return plSites.filter(function (h) { return want.indexOf(h.name) >= 0; });
+    }
+    return P.filterSites(plSites, plOpts.enzymes);
+  }
   function seqPanelHtml(p) {
     var len = p.seq.length, per = plOpts.wrap;
     var counts = P.siteCounts(plSites);
-    var shown = P.filterSites(plSites, plOpts.enzymes);
+    var shown = shownSites();
     var head = '<div class="ln-pl-panel"><div class="ln-pl-panel-head"><h3>Sequence</h3>' +
       '<div class="ln-header-actions">' +
         '<input class="ln-search sm" id="pl-find" placeholder="🔍 Find bases (both strands)" value="' + esc(plOpts.find) + '">' +
         '<label class="ln-pl-check">Enzymes <select id="pl-enzymes">' +
-          [['none', 'Hidden'], ['unique', 'Unique cutters'], ['two', 'Cutting once or twice'], ['all', 'All sites']]
+          [['none', 'Hidden'], ['unique', 'Unique cutters'], ['two', 'Cutting once or twice'], ['all', 'All sites'], ['custom', 'Chosen by hand\u2026']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.enzymes === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<label class="ln-pl-check">Frame <select id="pl-frame">' +
           [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '−1'], ['-2', '−2'], ['-3', '−3']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
-        '<button class="ln-add-btn ghost" onclick="openGuides()">✂ CRISPR</button>' +
+        '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
+        '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
+        '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
 
@@ -526,7 +538,7 @@
       } else if (caret) caret.remove();
     });
     var bar = document.querySelector('.pl-edbar');
-    if (bar) bar.innerHTML = editorNote(p, P.filterSites(plSites, plOpts.enzymes), Object.keys(P.siteCounts(plSites)).length);
+    if (bar) bar.innerHTML = editorNote(p, shownSites(), Object.keys(P.siteCounts(plSites)).length);
   }
   function edMouseDown(e) {
     var pos = posFromEvent(e);
@@ -851,6 +863,223 @@
     navigator.clipboard.writeText(t).then(function () { }, function () { alert(t); });
   }
 
+  // ---------- choosing enzymes ----------
+  var plEnzFilter = 'cut', plEnzSearch = '';
+  function openEnzymePanel() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    plEnzHtml();
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plEnzHtml() {
+    var it = rec(); if (!it) return;
+    var sum = P.enzymeSummary(asPlasmid(it));
+    var groups = { none: 0, one: 0, two: 0, many: 0 };
+    sum.forEach(function (e) {
+      if (!e.count) groups.none++; else if (e.count === 1) groups.one++;
+      else if (e.count === 2) groups.two++; else groups.many++;
+    });
+    var q = plEnzSearch.trim().toLowerCase();
+    var rows = sum.filter(function (e) {
+      if (q && e.name.toLowerCase().indexOf(q) < 0 && e.site.toLowerCase().indexOf(q) < 0) return false;
+      if (plEnzFilter === 'none') return e.count === 0;
+      if (plEnzFilter === 'one') return e.count === 1;
+      if (plEnzFilter === 'two') return e.count === 2;
+      if (plEnzFilter === 'many') return e.count >= 3;
+      if (plEnzFilter === 'cut') return e.count > 0;
+      return true;
+    });
+    function tab(key, label, n) {
+      return '<button type="button" class="ln-icon-btn' + (plEnzFilter === key ? ' on' : '') +
+        '" onclick="plEnzSet(\'' + key + '\')">' + label + ' <span>' + n + '</span></button>';
+    }
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Restriction enzymes</h3>' +
+      '<p class="ln-bulk-intro">How often each of the ' + P.ENZYMES.length + ' enzymes cuts this plasmid. ' +
+      'Tick the ones you want marked in the sequence — the never-cutters are the ones to add to a cloning site.</p>' +
+      '<div class="ln-enz-tabs">' + tab('cut', 'Cuts at all', groups.one + groups.two + groups.many) +
+        tab('none', 'Never cuts', groups.none) + tab('one', 'Cuts once', groups.one) +
+        tab('two', 'Cuts twice', groups.two) + tab('many', 'Three or more', groups.many) + tab('all', 'Every enzyme', sum.length) +
+      '</div>' +
+      '<input class="ln-search sm" id="pl-enz-search" placeholder="🔍 Enzyme or site" value="' + esc(plEnzSearch) + '" oninput="plEnzSearchSet(this.value)" style="margin:.6rem 0;width:100%;">' +
+      '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr><th></th><th>Enzyme</th><th>Site</th><th>Cuts</th><th>Where</th><th>End</th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (e) {
+        return '<tr><td><input type="checkbox" class="pl-enz-pick" value="' + esc(e.name) + '"' +
+            (plOpts.enzymeNames.indexOf(e.name) >= 0 ? ' checked' : '') + (e.count ? '' : ' disabled') + '></td>' +
+          '<td>' + esc(e.name) + '</td><td><code>' + esc(e.site) + '</code></td>' +
+          '<td class="ln-nowrap">' + e.count + '</td>' +
+          '<td class="ln-nowrap">' + (e.cuts.length ? esc(e.cuts.slice(0, 6).join(', ')) + (e.cuts.length > 6 ? '…' : '') : '—') + '</td>' +
+          '<td>' + (e.blunt ? 'blunt' : 'sticky') + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="ln-empty">Nothing matches.</td></tr>') +
+      '</tbody></table></div>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
+      '<button class="ln-modal-save" onclick="plEnzApply()">Mark the ticked ones</button></div>';
+  }
+  function plEnzSet(k) { plEnzFilter = k; plEnzHtml(); }
+  function plEnzSearchSet(v) {
+    plEnzSearch = v;
+    plEnzHtml();
+    var box = document.getElementById('pl-enz-search');
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  }
+  function plEnzApply() {
+    plOpts.enzymeNames = Array.prototype.filter.call(document.querySelectorAll('.pl-enz-pick'), function (c) { return c.checked; })
+      .map(function (c) { return c.value; });
+    plOpts.enzymes = plOpts.enzymeNames.length ? 'custom' : 'unique';
+    closeModal(); renderSequenceOnly();
+  }
+
+  // ---------- restriction cloning ----------
+  /* The vector is this plasmid; each insert comes from another plasmid in the
+     inventory. Every piece is picked from its own digest, so the same screen
+     covers a plain two-enzyme clone and a three-enzyme, three-piece assembly. */
+  var clone = null;
+  function openClone() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
+    clone = { vecEnz: [], vecPick: 0, inserts: [{ id: others.length ? others[0].id : '', enz: [], pick: 0, flip: false }] };
+    plCloneHtml();
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function cutterOptions(p, chosen, i) {
+    var sum = P.enzymeSummary(p).filter(function (e) { return e.count > 0; })
+      .sort(function (a, b) { return a.count - b.count || a.name.localeCompare(b.name); });
+    return '<option value="">—</option>' + sum.map(function (e) {
+      return '<option value="' + esc(e.name) + '"' + (chosen[i] === e.name ? ' selected' : '') + '>' +
+        esc(e.name) + ' (' + e.count + ' cut' + (e.count === 1 ? '' : 's') + ')</option>';
+    }).join('');
+  }
+  function fragChoice(frags, picked, onChange) {
+    if (!frags.length) return '<div class="hint">Choose enzymes above to cut it.</div>';
+    return '<div class="pl-frag-list">' + frags.map(function (f, i) {
+      return '<label class="pl-frag' + (picked === i ? ' on' : '') + '"><input type="radio" name="' + onChange.name + '" ' +
+        (picked === i ? 'checked ' : '') + 'onchange="' + onChange.call + '(' + i + ')">' +
+        '<strong>' + f.len.toLocaleString() + ' bp</strong> ' +
+        '<span>' + esc((f.left.enzyme || 'end')) + ' → ' + esc((f.right.enzyme || 'end')) + '</span>' +
+        (f.features.length ? '<em>' + f.features.length + ' feature' + (f.features.length === 1 ? '' : 's') + '</em>' : '') +
+        '</label>';
+    }).join('') + '</div>';
+  }
+  function cloneDigests() {
+    var it = rec();
+    var vec = asPlasmid(it);
+    var vd = P.digest(vec, clone.vecEnz.filter(Boolean));
+    var ins = clone.inserts.map(function (slot) {
+      var src = (getInventory().plasmids || []).filter(function (x) { return x.id === slot.id; })[0];
+      if (!src) return { fragments: [], src: null };
+      var d = P.digest(asPlasmid(src), slot.enz.filter(Boolean));
+      d.src = src;
+      return d;
+    });
+    return { vec: vd, ins: ins };
+  }
+  function plCloneHtml() {
+    var it = rec(); if (!it) return;
+    var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
+    var d = cloneDigests();
+    var html = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Restriction cloning</h3>' +
+      '<p class="ln-bulk-intro">Cut this plasmid and the inserts, pick the piece to keep from each, and join them. ' +
+      'Every join is checked, so an end that cannot ligate is caught before you order anything.</p>' +
+      '<div class="pl-clone-box"><div class="ln-form-section">Vector — ' + esc(it.name || 'this plasmid') + '</div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(-1,0,this.value)">' + cutterOptions(asPlasmid(it), clone.vecEnz, 0) + '</select></div>' +
+        '<div class="ln-form-row"><label>Second enzyme (optional)</label><select onchange="plCloneEnz(-1,1,this.value)">' + cutterOptions(asPlasmid(it), clone.vecEnz, 1) + '</select></div>' +
+      '</div>' + fragChoice(d.vec.fragments, clone.vecPick, { name: 'vecfrag', call: 'plCloneVecPick' }) + '</div>';
+
+    clone.inserts.forEach(function (slot, n) {
+      var src = (getInventory().plasmids || []).filter(function (x) { return x.id === slot.id; })[0];
+      html += '<div class="pl-clone-box"><div class="ln-form-section">Insert ' + (n + 1) +
+        (clone.inserts.length > 1 ? ' <button class="ln-icon-btn danger" onclick="plCloneDropInsert(' + n + ')">✕</button>' : '') + '</div>' +
+        '<div class="ln-form-grid">' +
+          '<div class="ln-form-row"><label>From</label><select onchange="plCloneSrc(' + n + ',this.value)">' +
+            (others.length ? others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === slot.id ? ' selected' : '') + '>' + esc(o.name || 'Untitled') + '</option>'; }).join('')
+              : '<option value="">No other plasmid has a sequence yet</option>') + '</select></div>' +
+          '<div class="ln-form-row"><label>Orientation</label><select onchange="plCloneFlip(' + n + ',this.value)">' +
+            '<option value="0"' + (slot.flip ? '' : ' selected') + '>As it is</option>' +
+            '<option value="1"' + (slot.flip ? ' selected' : '') + '>Turned round</option></select></div>' +
+        '</div><div class="ln-form-grid">' +
+          '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(' + n + ',0,this.value)">' + (src ? cutterOptions(asPlasmid(src), slot.enz, 0) : '') + '</select></div>' +
+          '<div class="ln-form-row"><label>Second enzyme</label><select onchange="plCloneEnz(' + n + ',1,this.value)">' + (src ? cutterOptions(asPlasmid(src), slot.enz, 1) : '') + '</select></div>' +
+        '</div>' + fragChoice(d.ins[n].fragments, slot.pick, { name: 'insfrag' + n, call: 'plCloneInsPick.bind(null,' + n + ')' }) + '</div>';
+    });
+    if (clone.inserts.length < 2) html += '<button class="ln-add-btn ghost" onclick="plCloneAddInsert()">+ Add a second insert (three-piece assembly)</button>';
+    html += '<div id="pl-clone-out"></div>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="plCloneRun()">Check the join</button></div>';
+    document.getElementById('ln-modal-content').innerHTML = html;
+    plCloneCheck(true);
+  }
+  function plCloneEnz(which, slot, val) {
+    var target = which < 0 ? clone.vecEnz : clone.inserts[which].enz;
+    target[slot] = val;
+    if (which < 0) clone.vecPick = 0;
+    else { clone.inserts[which].pick = 0; clone.inserts[which].touched = true; }
+    // An insert is cut with the vector's enzymes until someone says otherwise,
+    // which is what a plain two-enzyme clone needs.
+    if (which < 0) clone.inserts.forEach(function (ins) {
+      if (!ins.touched) { ins.enz = clone.vecEnz.slice(); ins.pick = 0; }
+    });
+    plCloneHtml();
+  }
+  function plCloneSrc(n, id) { clone.inserts[n].id = id; clone.inserts[n].pick = 0; plCloneHtml(); }
+  function plCloneFlip(n, v) { clone.inserts[n].flip = v === '1'; plCloneCheck(); }
+  function plCloneVecPick(i) { clone.vecPick = i; plCloneCheck(); }
+  function plCloneInsPick(n, i) { clone.inserts[n].pick = i; plCloneCheck(); }
+  function plCloneAddInsert() {
+    var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== rec().id; });
+    clone.inserts.push({ id: others.length ? others[0].id : '', enz: [], pick: 0, flip: false });
+    plCloneHtml();
+  }
+  function plCloneDropInsert(n) { clone.inserts.splice(n, 1); plCloneHtml(); }
+
+  function cloneParts() {
+    var d = cloneDigests();
+    var parts = [], names = [];
+    var v = d.vec.fragments[clone.vecPick];
+    if (!v) return null;
+    parts.push({ frag: v, flip: false }); names.push('vector');
+    for (var i = 0; i < clone.inserts.length; i++) {
+      var f = d.ins[i].fragments[clone.inserts[i].pick];
+      if (!f) return null;
+      parts.push({ frag: f, flip: clone.inserts[i].flip });
+      names.push((d.ins[i].src && d.ins[i].src.name) || ('insert ' + (i + 1)));
+    }
+    return { parts: parts, names: names };
+  }
+  function plCloneCheck(quiet) {
+    var out = document.getElementById('pl-clone-out');
+    if (!out) return;
+    var made = cloneParts();
+    if (!made) { out.innerHTML = quiet ? '' : '<div class="ln-bulk-note">Choose a piece from each digest.</div>'; return; }
+    var res = P.ligate(made.parts, true);
+    if (!res.ok) { out.innerHTML = '<div class="ln-bulk-note error">' + esc(res.error) + '</div>'; return; }
+    clone.result = res;
+    out.innerHTML = '<div class="ln-bulk-note ok"><strong>' + res.seq.length.toLocaleString() + ' bp</strong> circular · ' +
+      res.features.length + ' feature' + (res.features.length === 1 ? '' : 's') + ' carried over · joins: ' +
+      res.junctions.map(function (j) { return esc(P.describeEnd(j.left)); }).join(', ') + '</div>' +
+      '<div class="ln-form-row"><label>Name for the new plasmid</label><input id="pl-clone-name" value="' +
+      esc((rec().name || 'construct') + ' + ' + made.names.slice(1).join(' + ')) + '"></div>' +
+      '<button class="ln-modal-save" onclick="plCloneCreate()">Create the plasmid</button>';
+  }
+  function plCloneRun() { plCloneCheck(); }
+  function plCloneCreate() {
+    var res = clone && clone.result;
+    if (!res || !res.ok) return;
+    var name = g('pl-clone-name') || 'New construct';
+    var me = currentUser() ? currentUser().name : 'Unknown';
+    var item = { id: uid(), name: name, seq: res.seq, topology: 'circular', len: res.seq.length,
+      features: res.features.map(function (f) { return P.normFeature(f, res.seq.length); }).filter(Boolean),
+      owner: me, addedBy: me,
+      notes: 'Built by restriction cloning in the Lab Notebook on ' + new Date().toISOString().slice(0, 10) + '.' };
+    DB.upsertInventory('plasmids', item).then(function () {
+      clone = null;
+      closeModal();
+      renderInventory('plasmids');
+      openPlasmid(item.id);
+    }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
   // ---------- saving ----------
   function savePlasmid() {
     var it = rec(); if (!it) return;
@@ -1049,7 +1278,11 @@
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('change', function (e) {
-      if (e.target.id === 'pl-enzymes') { plOpts.enzymes = e.target.value; renderSequenceOnly(); return; }
+      if (e.target.id === 'pl-enzymes') {
+        plOpts.enzymes = e.target.value;
+        if (e.target.value === 'custom') { openEnzymePanel(); return; }
+        renderSequenceOnly(); return;
+      }
       if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; renderSequenceOnly(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
@@ -1102,6 +1335,20 @@
   window.plPegRun = plPegRun;
   window.plAnnotatePeg = plAnnotatePeg;
   window.plCopyText = plCopyText;
+  window.openEnzymePanel = openEnzymePanel;
+  window.plEnzSet = plEnzSet;
+  window.plEnzSearchSet = plEnzSearchSet;
+  window.plEnzApply = plEnzApply;
+  window.openClone = openClone;
+  window.plCloneEnz = plCloneEnz;
+  window.plCloneSrc = plCloneSrc;
+  window.plCloneFlip = plCloneFlip;
+  window.plCloneVecPick = plCloneVecPick;
+  window.plCloneInsPick = plCloneInsPick;
+  window.plCloneAddInsert = plCloneAddInsert;
+  window.plCloneDropInsert = plCloneDropInsert;
+  window.plCloneRun = plCloneRun;
+  window.plCloneCreate = plCloneCreate;
   window.openPlasmid = openPlasmid;
   window.routePlasmid = routePlasmid;
   window.renderPlasmid = renderPlasmid;

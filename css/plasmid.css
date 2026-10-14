@@ -143,3 +143,17 @@
 .pl-strand.aa{color:#1f5f8b;letter-spacing:0;}
 .pl-seq-out{font-family:var(--mono);font-size:11.5px;word-break:break-all;display:inline-block;max-width:34rem;}
 .ln-pl-panel .ln-table code,.ln-modal code{font-family:var(--mono);font-size:12px;}
+
+/* ---- enzyme chooser and cloning ---- */
+.ln-enz-tabs{display:flex;flex-wrap:wrap;gap:.35rem;}
+.ln-enz-tabs .ln-icon-btn.on{background:#0c4a44;color:#f4f1e8;border-color:#0c4a44;}
+.ln-enz-tabs .ln-icon-btn span{font-family:var(--mono);opacity:.75;margin-left:.2rem;}
+.pl-clone-box{border:1px solid rgba(22,36,31,.12);border-radius:12px;padding:.8rem 1rem;margin-bottom:.8rem;background:#fbfaf5;}
+.pl-clone-box .ln-form-section{margin-top:0;}
+.pl-frag-list{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.3rem;}
+.pl-frag{display:inline-flex;align-items:center;gap:.4rem;border:1.5px solid rgba(22,36,31,.15);border-radius:100px;
+  padding:.3rem .75rem;font-size:12.5px;cursor:pointer;background:#fff;}
+.pl-frag.on{border-color:#10b07e;background:#eaf7f1;}
+.pl-frag input{margin:0;}
+.pl-frag span{color:#7a877f;font-family:var(--mono);font-size:11px;}
+.pl-frag em{font-style:normal;color:#0c4a44;font-size:11px;}

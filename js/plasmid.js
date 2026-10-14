@@ -866,6 +866,156 @@
     return (list || ENZYMES).filter(function (e) { return !counts[e.n]; }).map(function (e) { return e.n; });
   }
 
+  // ---------- cutting and joining ----------
+  /* Bases a..b on a circular sequence, wrapping if it runs past the end. */
+  function sliceCirc(seq, a, b, len) {
+    if (b >= a) return seq.slice(a, b);
+    return seq.slice(a) + seq.slice(0, b);
+  }
+  /* The end a cut leaves. `ohang` is the staggered region written as it reads
+     on the top strand; `type` says which strand sticks out. Two ends join when
+     they are the same type and their ohang reads the same, which is what makes
+     BamHI and BglII ends interchangeable. */
+  function cutEnd(seq, len, site) {
+    var t = site.cutTop, b = site.cutBottom;
+    var lo = Math.min(t, b), hi = Math.max(t, b);
+    // A cut whose two strands sit either side of the origin.
+    var wrapped = Math.abs(t - b) > len / 2;
+    if (wrapped) { lo = Math.max(t, b); hi = Math.min(t, b); }
+    return {
+      enzyme: site.name,
+      type: t === b ? 'blunt' : (wrapped ? (t > b) : (t < b)) ? "5'" : "3'",
+      ohang: t === b ? '' : sliceCirc(seq, lo, hi, len)
+    };
+  }
+  function endsMatch(right, left) {
+    if (!right || !left || right.type === 'end' || left.type === 'end') return false;
+    if (right.type !== left.type) return false;
+    return right.type === 'blunt' ? true : right.ohang === left.ohang;
+  }
+  /* The part of a feature that falls inside a fragment, in the fragment's own
+     numbering. Anything cut through is marked, so the product says so. */
+  function carryFeatures(p, from, to, fragLen) {
+    var len = p.seq.length, out = [];
+    (p.features || []).forEach(function (f) {
+      var pieces = wraps(f) ? [[f.start, len], [0, f.end]] : [[f.start, f.end]];
+      pieces.forEach(function (sp) {
+        // Put the piece in the fragment's numbering, going round the origin if needed.
+        var a = sp[0], b = sp[1];
+        var rel = function (x) { return ((x - from) % len + len) % len; };
+        var ra = rel(a), rb = rel(b) || (b === a ? 0 : fragLen);
+        if (ra >= fragLen && rb > fragLen) return;
+        var s0 = Math.max(0, Math.min(ra, fragLen)), e0 = Math.min(fragLen, rb < ra ? fragLen : rb);
+        if (e0 <= s0) return;
+        out.push({ name: f.name, type: f.type, start: s0, end: e0, strand: f.strand, color: f.color,
+          note: (e0 - s0) < (sp[1] - sp[0]) ? 'Shortened when the plasmid was cut' : f.note });
+      });
+    });
+    return out;
+  }
+
+  /* Cut a plasmid with a set of enzymes. Comes back with the pieces in the
+     order they sit on the plasmid, each carrying its sequence, its two ends
+     and the features it holds. */
+  function digest(p, enzymeNames) {
+    var seq = clean(p.seq || ''), len = seq.length;
+    var wanted = (enzymeNames || []).map(function (n) { return String(n); });
+    var list = ENZYMES.filter(function (e) { return wanted.indexOf(e.n) >= 0; });
+    if (!len || !list.length) return { fragments: [], sites: [] };
+    var circular = p.topology === 'circular';
+    var sites = findSites(seq, p.topology, list).slice()
+      .sort(function (a, b) { return a.cutTop - b.cutTop; });
+    // Two enzymes cutting at the very same base would make a zero-length piece.
+    sites = sites.filter(function (s, i) { return i === 0 || s.cutTop !== sites[i - 1].cutTop; });
+    if (!sites.length) return { fragments: [], sites: [] };
+
+    var frags = [];
+    function build(from, to, left, right) {
+      var fragLen = to >= from ? to - from : len - from + to;
+      if (fragLen <= 0) return;
+      frags.push({ start: from, end: to, len: fragLen, seq: sliceCirc(seq, from, to, len),
+        left: left, right: right, features: carryFeatures({ seq: seq, features: p.features }, from, to, fragLen) });
+    }
+    if (circular) {
+      for (var i = 0; i < sites.length; i++) {
+        var nxt = sites[(i + 1) % sites.length];
+        build(sites[i].cutTop, nxt.cutTop, cutEnd(seq, len, sites[i]), cutEnd(seq, len, nxt));
+      }
+    } else {
+      build(0, sites[0].cutTop, { type: 'end' }, cutEnd(seq, len, sites[0]));
+      for (var j = 0; j < sites.length - 1; j++) {
+        build(sites[j].cutTop, sites[j + 1].cutTop, cutEnd(seq, len, sites[j]), cutEnd(seq, len, sites[j + 1]));
+      }
+      build(sites[sites.length - 1].cutTop, len, cutEnd(seq, len, sites[sites.length - 1]), { type: 'end' });
+    }
+    return { fragments: frags, sites: sites };
+  }
+
+  /* The same piece the other way round: the ends swap and the overhangs are
+     read on what is now the top strand. */
+  function flipFragment(f) {
+    return {
+      start: f.start, end: f.end, len: f.len, seq: revcomp(f.seq), flipped: !f.flipped,
+      left: { enzyme: f.right.enzyme, type: f.right.type, ohang: revcomp(f.right.ohang || '') },
+      right: { enzyme: f.left.enzyme, type: f.left.type, ohang: revcomp(f.left.ohang || '') },
+      features: (f.features || []).map(function (g) {
+        return { name: g.name, type: g.type, start: f.len - g.end, end: f.len - g.start,
+          strand: g.strand === 0 ? 0 : -g.strand, color: g.color, note: g.note };
+      })
+    };
+  }
+
+  /* Join pieces in the order given. Every join is checked, and a circular
+     product has to close on itself as well. */
+  function ligate(parts, circular) {
+    if (!parts || !parts.length) return { ok: false, error: 'Nothing to join.' };
+    var pieces = parts.map(function (x) { return x.flip ? flipFragment(x.frag) : x.frag; });
+    var junctions = [];
+    for (var i = 0; i < pieces.length - 1; i++) {
+      if (!endsMatch(pieces[i].right, pieces[i + 1].left)) {
+        return { ok: false, error: 'Piece ' + (i + 1) + ' ends with ' + describeEnd(pieces[i].right) +
+          ' but piece ' + (i + 2) + ' starts with ' + describeEnd(pieces[i + 1].left) + ', so they cannot be joined.' };
+      }
+      junctions.push({ at: 0, left: pieces[i].right, right: pieces[i + 1].left });
+    }
+    if (circular && !endsMatch(pieces[pieces.length - 1].right, pieces[0].left)) {
+      return { ok: false, error: 'The last piece ends with ' + describeEnd(pieces[pieces.length - 1].right) +
+        ' but the first starts with ' + describeEnd(pieces[0].left) + ', so the product cannot close into a circle.' };
+    }
+    var seq = '', features = [], at = 0;
+    pieces.forEach(function (f, i) {
+      (f.features || []).forEach(function (g) {
+        features.push({ name: g.name, type: g.type, start: at + g.start, end: at + g.end,
+          strand: g.strand, color: g.color, note: g.note });
+      });
+      if (i) junctions[i - 1].at = at;
+      seq += f.seq;
+      at += f.seq.length;
+    });
+    return { ok: true, seq: seq, features: features, topology: circular ? 'circular' : 'linear',
+      junctions: junctions, pieces: pieces };
+  }
+  function describeEnd(e) {
+    if (!e || e.type === 'end') return 'a plain end';
+    if (e.type === 'blunt') return 'a blunt ' + e.enzyme + ' end';
+    return 'a ' + e.type + ' ' + e.ohang + ' overhang (' + e.enzyme + ')';
+  }
+
+  /* Every enzyme and how often it cuts, for choosing a cloning site: those
+     that never cut, cut once, twice, and so on. */
+  function enzymeSummary(p, list) {
+    var seq = clean(p.seq || '');
+    if (!seq) return [];
+    var sites = findSites(seq, p.topology, list || ENZYMES);
+    var by = {};
+    sites.forEach(function (h) { (by[h.name] = by[h.name] || []).push(h); });
+    return (list || ENZYMES).map(function (e) {
+      var hits = by[e.n] || [];
+      return { name: e.n, site: e.s, count: hits.length, hits: hits,
+        blunt: e.t === e.b, cuts: hits.map(function (h) { return h.cutTop + 1; }) };
+    }).sort(function (a, b) { return a.count - b.count || a.name.localeCompare(b.name); });
+  }
+
   // ---------- maps ----------
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1045,6 +1195,8 @@
     diffEdit: diffEdit, applyEdit: applyEdit,
     frameString: frameString, orfs: orfs, PAM_TYPES: PAM_TYPES, findGuides: findGuides, designPegRNA: designPegRNA,
     BUILTIN_FEATURES: BUILTIN_FEATURES, labLibrary: labLibrary, annotate: annotate,
+    digest: digest, ligate: ligate, flipFragment: flipFragment, endsMatch: endsMatch, cutEnd: cutEnd,
+    describeEnd: describeEnd, enzymeSummary: enzymeSummary, sliceCirc: sliceCirc,
     ENZYMES: ENZYMES, findSites: findSites, siteCounts: siteCounts, filterSites: filterSites, nonCutters: nonCutters, siteRegex: siteRegex,
     linearMapSvg: linearMapSvg, circularMapSvg: circularMapSvg,
     xmlElements: xmlElements, unescapeXml: unescapeXml
