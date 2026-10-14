@@ -140,3 +140,6 @@
   .pl-caret,.pl-edbar{display:none !important;}
   .pl-row{break-inside:avoid;}
 }
+.pl-strand.aa{color:#1f5f8b;letter-spacing:0;}
+.pl-seq-out{font-family:var(--mono);font-size:11.5px;word-break:break-all;display:inline-block;max-width:34rem;}
+.ln-pl-panel .ln-table code,.ln-modal code{font-family:var(--mono);font-size:12px;}

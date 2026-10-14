@@ -13,7 +13,7 @@
   var plDraft = null;         // a working copy: edits only reach the inventory on Save
   var plDirty = false;
   var plSel = null;           // { start, end } of the selected bases, 0-based
-  var plOpts = { wrap: 60, find: '', enzymes: 'unique' };
+  var plOpts = { wrap: 60, find: '', enzymes: 'unique', frame: 'off' };
   var plImport = null;        // files waiting in the import dialog
 
   // The record being edited. Everything on the page changes this copy, so
@@ -169,7 +169,10 @@
         '<button class="ln-icon-btn danger" onclick="plDeleteFeature(' + i + ')">✕</button></td></tr>';
     }).join('');
     return '<div class="ln-pl-panel" id="pl-features"><div class="ln-pl-panel-head"><h3>Features <span>' + p.features.length + '</span></h3>' +
-      '<div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="plFeatureModal(-1)">+ Add feature</button></div></div>' +
+      '<div class="ln-header-actions">' +
+        '<button class="ln-add-btn ghost" onclick="openAnnotate()">✨ Annotate</button>' +
+        '<button class="ln-add-btn ghost" onclick="openOrfs()">Find ORFs</button>' +
+        '<button class="ln-add-btn ghost" onclick="plFeatureModal(-1)">+ Add feature</button></div></div>' +
       (p.features.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Type</th><th>Position</th><th>Length</th><th>Strand</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No features yet. Import a GenBank or SnapGene file to bring its annotations in, or add one by hand.</div>') +
       '</div>';
@@ -378,6 +381,37 @@
     return out;
   }
 
+  /* The reading frame to show. "atg" means: start at the first ATG at or
+     after the selection and stop at its stop codon, which is the frame people
+     actually want to read. */
+  function frameSpec(p) {
+    var mode = plOpts.frame, len = p.seq.length;
+    if (!mode || mode === 'off' || !len) return null;
+    if (mode === 'atg') {
+      var from = plSel ? plSel.start : 0;
+      var at = p.seq.indexOf('ATG', from);
+      if (at < 0) at = p.seq.indexOf('ATG');
+      if (at < 0) return null;
+      var to = len;
+      for (var i = at; i + 2 < len; i += 3) {
+        if ((P.CODONS[p.seq.substr(i, 3)] || 'X') === '*') { to = i + 3; break; }
+      }
+      return { frame: at % 3, strand: 1, from: at, to: to, label: 'from the ATG at ' + (at + 1) };
+    }
+    var n = parseInt(mode, 10);
+    return { frame: (Math.abs(n) - 1) % 3, strand: n < 0 ? -1 : 1, from: 0, to: len, label: 'frame ' + mode };
+  }
+  function frameRowHtml(p, fs, from, to) {
+    if (!fs) return '';
+    var row = P.frameString(p.seq, fs.frame, from, to, fs.strand);
+    if (fs.from > from || fs.to < to) {
+      row = row.split('').map(function (ch, i) {
+        var pos = from + i;
+        return (pos >= fs.from && pos < fs.to) ? ch : ' ';
+      }).join('');
+    }
+    return '<div class="pl-strand aa">' + esc(row) + '</div>';
+  }
   function seqPanelHtml(p) {
     var len = p.seq.length, per = plOpts.wrap;
     var counts = P.siteCounts(plSites);
@@ -389,10 +423,16 @@
           [['none', 'Hidden'], ['unique', 'Unique cutters'], ['two', 'Cutting once or twice'], ['all', 'All sites']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.enzymes === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
+        '<label class="ln-pl-check">Frame <select id="pl-frame">' +
+          [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '−1'], ['-2', '−2'], ['-3', '−3']]
+            .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></label>' +
+        '<button class="ln-add-btn ghost" onclick="openGuides()">✂ CRISPR</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
 
     var hits = findRanges(p.seq, plOpts.find);
+    var fs = frameSpec(p);
     var lanes = laneMap(p);
     var rows = [];
     var total = Math.max(1, Math.ceil(len / per));
@@ -411,6 +451,7 @@
           (plSel ? boxesHtml([[plSel.start, plSel.end]], from, to, 'pl-selbox') : '') + '</div>' +
         '<div class="pl-strand top">' + esc(top) + '</div>' +
         '<div class="pl-strand bot">' + esc(bottom) + '</div>' +
+        frameRowHtml(p, fs, from, to) +
         ribbons +
         (plCaret >= from && plCaret <= to && (plCaret < to || to === len) ? '<span class="pl-caret" style="left:' + (plCaret - from) + 'ch"></span>' : '') +
         '</div></div>');
@@ -435,7 +476,8 @@
     var where = p.seq.length ? 'Position <strong>' + (plCaret + 1) + '</strong>' : 'Empty';
     var enz = plOpts.enzymes === 'none' ? '' : ' · ' + shown.length + ' site' + (shown.length === 1 ? '' : 's') +
       ' from ' + cutters + ' enzyme' + (cutters === 1 ? '' : 's') + ' shown';
-    return where + ' · type to edit, drag to select' + enz;
+    var fs = frameSpec(p);
+    return where + ' · type to edit, drag to select' + enz + (fs ? ' · amino acids ' + esc(fs.label) : '');
   }
 
   // ---- caret, selection and typing ----
@@ -588,6 +630,225 @@
     var c = caret.getBoundingClientRect(), b = ed.getBoundingClientRect();
     if (c.top < b.top + 4) ed.scrollTop -= (b.top - c.top) + 30;
     else if (c.bottom > b.bottom - 4) ed.scrollTop += (c.bottom - b.bottom) + 30;
+  }
+
+  // ---------- annotation ----------
+  /* What to look for: the built-in standard elements plus every feature the
+     lab already has on its other plasmids. */
+  function libraries(skipId) {
+    return P.BUILTIN_FEATURES.concat(P.labLibrary(getInventory().plasmids || [], skipId));
+  }
+  var plProposed = null;
+  function openAnnotate() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it);
+    if (!p.seq.length) { alert('Add a sequence before annotating.'); return; }
+    var lib = libraries(it.id);
+    plProposed = P.annotate(p, lib);
+    var labCount = lib.length - P.BUILTIN_FEATURES.length;
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Annotate features</h3>' +
+      '<p class="ln-bulk-intro">Looked through ' + lib.length + ' known elements: ' + P.BUILTIN_FEATURES.length +
+      ' standard ones built in (tags, primer sites, loxP, FRT, 2A peptides) and ' + labCount +
+      ' taken from your other plasmids. Anything already annotated here is left out.</p>' +
+      (plProposed.length
+        ? '<div style="max-height:46vh;overflow:auto;"><table class="ln-table"><thead><tr><th><input type="checkbox" id="pl-ann-all" checked onchange="plAnnToggleAll(this)"></th>' +
+          '<th>Name</th><th>Type</th><th>Position</th><th>Length</th><th>Strand</th><th>Found by</th></tr></thead><tbody>' +
+          plProposed.map(function (f, i) {
+            return '<tr><td><input type="checkbox" class="pl-ann-pick" data-i="' + i + '" checked></td>' +
+              '<td><span class="pl-swatch" style="background:' + esc(f.color) + '"></span>' + esc(f.name) + '</td>' +
+              '<td>' + esc(f.type) + '</td><td class="ln-nowrap">' + (f.start + 1) + '–' + f.end + '</td>' +
+              '<td class="ln-nowrap">' + P.featureLen(f, p.seq.length) + ' bp</td>' +
+              '<td>' + (f.strand === -1 ? '←' : '→') + '</td>' +
+              '<td>' + (f.how === 'protein' ? 'protein match' : 'sequence') + '</td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div class="ln-empty" style="padding:1rem 0;">Nothing new found. Import more plasmids from GenBank or SnapGene files and their features become part of the library.</div>') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      (plProposed.length ? '<button class="ln-modal-save" onclick="plAddAnnotations()">Add selected</button>' : '') + '</div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plAnnToggleAll(box) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pl-ann-pick'), function (c) { c.checked = box.checked; });
+  }
+  function plAddAnnotations() {
+    var it = rec(); if (!it || !plProposed) return;
+    var picked = Array.prototype.filter.call(document.querySelectorAll('.pl-ann-pick'), function (c) { return c.checked; })
+      .map(function (c) { return plProposed[+c.getAttribute('data-i')]; }).filter(Boolean);
+    if (!picked.length) { closeModal(); return; }
+    it.features = (it.features || []).concat(picked.map(function (f) {
+      return { name: f.name, type: f.type, start: f.start, end: f.end, strand: f.strand, color: f.color, note: f.note || '' };
+    }));
+    plProposed = null;
+    closeModal(); markPlDirty(); renderPlasmid();
+  }
+
+  // ---------- open reading frames ----------
+  var plOrfs = null;
+  function openOrfs() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it);
+    if (!p.seq.length) { alert('Add a sequence first.'); return; }
+    plOrfListHtml(p, 100);
+  }
+  function plOrfListHtml(p, minAa) {
+    plOrfs = P.orfs(p.seq, p.topology, minAa);
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Open reading frames</h3>' +
+      '<p class="ln-bulk-intro">Every ATG that runs to a stop codon, on both strands. Add the ones you want as CDS features.</p>' +
+      '<div class="ln-form-row" style="max-width:220px;"><label>Shortest to show (amino acids)</label>' +
+      '<input type="number" id="pl-orf-min" min="10" step="10" value="' + minAa + '" onchange="plOrfRefresh()"></div>' +
+      (plOrfs.length
+        ? '<div style="max-height:44vh;overflow:auto;"><table class="ln-table"><thead><tr><th><input type="checkbox" checked onchange="plOrfToggleAll(this)"></th>' +
+          '<th>Position</th><th>Strand</th><th>Length</th><th>Starts with</th></tr></thead><tbody>' +
+          plOrfs.map(function (o, i) {
+            return '<tr><td><input type="checkbox" class="pl-orf-pick" data-i="' + i + '"' + (i < 5 ? ' checked' : '') + '></td>' +
+              '<td class="ln-nowrap">' + (o.start + 1) + '–' + o.end + '</td>' +
+              '<td>' + (o.strand === -1 ? '← reverse' : '→ forward') + '</td>' +
+              '<td class="ln-nowrap">' + o.len + ' aa</td>' +
+              '<td><code>' + esc(o.aa.slice(0, 24)) + (o.aa.length > 24 ? '…' : '') + '</code></td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div class="ln-empty" style="padding:1rem 0;">No reading frame that long. Try a smaller number.</div>') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      (plOrfs.length ? '<button class="ln-modal-save" onclick="plAddOrfs()">Add as CDS features</button>' : '') + '</div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plOrfRefresh() {
+    var it = rec(); if (!it) return;
+    plOrfListHtml(asPlasmid(it), Math.max(10, +document.getElementById('pl-orf-min').value || 100));
+  }
+  function plOrfToggleAll(box) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pl-orf-pick'), function (c) { c.checked = box.checked; });
+  }
+  function plAddOrfs() {
+    var it = rec(); if (!it || !plOrfs) return;
+    var len = P.clean(it.seq).length;
+    var picked = Array.prototype.filter.call(document.querySelectorAll('.pl-orf-pick'), function (c) { return c.checked; })
+      .map(function (c) { return plOrfs[+c.getAttribute('data-i')]; }).filter(Boolean);
+    var added = picked.map(function (o, i) {
+      return P.normFeature({ name: 'ORF ' + (o.start + 1) + '–' + o.end + ' (' + o.len + ' aa)', type: 'CDS',
+        start: o.start, end: o.end, strand: o.strand }, len);
+    }).filter(Boolean);
+    it.features = (it.features || []).concat(added);
+    plOrfs = null;
+    closeModal(); markPlDirty(); renderPlasmid();
+  }
+
+  // ---------- CRISPR guides and pegRNA ----------
+  /* The standard SpCas9 sgRNA scaffold, shown so a guide can be ordered whole.
+     Check it against your own supplier's sequence before ordering. */
+  var SGRNA_SCAFFOLD = 'GTTTTAGAGCTAGAAATAGCAAGTTAAAATAAGGCTAGTCCGTTATCAACTTGAAAAAGTGGCACCGAGTCGGTGC';
+  var plGuides = null, plGuideOpts = { pam: 'SpCas9 (NGG)', region: 'all' };
+  function openGuides() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    plGuideHtml();
+  }
+  function plGuideHtml() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it);
+    var region = plGuideOpts.region === 'sel' && plSel ? { start: plSel.start, end: plSel.end } : null;
+    plGuides = P.findGuides(p.seq, p.topology, plGuideOpts.pam, region).slice(0, 300);
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>CRISPR guides</h3>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Nuclease / PAM</label><select id="pl-pam" onchange="plGuideSet()">' +
+          Object.keys(P.PAM_TYPES).map(function (k) { return '<option value="' + esc(k) + '"' + (k === plGuideOpts.pam ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="ln-form-row"><label>Where to look</label><select id="pl-guide-region" onchange="plGuideSet()">' +
+          '<option value="all"' + (plGuideOpts.region === 'all' ? ' selected' : '') + '>The whole plasmid</option>' +
+          '<option value="sel"' + (plGuideOpts.region === 'sel' ? ' selected' : '') + '>' + (plSel ? 'The selected bases (' + (plSel.start + 1) + '–' + plSel.end + ')' : 'The selection (none yet)') + '</option>' +
+        '</select></div></div>' +
+      '<p class="ln-bulk-intro">Off-targets counts how often the same protospacer appears elsewhere <strong>in this plasmid</strong>. It says nothing about the genome — check that separately.</p>' +
+      (plGuides.length
+        ? '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr><th>Protospacer</th><th>PAM</th><th>Cuts at</th><th>Strand</th><th>GC</th><th>Repeats</th><th></th></tr></thead><tbody>' +
+          plGuides.map(function (gd, i) {
+            return '<tr><td><code>' + esc(gd.spacer) + '</code></td><td><code>' + esc(gd.pam) + '</code></td>' +
+              '<td class="ln-nowrap">' + (gd.cutAt + 1) + '</td><td>' + (gd.strand === -1 ? '←' : '→') + '</td>' +
+              '<td class="ln-nowrap">' + gd.gc.toFixed(0) + '%</td>' +
+              '<td>' + (gd.offTargets ? '<span class="warn">' + gd.offTargets + '</span>' : '0') + '</td>' +
+              '<td class="ln-nowrap"><button class="ln-icon-btn" onclick="plAnnotateGuide(' + i + ')">Annotate</button>' +
+              '<button class="ln-icon-btn" onclick="plPegModal(' + i + ')">pegRNA</button></td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div class="ln-empty" style="padding:1rem 0;">No guide with that PAM here.</div>') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plGuideSet() {
+    plGuideOpts.pam = document.getElementById('pl-pam').value;
+    plGuideOpts.region = document.getElementById('pl-guide-region').value;
+    plGuideHtml();
+  }
+  function plAnnotateGuide(i) {
+    var it = rec(), gd = plGuides && plGuides[i];
+    if (!it || !gd) return;
+    var len = P.clean(it.seq).length;
+    var f = P.normFeature({ name: 'gRNA ' + gd.spacer.slice(0, 8) + '…', type: 'gRNA',
+      start: gd.start, end: gd.end, strand: gd.strand, note: 'PAM ' + gd.pam + ', cuts at ' + (gd.cutAt + 1) }, len);
+    if (!f) return;
+    it.features = (it.features || []).concat([f]);
+    closeModal(); markPlDirty(); renderPlasmid();
+  }
+  function plPegModal(i) {
+    var it = rec(), gd = plGuides && plGuides[i];
+    if (!it || !gd) return;
+    var at = plSel ? plSel.start : gd.cutAt;
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Design a pegRNA</h3>' +
+      '<p class="ln-bulk-intro">Prime editing with the guide <code>' + esc(gd.spacer) + '</code>, which nicks at ' + (gd.cutAt + 1) +
+      '. The edit has to sit downstream of the nick on the same strand.</p>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Edit starts at (base)</label><input type="number" id="peg-at" value="' + (at + 1) + '" min="1"></div>' +
+        '<div class="ln-form-row"><label>Bases to remove</label><input type="number" id="peg-del" value="0" min="0"></div></div>' +
+      '<div class="ln-form-row"><label>Bases to insert (leave empty for a deletion)</label><input id="peg-ins" placeholder="e.g. GGG"></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>PBS length</label><input type="number" id="peg-pbs" value="13" min="8" max="17"></div>' +
+        '<div class="ln-form-row"><label>RT template length</label><input type="number" id="peg-rtt" value="13" min="8" max="30"></div></div>' +
+      '<div id="peg-out"></div>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="openGuides()">← Back</button>' +
+      '<button class="ln-modal-save" onclick="plPegRun(' + i + ')">Design</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plPegRun(i) {
+    var it = rec(), gd = plGuides && plGuides[i];
+    if (!it || !gd) return;
+    var p = asPlasmid(it);
+    var peg = P.designPegRNA(p.seq, p.topology, gd, {
+      at: Math.max(0, (+document.getElementById('peg-at').value || 1) - 1),
+      del: Math.max(0, +document.getElementById('peg-del').value || 0),
+      ins: document.getElementById('peg-ins').value
+    }, { pbs: +document.getElementById('peg-pbs').value || 13, rtt: +document.getElementById('peg-rtt').value || 13 });
+    var out = document.getElementById('peg-out');
+    if (!peg || peg.error) { out.innerHTML = '<div class="ln-bulk-note error">' + esc((peg && peg.error) || 'Could not design a pegRNA here.') + '</div>'; return; }
+    var full = peg.spacer + SGRNA_SCAFFOLD + peg.extension;
+    out.innerHTML = '<div class="ln-bulk-note ok">Designed. PBS melting temperature ' + peg.pbsTm.toFixed(1) + ' °C.</div>' +
+      '<table class="ln-table"><tbody>' +
+      [['Spacer (protospacer)', peg.spacer], ['Scaffold (standard SpCas9)', SGRNA_SCAFFOLD],
+       ['RT template', peg.rtt], ['Primer binding site', peg.pbs],
+       ['3′ extension (RTT + PBS)', peg.extension], ['Whole pegRNA', full]].map(function (r) {
+        return '<tr><td class="ln-nowrap">' + r[0] + '</td><td><code class="pl-seq-out">' + esc(r[1]) + '</code></td>' +
+          '<td><button class="ln-icon-btn" onclick="plCopyText(this.closest(\'tr\').querySelector(\'code\').textContent)">Copy</button></td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<div class="hint">Check the scaffold against your supplier’s before ordering.</div>' +
+      '<div style="margin-top:.6rem;"><button class="ln-add-btn ghost" onclick="plAnnotatePeg(' + i + ')">Annotate this pegRNA on the plasmid</button></div>';
+    plLastPeg = peg;
+  }
+  /* Record the designed pegRNA on the plasmid: the spacer becomes a pegRNA
+     feature and the note carries the parts needed to order it. */
+  var plLastPeg = null;
+  function plAnnotatePeg(i) {
+    var it = rec(), gd = plGuides && plGuides[i], peg = plLastPeg;
+    if (!it || !gd || !peg) return;
+    var len = P.clean(it.seq).length;
+    var f = P.normFeature({ name: 'pegRNA ' + gd.spacer.slice(0, 8) + '…', type: 'pegRNA',
+      start: gd.start, end: gd.end, strand: gd.strand,
+      note: 'Nicks at ' + (peg.nick + 1) + '. PBS ' + peg.pbs + '. RTT ' + peg.rtt + '. 3′ extension ' + peg.extension }, len);
+    if (!f) return;
+    it.features = (it.features || []).concat([f]);
+    plLastPeg = null;
+    closeModal(); markPlDirty(); renderPlasmid();
+  }
+  function plCopyText(t) {
+    navigator.clipboard.writeText(t).then(function () { }, function () { alert(t); });
   }
 
   // ---------- saving ----------
@@ -789,6 +1050,7 @@
     });
     box.addEventListener('change', function (e) {
       if (e.target.id === 'pl-enzymes') { plOpts.enzymes = e.target.value; renderSequenceOnly(); return; }
+      if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; renderSequenceOnly(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-ed')) edMouseDown(e); });
@@ -826,6 +1088,20 @@
     if (lnCurrentSection === 'plasmid' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); savePlasmid(); }
   });
 
+  window.openAnnotate = openAnnotate;
+  window.plAnnToggleAll = plAnnToggleAll;
+  window.plAddAnnotations = plAddAnnotations;
+  window.openOrfs = openOrfs;
+  window.plOrfRefresh = plOrfRefresh;
+  window.plOrfToggleAll = plOrfToggleAll;
+  window.plAddOrfs = plAddOrfs;
+  window.openGuides = openGuides;
+  window.plGuideSet = plGuideSet;
+  window.plAnnotateGuide = plAnnotateGuide;
+  window.plPegModal = plPegModal;
+  window.plPegRun = plPegRun;
+  window.plAnnotatePeg = plAnnotatePeg;
+  window.plCopyText = plCopyText;
   window.openPlasmid = openPlasmid;
   window.routePlasmid = routePlasmid;
   window.renderPlasmid = renderPlasmid;
