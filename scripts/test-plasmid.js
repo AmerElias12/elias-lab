@@ -552,6 +552,136 @@ check('every enzyme is reported with how often it cuts, including never', functi
   assert.equal(sum[0].count, 0, 'the ones that never cut come first');
 });
 
+console.log('Primers');
+var F20 = 'ATGCGTACGTTAGCCAGTTA', R20 = 'TTACGCATGCATCCGTAATC';
+var TPL = 'AAAAA' + F20 + 'GGGGGGGGGGGGGGGGGGGG' + R20 + 'CCCCC';
+var TP = { seq: TPL, topology: 'circular', features: [] };
+check('a primer that matches all through binds with no tail', function () {
+  var b = P.bindPrimers(TP, F20)[0];
+  assert.deepEqual([b.start, b.end, b.strand], [5, 25, 1]);
+  assert.equal(b.tail, '');
+  assert.equal(b.anneal, F20);
+  assert.equal(b.perfect, true);
+});
+check('a 5′ tail is reported separately from the annealed part', function () {
+  var b = P.bindPrimers(TP, 'GGATCC' + F20)[0];
+  assert.deepEqual([b.start, b.end], [5, 25]);
+  assert.equal(b.tail, 'GGATCC');
+  assert.equal(b.anneal, F20);
+  assert.equal(b.perfect, false);
+  assert.ok(Math.abs(b.tm - P.tm(F20)) < 0.01, 'the melting temperature is of the annealed part only');
+});
+check('a reverse primer binds the other way round', function () {
+  var b = P.bindPrimers(TP, P.revcomp(R20))[0];
+  assert.equal(b.strand, -1);
+  assert.deepEqual([b.start, b.end], [45, 65]);
+});
+check('a primer that does not match binds nowhere', function () {
+  assert.equal(P.bindPrimers(TP, 'TTTTTTTTTTTTTTTTTTTT').length, 0);
+  assert.equal(P.bindPrimers(TP, 'ACGT').length, 0, 'too short to judge');
+});
+check('a primer across the origin is found on a circular plasmid', function () {
+  var seq = 'CGTTAGCCAGTTA' + 'A'.repeat(60) + 'ATGCGTA';   // F20 split over the origin
+  var circ = P.bindPrimers({ seq: seq, topology: 'circular', features: [] }, F20);
+  assert.equal(circ.length, 1);
+  assert.equal(circ[0].start, 73);
+  assert.equal(P.bindPrimers({ seq: seq, topology: 'linear', features: [] }, F20).length, 0);
+});
+
+console.log('PCR');
+check('the product carries both primers whole, tails included', function () {
+  var f = P.bindPrimers(TP, 'GGATCC' + F20)[0];
+  var r = P.bindPrimers(TP, 'AAGCTT' + P.revcomp(R20))[0];
+  var prod = P.pcrProduct(TP, f, r);
+  assert.equal(prod.templateLen, 60);                       // 5 to 65
+  assert.equal(prod.tails, 12);
+  assert.equal(prod.len, 72);
+  assert.ok(prod.seq.indexOf('GGATCC') === 0, 'starts with the forward tail');
+  assert.ok(prod.seq.slice(-6) === P.revcomp('AAGCTT'), 'ends with the reverse tail');
+  assert.equal(prod.seq.slice(6, 26), F20);
+});
+check('two primers facing the wrong way make nothing', function () {
+  var f = P.bindPrimers(TP, F20)[0];
+  assert.ok(P.pcrProduct(TP, f, f).error, 'both forward is refused');
+});
+check('a product may run across the origin on a circular plasmid', function () {
+  var seq = R20 + 'TTTTTTTTTTTTTTTTTTTT' + F20;            // forward primer after the reverse one
+  var p = { seq: seq, topology: 'circular', features: [] };
+  var f = P.bindPrimers(p, F20)[0], r = P.bindPrimers(p, P.revcomp(R20))[0];
+  var prod = P.pcrProduct(p, f, r);
+  assert.ok(!prod.error, prod.error);
+  assert.equal(prod.wraps, true);
+  assert.equal(prod.len, 40);                                // 20 + 20, round the origin
+  assert.equal(P.pcrProduct({ seq: seq, topology: 'linear', features: [] }, f, r).error !== undefined, true);
+});
+check('the picture draws both primers and its tails, and stays well formed', function () {
+  var f = P.bindPrimers(TP, 'GGATCC' + F20)[0];
+  var r = P.bindPrimers(TP, 'AAGCTT' + P.revcomp(R20))[0];
+  var svg = P.pcrMapSvg(TP, f, r);
+  assert.ok(svg.indexOf('<svg') === 0 && svg.indexOf('</svg>') > 0);
+  assert.ok(!/NaN|undefined|Infinity/.test(svg), 'no broken numbers');
+  assert.equal((svg.match(/class="pcr-primer/g) || []).length, 2);
+  assert.equal((svg.match(/class="pcr-tail"/g) || []).length, 2, 'a tail drawn clear of the template for each');
+  assert.ok(svg.indexOf('72 bp product') > 0);
+});
+
+console.log('Gibson');
+function gfrag(name, n, seed) {
+  var s = '', x = seed;
+  for (var i = 0; i < n; i++) { x = (x * 1103515245 + 12345) & 0x7fffffff; s += 'ACGT'[x % 4]; }
+  return { name: name, seq: s, features: [] };
+}
+check('each piece gets a pair of primers and the junctions are covered', function () {
+  var parts = [gfrag('vector', 600, 1), gfrag('insert 1', 400, 2)];
+  var g = P.designGibson(parts, { overlap: 25 });
+  assert.ok(!g.error, g.error);
+  assert.equal(g.primers.length, 4);
+  assert.equal(g.pieces, 2);
+  // the forward primer of each piece starts with the end of the piece before it
+  var vecF = g.primers.filter(function (x) { return x.fragment === 'vector' && x.dir === 'forward'; })[0];
+  assert.equal(vecF.tail, parts[1].seq.slice(-25), 'the vector follows the last insert, as a circle');
+  var insF = g.primers.filter(function (x) { return x.fragment === 'insert 1' && x.dir === 'forward'; })[0];
+  assert.equal(insF.tail, parts[0].seq.slice(-25));
+  assert.equal(insF.seq, insF.tail + insF.anneal);
+  assert.ok(insF.anneal.length >= 18 && insF.anneal.length <= 35);
+  // reverse primers carry no tail: the next piece's forward primer makes that join
+  assert.equal(vecF.tail.length, 25);
+  assert.equal(g.primers.filter(function (x) { return x.dir === 'reverse'; }).every(function (x) { return x.tail === ''; }), true);
+});
+check('the assembled product is the pieces end to end, with their features', function () {
+  var parts = [gfrag('vector', 600, 1), gfrag('insert 1', 400, 2), gfrag('insert 2', 300, 3)];
+  parts[1].features = [{ name: 'gene', type: 'CDS', start: 10, end: 310, strand: 1 }];
+  var g = P.designGibson(parts, { overlap: 20 });
+  assert.equal(g.product.seq.length, 1300);
+  assert.equal(g.product.topology, 'circular');
+  assert.equal(g.junctions.length, 3);                       // three joins round a circle
+  var gene = g.product.features[0];
+  assert.deepEqual([gene.start, gene.end], [610, 910]);       // shifted past the vector
+});
+check('up to seven inserts work, and more is refused', function () {
+  var many = [gfrag('vector', 500, 9)];
+  for (var i = 1; i <= 7; i++) many.push(gfrag('insert ' + i, 300, i * 7));
+  var g = P.designGibson(many, { overlap: 30 });
+  assert.ok(!g.error, g.error);
+  assert.equal(g.primers.length, 16);
+  assert.equal(g.junctions.length, 8);
+  many.push(gfrag('insert 8', 300, 77));
+  assert.ok(P.designGibson(many, {}).error, 'nine pieces is refused');
+});
+check('pieces too short for the overlap, or too few, are refused with a reason', function () {
+  assert.match(P.designGibson([gfrag('only one', 500, 1)], {}).error, /at least one insert/);
+  var r = P.designGibson([gfrag('vector', 500, 1), gfrag('tiny', 30, 2)], { overlap: 25 });
+  assert.match(r.error, /too short/);
+});
+check('the annealing part is grown until it is warm enough', function () {
+  var parts = [gfrag('a', 500, 4), gfrag('b', 500, 5)];
+  var warm = P.designGibson(parts, { overlap: 20, annealTm: 60 });
+  warm.primers.forEach(function (pr) {
+    assert.ok(pr.anneal.length >= 18, pr.name + ' long enough to be specific');
+    assert.ok(pr.tmAnneal >= 55 || pr.anneal.length === 35, pr.name + ' reaches the target or runs out of room');
+  });
+});
+
 console.log('CSV');
 check('features export with headers and sequences', function () {
   var csv = P.featuresCsv(gb);

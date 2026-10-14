@@ -157,3 +157,16 @@
 .pl-frag input{margin:0;}
 .pl-frag span{color:#7a877f;font-family:var(--mono);font-size:11px;}
 .pl-frag em{font-style:normal;color:#0c4a44;font-size:11px;}
+
+/* ---- primers and PCR ---- */
+.pl-pcr-wrap{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:12px;padding:.5rem;margin-bottom:.6rem;overflow-x:auto;}
+.pcr-primer{stroke:rgba(22,36,31,.4);stroke-width:.75;}
+.pcr-primer.fwd{fill:#9fd3a0;}
+.pcr-primer.rev{fill:#9ec5ef;}
+.pcr-tail{fill:none;stroke:#a6620c;stroke-width:1.6;stroke-dasharray:3 2;}
+.pcr-taillabel{font-family:var(--sans);font-size:9px;fill:#a6620c;}
+.pcr-label{font-family:var(--sans);font-size:10px;fill:#16241f;text-anchor:middle;}
+.pcr-bracket{fill:none;stroke:#0c4a44;stroke-width:1.2;}
+.pcr-size{font-family:var(--mono);font-size:10.5px;fill:#0c4a44;text-anchor:middle;}
+.pcr-tailtext{color:#a6620c;background:rgba(166,98,12,.1);border-radius:2px;}
+.pcr-stem{stroke:rgba(22,36,31,.35);stroke-width:1;stroke-dasharray:2 2;}
