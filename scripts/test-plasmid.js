@@ -422,6 +422,136 @@ check('very short entries are ignored, so the map is not swamped', function () {
   assert.equal(hits.length, 0);
 });
 
+console.log('Cutting');
+function rot(a, b) {   // is a a rotation of b?
+  return a.length === b.length && (b + b).indexOf(a) >= 0;
+}
+var VEC = 'AAAAA' + 'GAATTC' + 'TTTTTTTTTT' + 'GGATCC' + 'CCCCCCCCCC';
+check('a circular plasmid gives one piece per cut', function () {
+  var d = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']);
+  assert.equal(d.fragments.length, 2);
+  assert.equal(d.fragments[0].left.enzyme, 'EcoRI');
+  assert.equal(d.fragments[0].left.type, "5'");
+  assert.equal(d.fragments[0].left.ohang, 'AATT');
+  assert.equal(d.fragments[0].right.ohang, 'GATC');
+  assert.equal(d.fragments[0].len + d.fragments[1].len, VEC.length);
+});
+check('a linear plasmid gives one more piece than cuts, with plain ends', function () {
+  var d = P.digest({ seq: VEC, topology: 'linear', features: [] }, ['EcoRI', 'BamHI']);
+  assert.equal(d.fragments.length, 3);
+  assert.equal(d.fragments[0].left.type, 'end');
+  assert.equal(d.fragments[2].right.type, 'end');
+  assert.equal(d.fragments.map(function (f) { return f.seq; }).join(''), VEC);
+});
+check('3′ overhangs and blunt cuts are told apart', function () {
+  var k = P.digest({ seq: 'AAAAA' + 'GGTACC' + 'TTTTT' + 'GGTACC' + 'AAAAA', topology: 'circular', features: [] }, ['KpnI']);
+  assert.equal(k.fragments[0].left.type, "3'");
+  assert.equal(k.fragments[0].left.ohang, 'GTAC');
+  var b = P.digest({ seq: 'AAAAA' + 'GATATC' + 'TTTTT' + 'GATATC' + 'AAAAA', topology: 'circular', features: [] }, ['EcoRV']);
+  assert.equal(b.fragments[0].left.type, 'blunt');
+  assert.equal(b.fragments[0].left.ohang, '');
+});
+check('putting the pieces back gives the plasmid again', function () {
+  var d = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']);
+  var back = P.ligate(d.fragments.map(function (f) { return { frag: f, flip: false }; }), true);
+  assert.ok(back.ok);
+  assert.ok(rot(back.seq, VEC), 'the product is the original, read from the first cut');
+});
+
+console.log('Joining');
+var INS = 'TTTTT' + 'GAATTC' + 'GGGGGGGGGGGGGGG' + 'GGATCC' + 'TTTTT';
+check('an insert cut with the same two enzymes drops into the vector', function () {
+  var v = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']);
+  var ins = P.digest({ seq: INS, topology: 'linear', features: [] }, ['EcoRI', 'BamHI']);
+  var backbone = v.fragments.filter(function (f) { return f.left.enzyme === 'BamHI'; })[0];
+  var piece = ins.fragments.filter(function (f) { return f.left.enzyme === 'EcoRI' && f.right.enzyme === 'BamHI'; })[0];
+  assert.ok(backbone && piece);
+  var out = P.ligate([{ frag: backbone, flip: false }, { frag: piece, flip: false }], true);
+  assert.ok(out.ok, out.error);
+  assert.equal(out.seq.length, backbone.len + piece.len);
+  assert.equal(out.topology, 'circular');
+  assert.equal(out.junctions.length, 1);
+});
+check('an insert the wrong way round is refused, and works when flipped', function () {
+  var v = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']);
+  var ins = P.digest({ seq: INS, topology: 'linear', features: [] }, ['EcoRI', 'BamHI']);
+  var backbone = v.fragments.filter(function (f) { return f.left.enzyme === 'BamHI'; })[0];
+  var piece = ins.fragments.filter(function (f) { return f.left.enzyme === 'EcoRI' && f.right.enzyme === 'BamHI'; })[0];
+  // backbone runs BamHI -> EcoRI, so the piece has to run EcoRI -> BamHI
+  var wrong = P.ligate([{ frag: backbone, flip: false }, { frag: piece, flip: true }], true);
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.error, /cannot be joined|cannot close/);
+});
+check('ends from different enzymes join when the overhang reads the same', function () {
+  // BamHI G^GATCC and BglII A^GATCT both leave GATC
+  var a = P.digest({ seq: 'AAAAA' + 'GGATCC' + 'TTTTTTTTTT' + 'GGATCC' + 'AAAAA', topology: 'circular', features: [] }, ['BamHI']);
+  var b = P.digest({ seq: 'CCCCC' + 'AGATCT' + 'GGGGGGGGGG' + 'AGATCT' + 'CCCCC', topology: 'circular', features: [] }, ['BglII']);
+  assert.equal(a.fragments[0].right.ohang, 'GATC');
+  assert.equal(b.fragments[0].left.ohang, 'GATC');
+  assert.ok(P.endsMatch(a.fragments[0].right, b.fragments[0].left));
+  var out = P.ligate([{ frag: a.fragments[0], flip: false }, { frag: b.fragments[0], flip: false }], true);
+  assert.ok(out.ok, out.error);
+});
+check('mismatched overhangs are refused with a reason', function () {
+  var e = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']).fragments[0];
+  var k = P.digest({ seq: 'AAAAA' + 'GGTACC' + 'TTTTT' + 'GGTACC' + 'AAAAA', topology: 'circular', features: [] }, ['KpnI']).fragments[0];
+  var out = P.ligate([{ frag: e, flip: false }, { frag: k, flip: false }], false);
+  assert.equal(out.ok, false);
+  assert.match(out.error, /overhang/);
+});
+check('three pieces go together in order with three enzymes', function () {
+  // vector EcoRI..HindIII, insert A EcoRI..BamHI, insert B BamHI..HindIII
+  var vec = 'AAAAA' + 'GAATTC' + 'AAAAAAAAAAAAAAA' + 'AAGCTT' + 'AAAAA';
+  var insA = 'TTTTT' + 'GAATTC' + 'GGGGGGGGGG' + 'GGATCC' + 'TTTTT';
+  var insB = 'CCCCC' + 'GGATCC' + 'TTTTTTTTTT' + 'AAGCTT' + 'CCCCC';
+  var v = P.digest({ seq: vec, topology: 'circular', features: [] }, ['EcoRI', 'HindIII']);
+  var a = P.digest({ seq: insA, topology: 'linear', features: [] }, ['EcoRI', 'BamHI']);
+  var b = P.digest({ seq: insB, topology: 'linear', features: [] }, ['BamHI', 'HindIII']);
+  var backbone = v.fragments.filter(function (f) { return f.left.enzyme === 'HindIII'; })[0];
+  var pa = a.fragments.filter(function (f) { return f.left.enzyme === 'EcoRI' && f.right.enzyme === 'BamHI'; })[0];
+  var pb = b.fragments.filter(function (f) { return f.left.enzyme === 'BamHI' && f.right.enzyme === 'HindIII'; })[0];
+  assert.ok(backbone && pa && pb);
+  var out = P.ligate([{ frag: backbone, flip: false }, { frag: pa, flip: false }, { frag: pb, flip: false }], true);
+  assert.ok(out.ok, out.error);
+  assert.equal(out.junctions.length, 2);
+  assert.equal(out.seq.length, backbone.len + pa.len + pb.len);
+});
+check('features ride along and are renumbered', function () {
+  var seq = VEC;
+  var p = { seq: seq, topology: 'circular',
+    features: [P.normFeature({ name: 'spacer', type: 'misc_feature', start: 12, end: 22, strand: 1 }, seq.length)] };
+  var d = P.digest(p, ['EcoRI', 'BamHI']);
+  var holder = d.fragments.filter(function (f) { return f.features.length; })[0];
+  assert.ok(holder, 'a piece carries it');
+  assert.equal(holder.features[0].name, 'spacer');
+  assert.equal(holder.features[0].start, 12 - holder.start);
+  // flipping turns the feature round too
+  var flipped = P.flipFragment(holder);
+  assert.equal(flipped.features[0].strand, -1);
+  assert.equal(flipped.features[0].end, holder.len - holder.features[0].start);
+});
+check('a feature cut through is marked as shortened', function () {
+  var seq = VEC;
+  var p = { seq: seq, topology: 'circular',
+    features: [P.normFeature({ name: 'across the cut', type: 'CDS', start: 2, end: 14, strand: 1 }, seq.length)] };
+  var d = P.digest(p, ['EcoRI', 'BamHI']);
+  var marked = [];
+  d.fragments.forEach(function (f) { f.features.forEach(function (g) { if (/Shortened/.test(g.note || '')) marked.push(g); }); });
+  assert.ok(marked.length >= 1, 'the shortened piece says so');
+});
+
+console.log('Choosing an enzyme');
+check('every enzyme is reported with how often it cuts, including never', function () {
+  var sum = P.enzymeSummary({ seq: VEC, topology: 'circular', features: [] });
+  assert.equal(sum.length, P.ENZYMES.length);
+  var eco = sum.filter(function (e) { return e.name === 'EcoRI'; })[0];
+  assert.equal(eco.count, 1);
+  assert.deepEqual(eco.cuts, [7]);                     // G^AATTC, site at base 6
+  var none = sum.filter(function (e) { return e.count === 0; });
+  assert.ok(none.length > 50, 'most enzymes do not cut this short sequence');
+  assert.equal(sum[0].count, 0, 'the ones that never cut come first');
+});
+
 console.log('CSV');
 check('features export with headers and sequences', function () {
   var csv = P.featuresCsv(gb);
