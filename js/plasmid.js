@@ -1016,6 +1016,205 @@
     }).sort(function (a, b) { return a.count - b.count || a.name.localeCompare(b.name); });
   }
 
+  // ---------- primers ----------
+  /* Where a primer sits on the plasmid. Only the 3' part has to match: the
+     annealed stretch is grown from the 3' end until the template disagrees,
+     and whatever is left at the 5' end is the tail, which hangs free in the
+     first round and is then carried into the product. */
+  function bindPrimers(p, primerSeq, opts) {
+    opts = opts || {};
+    var seq = clean(p.seq || ''), len = seq.length;
+    var pr = clean(primerSeq || '');
+    var minAnneal = Math.max(8, opts.minAnneal || 14);
+    if (!len || pr.length < minAnneal) return [];
+    var circular = p.topology === 'circular';
+    var pad = Math.min(len, pr.length + 5);
+    var hay = circular && len > pad ? seq + seq.slice(0, pad) : seq;
+    var out = [], seen = {};
+    [1, -1].forEach(function (strand) {
+      var work = strand === 1 ? hay : revcomp(hay);
+      var seed = pr.slice(-minAnneal), from = 0, at;
+      while ((at = work.indexOf(seed, from)) >= 0) {
+        from = at + 1;
+        var end3 = at + minAnneal;              // where the primer's 3' end lands
+        var anneal = minAnneal;
+        while (anneal < pr.length) {            // grow back towards the 5' end
+          var tp = end3 - anneal - 1, pp = pr.length - anneal - 1;
+          if (tp < 0 || pr[pp] !== work[tp]) break;
+          anneal++;
+        }
+        var sw = end3 - anneal;
+        // Back onto the forward strand's numbering.
+        var a = strand === 1 ? sw : work.length - end3;
+        var b = strand === 1 ? end3 : work.length - sw;
+        if (a >= len) continue;
+        var key = strand + ':' + (a % len);
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push({ start: a % len, end: b > len ? b % len || len : b, strand: strand,
+          anneal: pr.slice(pr.length - anneal), tail: pr.slice(0, pr.length - anneal),
+          seq: pr, tm: tm(pr.slice(pr.length - anneal)), gc: gc(pr),
+          perfect: anneal === pr.length });
+      }
+    });
+    return out.sort(function (x, y) { return y.anneal.length - x.anneal.length || x.start - y.start; });
+  }
+
+  /* What the two primers make. The product carries both primers whole, so a
+     5' tail ends up in the product even though it never touched the template. */
+  function pcrProduct(p, fwd, rev) {
+    var seq = clean(p.seq || ''), len = seq.length;
+    if (!fwd || !rev) return { error: 'Two primers are needed.' };
+    if (fwd.strand !== 1 || rev.strand !== -1) return { error: 'One primer has to read forwards and the other backwards.' };
+    var circular = p.topology === 'circular';
+    var from = fwd.end, to = rev.end;           // the stretch between the annealed ends
+    var middle;
+    if (to >= from) middle = seq.slice(from, to);
+    else if (circular) middle = seq.slice(from) + seq.slice(0, to);
+    else return { error: 'The reverse primer sits before the forward one, so there is no product.' };
+    var between = seq.slice(fwd.end, Math.max(fwd.end, rev.start));
+    var body = circular && rev.end < fwd.end ? seq.slice(fwd.start) + seq.slice(0, rev.end)
+      : seq.slice(fwd.start, rev.end);
+    var product = fwd.tail + body + revcomp(rev.tail);
+    return {
+      seq: product, len: product.length,
+      start: fwd.start, end: rev.end,
+      templateLen: body.length,
+      tails: fwd.tail.length + rev.tail.length,
+      wraps: circular && rev.end < fwd.end
+    };
+  }
+
+  /* The picture: the template as a line, the two primers as arrows with their
+     annealed part on the line and any 5' tail lifted clear of it, and the
+     product bracketed underneath. */
+  function pcrMapSvg(p, fwd, rev, opts) {
+    opts = opts || {};
+    var len = p.seq.length;
+    if (!len || !fwd || !rev) return '';
+    var W = opts.width || 880, H = 182, pad = 56, y = 92;
+    var prod = pcrProduct(p, fwd, rev);
+    if (prod.error) return '';
+    // Show a window around the product rather than the whole plasmid.
+    var margin = Math.max(40, Math.round(prod.templateLen * 0.25));
+    var vs = fwd.start - margin, ve = rev.end + margin;
+    var span = (prod.wraps ? len - fwd.start + rev.end : rev.end - fwd.start) + margin * 2;
+    var x = function (pos) {
+      var rel = prod.wraps && pos < fwd.start ? pos + len - vs : pos - vs;
+      return pad + (rel / span) * (W - pad * 2);
+    };
+    var svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Expected PCR product" class="ln-pl-map pcr">'];
+    svg.push('<line x1="' + pad + '" y1="' + y + '" x2="' + (W - pad) + '" y2="' + y + '" class="pl-axis"/>');
+    // ticks
+    var step = tickStep(span, 8);
+    for (var t = Math.ceil(vs / step) * step; t < vs + span; t += step) {
+      var tx = round(x(prod.wraps && t > len ? t - len : t));
+      if (tx < pad || tx > W - pad) continue;
+      svg.push('<line x1="' + tx + '" y1="' + y + '" x2="' + tx + '" y2="' + (y + 5) + '" class="pl-tick"/>');
+      svg.push('<text x="' + tx + '" y="' + (y + 17) + '" class="pl-ticklabel">' + ((t % len + len) % len || len) + '</text>');
+    }
+    /* A 20-base primer on a 500-base product would be a few pixels wide, so
+       each arrow is given a readable minimum width, anchored at the end where
+       it starts reading. The tail is drawn lifted off the template, because it
+       does not anneal in the first round. */
+    var MINW = 58;
+    function arrow(bind, above) {
+      var y0 = above ? y - 20 : y + 20, lift = above ? y0 - 18 : y0 + 18;
+      var ax = x(bind.start), bx = x(bind.end);
+      var x1 = Math.min(ax, bx), x2 = Math.max(ax, bx);
+      if (x2 - x1 < MINW) {
+        if (bind.strand === 1) x2 = x1 + MINW; else x1 = x2 - MINW;
+      }
+      var head = 8, w = x2 - x1;
+      var d = bind.strand === 1
+        ? 'M' + round(x1) + ' ' + (y0 - 5) + 'h' + round(w - head) + 'l' + head + ' 5l' + (-head) + ' 5h' + round(-(w - head)) + 'z'
+        : 'M' + round(x2) + ' ' + (y0 - 5) + 'h' + round(-(w - head)) + 'l' + (-head) + ' 5l' + head + ' 5h' + round(w - head) + 'z';
+      var out = '<path d="' + d + '" class="pcr-primer ' + (above ? 'fwd' : 'rev') + '"><title>' + esc(bind.name || 'primer') +
+        ' · ' + bind.anneal.length + ' bases annealed, Tm ' + bind.tm.toFixed(1) + ' °C' +
+        (bind.tail ? ' · ' + bind.tail.length + ' base tail not annealed' : '') + '</title></path>';
+      // a line from the template up to the primer, so its real position is clear
+      var anchor = bind.strand === 1 ? x1 : x2;
+      out += '<line x1="' + round(bind.strand === 1 ? ax : bx) + '" y1="' + y + '" x2="' + round(anchor) + '" y2="' +
+        (above ? y0 + 5 : y0 - 5) + '" class="pcr-stem"/>';
+      if (bind.tail) {
+        var dir = bind.strand === 1 ? -1 : 1, tx0 = bind.strand === 1 ? x1 : x2;
+        var tw = 42;
+        out += '<path d="M' + round(tx0) + ' ' + (y0 - 5 + 5) + 'L' + round(tx0 + dir * 12) + ' ' + round(lift) +
+          'L' + round(tx0 + dir * tw) + ' ' + round(lift) + '" class="pcr-tail"/>';
+        out += '<text x="' + round(tx0 + dir * (tw + 4)) + '" y="' + round(lift + 3) + '" class="pcr-taillabel" text-anchor="' +
+          (bind.strand === 1 ? 'end' : 'start') + '">' + bind.tail.length + ' nt tail, free</text>';
+      }
+      out += '<text x="' + round((x1 + x2) / 2) + '" y="' + (above ? y0 - 11 : y0 + 17) + '" class="pcr-label">' +
+        esc(bind.name || (bind.strand === 1 ? 'forward' : 'reverse')) + '</text>';
+      return out;
+    }
+    svg.push(arrow(fwd, true));
+    svg.push(arrow(rev, false));
+    // the product bracket
+    var px1 = x(fwd.start), px2 = x(rev.end);
+    svg.push('<path d="M' + round(px1) + ' 156v6h' + round(px2 - px1) + 'v-6" class="pcr-bracket"/>');
+    svg.push('<text x="' + round((px1 + px2) / 2) + '" y="176" class="pcr-size">' + prod.len.toLocaleString() + ' bp product' +
+      (prod.tails ? ' (' + prod.tails + ' bp from tails)' : '') + '</text>');
+    svg.push('</svg>');
+    return svg.join('');
+  }
+
+  // ---------- Gibson assembly ----------
+  /* Primers for joining fragments end to end. Each junction is made by hanging
+     the end of the piece before it onto the 5' end of the next piece's forward
+     primer, so the two products share that stretch. Overlaps of 20-40 bases and
+     an annealing part near 60 C are what the Gibson and NEBuilder protocols
+     ask for; both are adjustable. */
+  function designGibson(frags, opts) {
+    opts = opts || {};
+    var overlap = Math.max(15, Math.min(60, opts.overlap || 25));
+    var target = opts.annealTm || 60, minA = opts.minAnneal || 18, maxA = opts.maxAnneal || 35;
+    var parts = (frags || []).map(function (f) { return { name: f.name || 'fragment', seq: clean(f.seq || ''), features: f.features || [] }; })
+      .filter(function (f) { return f.seq.length; });
+    if (parts.length < 2) return { error: 'Gibson assembly needs a vector and at least one insert.' };
+    if (parts.length > 8) return { error: 'More than seven inserts at once is beyond what Gibson reliably gives.' };
+    var tooShort = parts.filter(function (f) { return f.seq.length < overlap + minA; });
+    if (tooShort.length) return { error: 'Piece “' + tooShort[0].name + '” is too short for a ' + overlap + ' base overlap.' };
+
+    // The shortest 5' stretch whose melting temperature reaches the target.
+    function anneal(seq, fromEnd) {
+      var best = seq.length >= maxA ? maxA : seq.length;
+      for (var n = minA; n <= Math.min(maxA, seq.length); n++) {
+        var sub = fromEnd ? seq.slice(seq.length - n) : seq.slice(0, n);
+        if (tm(sub) >= target) { best = n; break; }
+      }
+      return best;
+    }
+    var primers = [];
+    parts.forEach(function (f, i) {
+      var prev = parts[(i - 1 + parts.length) % parts.length];
+      var fLen = anneal(f.seq, false), rLen = anneal(f.seq, true);
+      var tail = prev.seq.slice(prev.seq.length - overlap);
+      var fwdAnneal = f.seq.slice(0, fLen);
+      var revAnneal = revcomp(f.seq.slice(f.seq.length - rLen));
+      primers.push({ fragment: f.name, dir: 'forward', tail: tail, anneal: fwdAnneal,
+        seq: tail + fwdAnneal, tmAnneal: tm(fwdAnneal), tmOverlap: tm(tail), gc: gc(tail + fwdAnneal),
+        name: f.name + ' F' });
+      primers.push({ fragment: f.name, dir: 'reverse', tail: '', anneal: revAnneal,
+        seq: revAnneal, tmAnneal: tm(revAnneal), tmOverlap: 0, gc: gc(revAnneal),
+        name: f.name + ' R' });
+    });
+    // The assembled circle, with every feature carried across.
+    var seq = '', features = [], at = 0, junctions = [];
+    parts.forEach(function (f, i) {
+      (f.features || []).forEach(function (g) {
+        features.push({ name: g.name, type: g.type, start: at + g.start, end: at + g.end,
+          strand: g.strand, color: g.color, note: g.note });
+      });
+      if (i) junctions.push({ at: at, between: parts[i - 1].name + ' → ' + f.name, overlap: overlap });
+      seq += f.seq;
+      at += f.seq.length;
+    });
+    junctions.push({ at: 0, between: parts[parts.length - 1].name + ' → ' + parts[0].name, overlap: overlap });
+    return { primers: primers, product: { seq: seq, features: features, topology: 'circular' },
+      junctions: junctions, overlap: overlap, pieces: parts.length };
+  }
+
   // ---------- maps ----------
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1195,6 +1394,7 @@
     diffEdit: diffEdit, applyEdit: applyEdit,
     frameString: frameString, orfs: orfs, PAM_TYPES: PAM_TYPES, findGuides: findGuides, designPegRNA: designPegRNA,
     BUILTIN_FEATURES: BUILTIN_FEATURES, labLibrary: labLibrary, annotate: annotate,
+    bindPrimers: bindPrimers, pcrProduct: pcrProduct, pcrMapSvg: pcrMapSvg, designGibson: designGibson,
     digest: digest, ligate: ligate, flipFragment: flipFragment, endsMatch: endsMatch, cutEnd: cutEnd,
     describeEnd: describeEnd, enzymeSummary: enzymeSummary, sliceCirc: sliceCirc,
     ENZYMES: ENZYMES, findSites: findSites, siteCounts: siteCounts, filterSites: filterSites, nonCutters: nonCutters, siteRegex: siteRegex,

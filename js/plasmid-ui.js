@@ -92,6 +92,7 @@
         '<div class="ln-pl-linear">' + P.linearMapSvg(p, { width: 900 }) + '</div>'
         : '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>') +
       featuresHtml(p) +
+      primersHtml(p) +
       seqPanelHtml(p);
     wire();
   }
@@ -1080,6 +1081,237 @@
     }, function (e) { alert('Could not create the plasmid: ' + e.message); });
   }
 
+  // ---------- primers ----------
+  /* Primers live on the plasmid as { name, seq }. Where each one sits is
+     worked out from the sequence every time, so editing the plasmid keeps
+     them honest rather than leaving a stale position behind. */
+  function primerList() { var it = rec(); return (it && it.primers) || []; }
+  function primerBindings(p) {
+    return primerList().map(function (pr) {
+      var hits = P.bindPrimers(p, pr.seq, { minAnneal: 14 });
+      hits.forEach(function (h) { h.name = pr.name; });
+      return { primer: pr, hits: hits };
+    });
+  }
+  function primersHtml(p) {
+    var binds = primerBindings(p);
+    var rows = binds.map(function (b, i) {
+      var h = b.hits[0];
+      var where = !h ? '<span class="warn">does not bind</span>'
+        : (h.start + 1) + '–' + h.end + ' ' + (h.strand === -1 ? '←' : '→') +
+          (b.hits.length > 1 ? ' <span class="warn">(+' + (b.hits.length - 1) + ' more)</span>' : '');
+      return '<tr><td>' + esc(b.primer.name) + '</td>' +
+        '<td><code>' + (h && h.tail ? '<span class="pcr-tailtext">' + esc(h.tail) + '</span>' : '') +
+          esc(h ? h.anneal : b.primer.seq) + '</code></td>' +
+        '<td class="ln-nowrap">' + b.primer.seq.length + ' nt</td>' +
+        '<td class="ln-nowrap">' + (h ? h.tm.toFixed(1) + ' °C' : '—') + '</td>' +
+        '<td class="ln-nowrap">' + where + '</td>' +
+        '<td class="ln-nowrap">' + (h && h.tail ? h.tail.length + ' nt tail' : h ? 'full match' : '—') + '</td>' +
+        '<td class="ln-row-actions">' + (h ? '<button class="ln-icon-btn" onclick="plAnnotatePrimer(' + i + ')">Annotate</button>' : '') +
+        '<button class="ln-icon-btn danger" onclick="plDeletePrimer(' + i + ')">✕</button></td></tr>';
+    }).join('');
+    return '<div class="ln-pl-panel" id="pl-primers"><div class="ln-pl-panel-head"><h3>Primers <span>' + binds.length + '</span></h3>' +
+      '<div class="ln-header-actions">' +
+        '<button class="ln-add-btn ghost" onclick="openPcr()">⟶ Expected PCR</button>' +
+        '<button class="ln-add-btn ghost" onclick="openGibson()">Gibson assembly</button>' +
+        '<button class="ln-add-btn ghost" onclick="openPrimerModal()">+ Attach primer</button></div></div>' +
+      (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
+  }
+  function openPrimerModal() {
+    var inv = (getInventory().primers || []).filter(function (x) { return x.sequence; });
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Attach a primer</h3>' +
+      '<div class="ln-form-row"><label>Name</label><input id="pm-name" placeholder="e.g. HK022_attB_F"></div>' +
+      '<div class="ln-form-row"><label>Sequence (5′→3′)</label><input id="pm-seq" placeholder="ATGC…">' +
+      '<div class="hint">Bases that do not match the template at the 5′ end are kept as a tail, which is normal for adding a site or an overlap.</div></div>' +
+      (inv.length ? '<div class="ln-form-row"><label>Or take one from the primer inventory</label><select id="pm-pick" onchange="plPrimerPick(this.value)">' +
+        '<option value="">—</option>' + inv.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name || 'primer') + ' · ' + esc(String(x.sequence).slice(0, 30)) + '</option>'; }).join('') +
+        '</select></div>' : '') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="plAddPrimer()">Attach</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plPrimerPick(i) {
+    var inv = (getInventory().primers || []).filter(function (x) { return x.sequence; });
+    var pick = inv[+i];
+    if (!pick) return;
+    document.getElementById('pm-name').value = pick.name || '';
+    document.getElementById('pm-seq').value = P.clean(pick.sequence);
+  }
+  function plAddPrimer() {
+    var it = rec(); if (!it) return;
+    var seq = P.clean(g('pm-seq'));
+    if (seq.length < 10) { alert('That is too short to be a primer.'); return; }
+    it.primers = (it.primers || []).concat([{ name: g('pm-name') || 'primer ' + ((it.primers || []).length + 1), seq: seq }]);
+    closeModal(); markPlDirty(); renderPlasmid();
+  }
+  function plDeletePrimer(i) {
+    var it = rec(); if (!it) return;
+    it.primers = (it.primers || []).filter(function (x, n) { return n !== i; });
+    markPlDirty(); renderPlasmid();
+  }
+  function plAnnotatePrimer(i) {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it), b = primerBindings(p)[i];
+    if (!b || !b.hits.length) return;
+    var h = b.hits[0];
+    var f = P.normFeature({ name: b.primer.name, type: 'primer_bind', start: h.start, end: h.end, strand: h.strand,
+      note: h.tail ? h.tail.length + ' base 5′ tail not annealed: ' + h.tail : 'Full match' }, p.seq.length);
+    if (!f) return;
+    it.features = (it.features || []).concat([f]);
+    markPlDirty(); renderPlasmid();
+  }
+
+  // ---------- the expected PCR ----------
+  function openPcr() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it), binds = primerBindings(p);
+    var fwd = binds.filter(function (b) { return b.hits.some(function (h) { return h.strand === 1; }); });
+    var rev = binds.filter(function (b) { return b.hits.some(function (h) { return h.strand === -1; }); });
+    if (!fwd.length || !rev.length) { alert('Attach at least one primer that reads forwards and one that reads backwards.'); return; }
+    function opts(list, strand) {
+      return list.map(function (b) {
+        var i = binds.indexOf(b);
+        return '<option value="' + i + '">' + esc(b.primer.name) + ' · ' +
+          (b.hits.filter(function (h) { return h.strand === strand; })[0].start + 1) + '</option>';
+      }).join('');
+    }
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Expected PCR</h3>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Forward primer</label><select id="pcr-f" onchange="plPcrDraw()">' + opts(fwd, 1) + '</select></div>' +
+        '<div class="ln-form-row"><label>Reverse primer</label><select id="pcr-r" onchange="plPcrDraw()">' + opts(rev, -1) + '</select></div>' +
+      '</div><div id="pcr-out"></div>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+    plPcrDraw();
+  }
+  function plPcrDraw() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it), binds = primerBindings(p);
+    var fb = binds[+document.getElementById('pcr-f').value], rb = binds[+document.getElementById('pcr-r').value];
+    var f = fb && fb.hits.filter(function (h) { return h.strand === 1; })[0];
+    var r = rb && rb.hits.filter(function (h) { return h.strand === -1; })[0];
+    var out = document.getElementById('pcr-out');
+    if (!f || !r) { out.innerHTML = '<div class="ln-bulk-note error">Those two primers do not face each other.</div>'; return; }
+    var prod = P.pcrProduct(p, f, r);
+    if (prod.error) { out.innerHTML = '<div class="ln-bulk-note error">' + esc(prod.error) + '</div>'; return; }
+    window.__pcrSeq = prod.seq;
+    out.innerHTML = '<div class="pl-pcr-wrap">' + P.pcrMapSvg(p, f, r, { width: 880 }) + '</div>' +
+      '<div class="ln-bulk-note ok"><strong>' + prod.len.toLocaleString() + ' bp</strong> · ' +
+      prod.templateLen.toLocaleString() + ' bp from the plasmid' + (prod.tails ? ' plus ' + prod.tails + ' bp of primer tail' : '') +
+      (prod.wraps ? ' · runs across the origin' : '') + ' · ' +
+      'anneals at ' + f.tm.toFixed(0) + ' and ' + r.tm.toFixed(0) + ' °C</div>' +
+      '<button class="ln-icon-btn" onclick="plCopyText(window.__pcrSeq)">Copy the product sequence</button>';
+  }
+
+  // ---------- Gibson ----------
+  var gib = null;
+  function openGibson() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
+    gib = { overlap: 25, tm: 60, pieces: [{ id: it.id, from: '', to: '' }, { id: others.length ? others[0].id : '', from: '', to: '' }] };
+    plGibsonHtml();
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function gibSources() {
+    var it = rec();
+    return [it].concat((getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; }));
+  }
+  function gibFragments() {
+    var all = gibSources();
+    return gib.pieces.map(function (pc, i) {
+      var src = all.filter(function (x) { return x.id === pc.id; })[0];
+      if (!src) return null;
+      var p = asPlasmid(src), len = p.seq.length;
+      var a = pc.from === '' ? 0 : Math.max(0, Math.min(len, parseInt(pc.from, 10) - 1 || 0));
+      var b = pc.to === '' ? len : Math.max(1, Math.min(len, parseInt(pc.to, 10) || len));
+      var seq = b > a ? p.seq.slice(a, b) : p.seq.slice(a) + p.seq.slice(0, b);
+      var feats = [];
+      (p.features || []).forEach(function (f) {
+        if (P.wraps(f)) return;
+        if (f.start >= a && f.end <= b) feats.push({ name: f.name, type: f.type, start: f.start - a, end: f.end - a, strand: f.strand, color: f.color });
+      });
+      return { name: (src.name || 'piece ' + (i + 1)) + (pc.from || pc.to ? ' ' + (a + 1) + '–' + b : ''),
+        seq: seq, features: feats, srcName: src.name, len: seq.length };
+    });
+  }
+  function plGibsonHtml() {
+    var all = gibSources();
+    var frags = gibFragments();
+    var html = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Gibson assembly</h3>' +
+      '<p class="ln-bulk-intro">Pieces are joined in the order below, closing into a circle. Each piece’s forward primer carries the end of the piece before it, so the two products share that stretch — which is what Gibson needs. Twenty to forty bases is the usual overlap.</p>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Overlap (bases)</label><input type="number" id="gib-ovl" min="15" max="60" value="' + gib.overlap + '" onchange="plGibsonSet()"></div>' +
+        '<div class="ln-form-row"><label>Annealing Tm to aim for (°C)</label><input type="number" id="gib-tm" min="50" max="72" value="' + gib.tm + '" onchange="plGibsonSet()"></div>' +
+      '</div>';
+    gib.pieces.forEach(function (pc, n) {
+      var f = frags[n];
+      html += '<div class="pl-clone-box"><div class="ln-form-section">' + (n ? 'Insert ' + n : 'Vector') +
+        (gib.pieces.length > 2 ? ' <button class="ln-icon-btn danger" onclick="plGibsonDrop(' + n + ')">✕</button>' : '') + '</div>' +
+        '<div class="ln-form-grid"><div class="ln-form-row"><label>From</label><select onchange="plGibsonSrc(' + n + ',this.value)">' +
+          all.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === pc.id ? ' selected' : '') + '>' + esc(o.name || 'Untitled') + '</option>'; }).join('') +
+        '</select></div><div class="ln-form-row"><label>Bases (leave empty for all)</label>' +
+          '<div style="display:flex;gap:.4rem;"><input type="number" placeholder="from" value="' + esc(pc.from) + '" onchange="plGibsonRange(' + n + ',0,this.value)">' +
+          '<input type="number" placeholder="to" value="' + esc(pc.to) + '" onchange="plGibsonRange(' + n + ',1,this.value)"></div></div></div>' +
+        '<div class="hint">' + (f ? f.len.toLocaleString() + ' bp · ' + f.features.length + ' feature' + (f.features.length === 1 ? '' : 's') : 'no sequence') + '</div></div>';
+    });
+    if (gib.pieces.length < 8) html += '<button class="ln-add-btn ghost" onclick="plGibsonAdd()">+ Add an insert (up to seven)</button>';
+    html += '<div id="gib-out"></div>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="plGibsonRun()">Design the primers</button></div>';
+    document.getElementById('ln-modal-content').innerHTML = html;
+  }
+  function plGibsonSet() {
+    gib.overlap = +document.getElementById('gib-ovl').value || 25;
+    gib.tm = +document.getElementById('gib-tm').value || 60;
+  }
+  function plGibsonSrc(n, id) { gib.pieces[n].id = id; plGibsonHtml(); }
+  function plGibsonRange(n, which, v) { gib.pieces[n][which ? 'to' : 'from'] = v; plGibsonHtml(); }
+  function plGibsonAdd() { var all = gibSources(); gib.pieces.push({ id: all.length > 1 ? all[1].id : all[0].id, from: '', to: '' }); plGibsonHtml(); }
+  function plGibsonDrop(n) { gib.pieces.splice(n, 1); plGibsonHtml(); }
+  function plGibsonRun() {
+    plGibsonSet();
+    var frags = gibFragments().filter(Boolean);
+    var res = P.designGibson(frags, { overlap: gib.overlap, annealTm: gib.tm });
+    var out = document.getElementById('gib-out');
+    if (res.error) { out.innerHTML = '<div class="ln-bulk-note error">' + esc(res.error) + '</div>'; return; }
+    gib.result = res;
+    out.innerHTML = '<div class="ln-bulk-note ok"><strong>' + res.product.seq.length.toLocaleString() + ' bp</strong> circular · ' +
+      res.pieces + ' pieces · ' + res.junctions.length + ' joins of ' + res.overlap + ' bases · ' +
+      res.product.features.length + ' feature' + (res.product.features.length === 1 ? '' : 's') + ' carried over</div>' +
+      '<div style="max-height:34vh;overflow:auto;"><table class="ln-table"><thead><tr><th>Primer</th><th>Sequence (overlap pale)</th><th>Length</th><th>Anneal Tm</th><th></th></tr></thead><tbody>' +
+      res.primers.map(function (pr, i) {
+        return '<tr><td class="ln-nowrap">' + esc(pr.name) + '</td>' +
+          '<td><code class="pl-seq-out">' + (pr.tail ? '<span class="pcr-tailtext">' + esc(pr.tail) + '</span>' : '') + esc(pr.anneal) + '</code></td>' +
+          '<td class="ln-nowrap">' + pr.seq.length + ' nt</td>' +
+          '<td class="ln-nowrap">' + pr.tmAnneal.toFixed(1) + ' °C</td>' +
+          '<td><button class="ln-icon-btn" onclick="plCopyText(\'' + pr.seq + '\')">Copy</button></td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div class="ln-form-row" style="margin-top:.6rem;"><label>Name for the assembled plasmid</label>' +
+      '<input id="gib-name" value="' + esc(frags.map(function (f) { return f.srcName || f.name; }).join(' + ')) + '"></div>' +
+      '<button class="ln-modal-save" onclick="plGibsonCreate()">Create the plasmid</button>' +
+      '<button class="ln-icon-btn" onclick="plCopyText(window.__gibAll)">Copy every primer</button>';
+    window.__gibAll = res.primers.map(function (pr) { return pr.name + '\t' + pr.seq; }).join('\n');
+  }
+  function plGibsonCreate() {
+    var res = gib && gib.result;
+    if (!res) return;
+    var me = currentUser() ? currentUser().name : 'Unknown';
+    var seq = res.product.seq;
+    var item = { id: uid(), name: g('gib-name') || 'Gibson product', seq: seq, topology: 'circular', len: seq.length,
+      features: res.product.features.map(function (f) { return P.normFeature(f, seq.length); }).filter(Boolean),
+      owner: me, addedBy: me,
+      primers: res.primers.map(function (pr) { return { name: pr.name, seq: pr.seq }; }),
+      notes: 'Designed as a Gibson assembly of ' + res.pieces + ' pieces with ' + res.overlap +
+        ' base overlaps in the Lab Notebook on ' + new Date().toISOString().slice(0, 10) + '.' };
+    DB.upsertInventory('plasmids', item).then(function () {
+      gib = null; closeModal(); renderInventory('plasmids'); openPlasmid(item.id);
+    }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
   // ---------- saving ----------
   function savePlasmid() {
     var it = rec(); if (!it) return;
@@ -1094,7 +1326,7 @@
       conc: g('pl-conc'), kit: g('pl-kit'), stock: g('pl-stock'), owner: getSelectOrManual('pl-owner'),
       freezer: g('pl-freezer'), box: g('pl-box'), position: g('pl-position'), location: g('pl-location'),
       mapLink: g('pl-mapLink'), notes: g('pl-notes'),
-      seq: P.clean(it.seq || ''), features: it.features || [], len: P.clean(it.seq || '').length
+      seq: P.clean(it.seq || ''), features: it.features || [], primers: it.primers || [], len: P.clean(it.seq || '').length
     });
     DB.upsertInventory('plasmids', item).then(function () {
       plDraft = JSON.parse(JSON.stringify(item));
@@ -1349,6 +1581,21 @@
   window.plCloneDropInsert = plCloneDropInsert;
   window.plCloneRun = plCloneRun;
   window.plCloneCreate = plCloneCreate;
+  window.openPrimerModal = openPrimerModal;
+  window.plPrimerPick = plPrimerPick;
+  window.plAddPrimer = plAddPrimer;
+  window.plDeletePrimer = plDeletePrimer;
+  window.plAnnotatePrimer = plAnnotatePrimer;
+  window.openPcr = openPcr;
+  window.plPcrDraw = plPcrDraw;
+  window.openGibson = openGibson;
+  window.plGibsonSet = plGibsonSet;
+  window.plGibsonSrc = plGibsonSrc;
+  window.plGibsonRange = plGibsonRange;
+  window.plGibsonAdd = plGibsonAdd;
+  window.plGibsonDrop = plGibsonDrop;
+  window.plGibsonRun = plGibsonRun;
+  window.plGibsonCreate = plGibsonCreate;
   window.openPlasmid = openPlasmid;
   window.routePlasmid = routePlasmid;
   window.renderPlasmid = renderPlasmid;
