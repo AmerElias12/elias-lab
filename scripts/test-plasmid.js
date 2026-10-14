@@ -295,6 +295,133 @@ check('overlapping copies of a site are all found', function () {
   assert.equal(dra.length, 2);
 });
 
+console.log('Reading frames and ORFs');
+check('amino acids line up under the middle base of their codon', function () {
+  assert.equal(P.frameString('ATGGCGTAATAA', 0, 0, 12, 1), ' M  A  *  * ');
+  assert.equal(P.frameString('AATGGCGTAA', 1, 0, 10, 1), '  M  A  *  '.slice(0, 10));
+});
+check('the reverse strand reads the other way', function () {
+  // revcomp('TTACGCCAT') is 'ATGGCGTAA', so the reverse frame spells M A *
+  var row = P.frameString('TTACGCCAT', 0, 0, 9, -1);
+  assert.equal(row.replace(/ /g, ''), '*AM');       // written along the forward strand
+});
+check('ORFs are found on both strands and short ones left out', function () {
+  var orf = 'ATG' + 'GCG'.repeat(60) + 'TAA';
+  var seq = 'TTTT' + orf + 'TTTT';
+  var found = P.orfs(seq, 'linear', 50);
+  assert.equal(found.length, 1);
+  assert.deepEqual([found[0].start, found[0].end, found[0].strand, found[0].len], [4, 4 + orf.length, 1, 61]);
+  assert.equal(found[0].aa.slice(0, 3), 'MAA');
+  assert.equal(P.orfs(seq, 'linear', 200).length, 0);          // too short to count
+  var rev = 'TTTT' + P.revcomp(orf) + 'TTTT';
+  var back = P.orfs(rev, 'linear', 50);
+  assert.equal(back[0].strand, -1);
+  assert.deepEqual([back[0].start, back[0].end], [4, 4 + orf.length]);
+});
+
+console.log('CRISPR guides');
+var SPACER = 'ACGTTGCAACGTTGCAAGGT';   // deliberately not its own reverse complement
+var GSEQ = 'TTTTT' + SPACER + 'AGG' + 'CCCCCCCCCC';
+check('a guide is found next to its PAM, with the cut 3 bases in', function () {
+  var g = P.findGuides(GSEQ, 'linear', 'SpCas9 (NGG)').filter(function (x) { return x.spacer === SPACER; })[0];
+  assert.ok(g, 'guide found');
+  assert.deepEqual([g.start, g.end, g.strand, g.pam], [5, 25, 1, 'AGG']);
+  assert.equal(g.cutAt, 22);                                    // 3 bases back from the PAM
+  assert.ok(g.gc > 40 && g.gc < 60);
+  assert.equal(g.offTargets, 0);
+});
+check('guides are found on the reverse strand too', function () {
+  var seq = 'CCCCC' + 'CCT' + P.revcomp(SPACER) + 'TTTTT';      // CCT is AGG read back
+  var g = P.findGuides(seq, 'linear', 'SpCas9 (NGG)').filter(function (x) { return x.spacer === SPACER; })[0];
+  assert.ok(g, 'reverse guide found');
+  assert.equal(g.strand, -1);
+  assert.deepEqual([g.start, g.end], [8, 28]);
+});
+check('a protospacer repeated in the plasmid is counted', function () {
+  var twice = GSEQ + 'AAAAA' + SPACER + 'TGG';
+  var g = P.findGuides(twice, 'linear', 'SpCas9 (NGG)').filter(function (x) { return x.spacer === SPACER; })[0];
+  assert.equal(g.offTargets, 1);
+});
+check('a protospacer that reads the same backwards is not counted twice', function () {
+  var pal = 'ACGTACGTACGTACGTACGT';
+  assert.equal(P.revcomp(pal), pal);
+  var g = P.findGuides('TTTTT' + pal + 'AGG' + 'CCCCC', 'linear', 'SpCas9 (NGG)')
+    .filter(function (x) { return x.spacer === pal; })[0];
+  assert.equal(g.offTargets, 0);
+});
+check('other PAMs are offered', function () {
+  assert.ok(Object.keys(P.PAM_TYPES).length >= 4);
+  assert.equal(P.PAM_TYPES['Cas12a / Cpf1 (TTTV)'].side, 5);
+});
+
+console.log('pegRNA');
+check('the 3′ extension is the RT template then the primer binding site', function () {
+  var g = P.findGuides(GSEQ, 'linear', 'SpCas9 (NGG)').filter(function (x) { return x.spacer === SPACER; })[0];
+  var peg = P.designPegRNA(GSEQ, 'linear', g, { at: 22, del: 0, ins: 'GGG' }, { pbs: 13, rtt: 13 });
+  // PBS pairs with the 13 bases just before the nick at 22
+  assert.equal(peg.pbs, P.revcomp(GSEQ.slice(9, 22)));
+
+  // the template carries the inserted GGG followed by what comes after the nick
+  assert.equal(peg.rtt, P.revcomp(('GGG' + GSEQ.slice(22)).slice(0, 13)));
+
+  assert.equal(peg.extension, peg.rtt + peg.pbs);
+  assert.equal(peg.spacer, SPACER);
+});
+check('an edit upstream of the nick is refused rather than designed wrongly', function () {
+  var g = P.findGuides(GSEQ, 'linear', 'SpCas9 (NGG)').filter(function (x) { return x.spacer === SPACER; })[0];
+  var peg = P.designPegRNA(GSEQ, 'linear', g, { at: 8, del: 0, ins: 'A' }, {});
+  assert.ok(peg.error, 'refused with a reason');
+});
+
+console.log('Annotation');
+var FLAG = 'GACTACAAAGACGATGACGACAAG', LOXP = 'ATAACTTCGTATAATGTATGCTATACGAAGTTAT';
+check('library sequences are found on both strands', function () {
+  var seq = 'AAAA' + FLAG + 'TTTT' + P.revcomp(LOXP) + 'CCCC';
+  var hits = P.annotate({ seq: seq, topology: 'linear', features: [] }, P.BUILTIN_FEATURES);
+  var flag = hits.filter(function (h) { return h.name === 'FLAG tag'; })[0];
+  assert.deepEqual([flag.start, flag.end, flag.strand, flag.how], [4, 28, 1, 'sequence']);
+  var lox = hits.filter(function (h) { return h.name === 'loxP'; })[0];
+  assert.equal(lox.strand, -1);
+});
+check('a tag with different codons is still found, through its protein', function () {
+  // the same peptide DYKDDDDK, written with other codons
+  var alt = 'GATTATAAGGATGACGATGATAAA';
+  assert.equal(P.translate(alt), 'DYKDDDDK');
+  assert.notEqual(alt, FLAG);
+  var seq = 'AA' + alt + 'TTTTTT';
+  var hits = P.annotate({ seq: seq, topology: 'linear', features: [] }, P.BUILTIN_FEATURES);
+  var flag = hits.filter(function (h) { return h.name === 'FLAG tag'; })[0];
+  assert.ok(flag, 'found by protein');
+  assert.equal(flag.how, 'protein');
+  assert.deepEqual([flag.start, flag.end], [2, 26]);
+});
+check('what is already annotated is not offered again', function () {
+  var seq = 'AAAA' + FLAG + 'TTTT';
+  var p = { seq: seq, topology: 'linear', features: [P.normFeature({ name: 'FLAG tag', type: 'tag', start: 4, end: 28, strand: 1 }, seq.length)] };
+  var hits = P.annotate(p, P.BUILTIN_FEATURES);
+  assert.equal(hits.filter(function (h) { return h.start === 4 && h.end === 28 && h.strand === 1; }).length, 0);
+});
+check('the lab library is built from the other plasmids', function () {
+  var other = { id: 'p1', name: 'pDonor', seq: 'GGGG' + FLAG + 'AAAA',
+    features: [{ name: 'my cassette', type: 'CDS', start: 4, end: 28, strand: 1 }] };
+  var lib = P.labLibrary([other, { id: 'skip', seq: 'ACGT', features: [] }], 'skip');
+  assert.equal(lib.length, 1);
+  assert.equal(lib[0].name, 'my cassette');
+  assert.equal(lib[0].dna, FLAG);
+  assert.equal(lib[0].from, 'pDonor');
+  // and a new plasmid carrying it is annotated from that library
+  var hits = P.annotate({ seq: 'TT' + FLAG + 'TT', topology: 'linear', features: [] }, lib);
+  assert.equal(hits[0].name, 'my cassette');
+  assert.deepEqual([hits[0].start, hits[0].end], [2, 26]);
+  // a plasmid does not teach itself
+  assert.equal(P.labLibrary([other], 'p1').length, 0);
+});
+check('very short entries are ignored, so the map is not swamped', function () {
+  var hits = P.annotate({ seq: 'AATAAA'.repeat(3), topology: 'linear', features: [] },
+    [{ name: 'tiny', type: 'misc_feature', dna: 'AAT' }], { minLen: 8 });
+  assert.equal(hits.length, 0);
+});
+
 console.log('CSV');
 check('features export with headers and sequences', function () {
   var csv = P.featuresCsv(gb);

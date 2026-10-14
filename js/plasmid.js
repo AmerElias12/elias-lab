@@ -492,6 +492,265 @@
     return { seq: seq, features: features, dropped: dropped, changed: changed };
   }
 
+  // ---------- translation and reading frames ----------
+  /* The amino acids of a stretch, as a string the same length as the bases, so
+     it lines up under them: each letter sits under the middle base of its
+     codon. `frame` is 0, 1 or 2 counted from the start of the plasmid; a
+     negative strand reads the other way. */
+  function frameString(seq, frame, from, to, strand) {
+    var len = seq.length, out = new Array(to - from).fill(' ');
+    if (!len) return out.join('');
+    for (var i = 0; i < to - from; i++) {
+      var pos = from + i;
+      // The base that carries the letter is the middle one of its codon.
+      var off = strand === -1 ? (len - 1 - pos - frame) : (pos - frame);
+      if (off < 1 || ((off - 1) % 3) !== 0) continue;
+      var codon = strand === -1
+        ? revcomp(seq.substr(pos - 1, 3))
+        : seq.substr(pos - 1, 3);
+      if (codon.length < 3) continue;
+      out[i] = CODONS[codon] || 'X';
+    }
+    return out.join('');
+  }
+  /* Open reading frames: ATG through to a stop, in all three frames of each
+     strand. On a circular plasmid a frame may run past the origin. */
+  function orfs(seq, topology, minAa) {
+    seq = clean(seq);
+    var len = seq.length, min = minAa || 50, found = [];
+    if (len < 6) return found;
+    var circular = topology === 'circular';
+    var hay = circular ? seq + seq : seq;
+    [1, -1].forEach(function (strand) {
+      var work = strand === 1 ? hay : revcomp(hay);
+      for (var i = 0; i + 2 < work.length; i++) {
+        if (work.substr(i, 3) !== 'ATG') continue;
+        if (!circular && i >= len) break;
+        if (circular && i >= len) break;
+        var aa = '', j = i;
+        for (; j + 2 < work.length; j += 3) {
+          var c = CODONS[work.substr(j, 3)] || 'X';
+          if (c === '*') break;
+          aa += c;
+          if (!circular && j + 3 > len) break;
+          if (circular && j - i > len) break;        // gone right round
+        }
+        if (aa.length < min || j + 2 >= work.length) continue;
+        var endExcl = j + 3;                          // take in the stop codon
+        // Put it back on the forward strand's numbering.
+        var a = strand === 1 ? i : work.length - endExcl;
+        var b = strand === 1 ? endExcl : work.length - i;
+        if (a >= len) continue;
+        found.push({ start: a % len, end: b > len ? b % len || len : b, strand: strand, aa: aa, len: aa.length });
+        i = j + 2;                                    // the next ATG comes after this one
+      }
+    });
+    return found.sort(function (x, y) { return y.len - x.len; });
+  }
+
+  // ---------- CRISPR guides ----------
+  /* The PAMs in common use. `side` says whether the PAM sits 3' of the
+     protospacer (Cas9) or 5' of it (Cas12a); `cut` is where the blunt cut
+     falls, counted back from the PAM-proximal end of the protospacer. */
+  var PAM_TYPES = {
+    'SpCas9 (NGG)': { pam: 'NGG', spacer: 20, side: 3, cut: 3 },
+    'SpCas9-NG (NG)': { pam: 'NG', spacer: 20, side: 3, cut: 3 },
+    'SaCas9 (NNGRRT)': { pam: 'NNGRRT', spacer: 21, side: 3, cut: 3 },
+    'Cas12a / Cpf1 (TTTV)': { pam: 'TTTV', spacer: 23, side: 5, cut: -18 }
+  };
+  /* Every guide for a PAM, optionally only within `region` ({start,end}).
+     `offTargets` counts how often the same protospacer occurs elsewhere in
+     this plasmid — it says nothing about the genome. */
+  function findGuides(seq, topology, pamKey, region) {
+    seq = clean(seq);
+    var len = seq.length, spec = PAM_TYPES[pamKey] || PAM_TYPES['SpCas9 (NGG)'];
+    if (!len) return [];
+    var circular = topology === 'circular';
+    var pad = spec.spacer + spec.pam.length + 2;
+    var hay = circular && len > pad ? seq + seq.slice(0, pad) : seq;
+    var out = [];
+    [1, -1].forEach(function (strand) {
+      var work = strand === 1 ? hay : revcomp(hay);
+      var re = siteRegex(spec.pam), m;
+      re.lastIndex = 0;
+      while ((m = re.exec(work))) {
+        var at = m.index;
+        re.lastIndex = at + 1;
+        var sp = spec.side === 3 ? at - spec.spacer : at + spec.pam.length;
+        if (sp < 0 || sp + spec.spacer > work.length) continue;
+        var spacer = work.substr(sp, spec.spacer);
+        if (/[^ACGT]/.test(spacer)) continue;                 // skip anything ambiguous
+        // Back onto the forward strand's numbering.
+        var a = strand === 1 ? sp : work.length - sp - spec.spacer;
+        if (a >= len) continue;
+        var cutAt = spec.side === 3
+          ? (strand === 1 ? sp + spec.spacer - spec.cut : work.length - (sp + spec.spacer - spec.cut))
+          : (strand === 1 ? sp + spec.spacer + spec.cut : work.length - (sp + spec.spacer + spec.cut));
+        if (region && (a < region.start || a + spec.spacer > region.end)) continue;
+        out.push({ spacer: spacer, pam: strand === 1 ? work.substr(at, spec.pam.length) : work.substr(at, spec.pam.length),
+          start: a % len, end: (a + spec.spacer) % len || len, strand: strand,
+          cutAt: ((cutAt % len) + len) % len, gc: gc(spacer), pamType: pamKey });
+      }
+    });
+    // How often the same 20-mer turns up again in this plasmid.
+    out.forEach(function (gde) {
+      var both = seq + (circular ? seq.slice(0, 30) : '');
+      var n = 0, from = 0, at, rc = revcomp(gde.spacer);
+      while ((at = both.indexOf(gde.spacer, from)) >= 0) { n++; from = at + 1; }
+      // A protospacer that reads the same backwards would otherwise be counted
+      // twice at the same place.
+      if (rc !== gde.spacer) {
+        from = 0;
+        while ((at = both.indexOf(rc, from)) >= 0) { n++; from = at + 1; }
+      }
+      gde.offTargets = Math.max(0, n - 1);
+    });
+    return out.sort(function (x, y) { return x.start - y.start; });
+  }
+
+  /* A prime-editing guide for one edit at `at` (0-based): `del` bases out,
+     `ins` in. The 3' extension is written 5'->3' as the reverse transcriptase
+     template followed by the primer binding site, which is how a pegRNA is
+     ordered. The guide must nick on the strand carrying the edit. */
+  function designPegRNA(seq, topology, guide, edit, opts) {
+    opts = opts || {};
+    var pbsLen = opts.pbs || 13, rttLen = opts.rtt || 13;
+    seq = clean(seq);
+    var len = seq.length;
+    if (!guide || !len) return null;
+    var nick = guide.cutAt;                       // the nick on the protospacer strand
+    var fwd = guide.strand === 1;
+    // Read the plasmid along the strand the guide sits on, so the nick and the
+    // edit can be handled the same way whichever strand was chosen.
+    var strandSeq = fwd ? seq : revcomp(seq);
+    var nickOn = fwd ? nick : len - nick;
+    var editAt = fwd ? edit.at : len - edit.at - (edit.del || 0);
+    var insOn = fwd ? clean(edit.ins || '') : revcomp(clean(edit.ins || ''));
+    var del = edit.del || 0;
+    if (editAt < nickOn) return { error: 'The edit must sit downstream of the nick for this guide.' };
+    // What the strand should read from the nick once edited.
+    var after = strandSeq.slice(nickOn, editAt) + insOn + strandSeq.slice(editAt + del);
+    var rtt = after.slice(0, rttLen);
+    var pbs = strandSeq.slice(Math.max(0, nickOn - pbsLen), nickOn);
+    return {
+      spacer: guide.spacer,
+      pbs: revcomp(pbs), rtt: revcomp(rtt),
+      extension: revcomp(rtt) + revcomp(pbs),     // written 5'->3', as ordered
+      pbsTm: tm(pbs), nick: nick, strand: guide.strand,
+      note: 'Order as: spacer + scaffold + extension. PBS ' + pbsLen + ' nt, RTT ' + rttLen + ' nt.'
+    };
+  }
+
+  // ---------- annotation ----------
+  /* A small set of short, standard elements whose sequences are settled and
+     short enough to be exact. Entries carrying `aa` are also looked for in
+     protein, so a tag with different codon usage is still found. This is not
+     a stand-in for a full feature database: the rest comes from the lab's own
+     plasmids (see labLibrary) or from a library file. */
+  var BUILTIN_FEATURES = [
+    { name: 'M13 fwd', type: 'primer_bind', dna: 'GTAAAACGACGGCCAGT' },
+    { name: 'M13 rev', type: 'primer_bind', dna: 'CAGGAAACAGCTATGAC' },
+    { name: 'T7 promoter', type: 'promoter', dna: 'TAATACGACTCACTATAG' },
+    { name: 'T3 promoter', type: 'promoter', dna: 'AATTAACCCTCACTAAAG' },
+    { name: 'SP6 promoter', type: 'promoter', dna: 'ATTTAGGTGACACTATAG' },
+    { name: 'lac operator', type: 'protein_bind', dna: 'GGAATTGTGAGCGGATAACAATT' },
+    { name: 'CAP binding site', type: 'protein_bind', dna: 'GCCGGCGCCACAATTCCACAC' },
+    { name: 'loxP', type: 'protein_bind', dna: 'ATAACTTCGTATAATGTATGCTATACGAAGTTAT' },
+    { name: 'FRT', type: 'protein_bind', dna: 'GAAGTTCCTATTCTCTAGAAAGTATAGGAACTTC' },
+    { name: 'polyA signal', type: 'polyA_signal', dna: 'AATAAA' },
+    { name: 'Kozak', type: 'regulatory', dna: 'GCCACCATGG' },
+    { name: 'FLAG tag', type: 'tag', dna: 'GACTACAAAGACGATGACGACAAG', aa: 'DYKDDDDK' },
+    { name: 'HA tag', type: 'tag', dna: 'TACCCATACGATGTTCCAGATTACGCT', aa: 'YPYDVPDYA' },
+    { name: 'Myc tag', type: 'tag', dna: 'GAACAAAAACTCATCTCAGAAGAGGATCTG', aa: 'EQKLISEEDL' },
+    { name: 'V5 tag', type: 'tag', dna: 'GGTAAGCCTATCCCTAACCCTCTCCTCGGTCTCGATTCTACG', aa: 'GKPIPNPLLGLDST' },
+    { name: '6xHis tag', type: 'tag', dna: 'CACCACCACCACCACCAC', aa: 'HHHHHH' },
+    { name: 'Strep-tag II', type: 'tag', dna: 'TGGAGCCACCCGCAGTTCGAAAAA', aa: 'WSHPQFEK' },
+    { name: 'P2A', type: 'CDS', dna: 'GGAAGCGGAGCTACTAACTTCAGCCTGCTGAAGCAGGCTGGAGACGTGGAGGAGAACCCTGGACCT', aa: 'GSGATNFSLLKQAGDVEENPGP' },
+    { name: 'T2A', type: 'CDS', dna: 'GAGGGCAGAGGAAGTCTGCTAACATGCGGTGACGTCGAGGAGAATCCTGGCCCA', aa: 'EGRGSLLTCGDVEENPGP' },
+    { name: 'TEV site', type: 'misc_feature', dna: 'GAAAACCTGTATTTTCAGGGC', aa: 'ENLYFQG' }
+  ];
+  /* Every feature the lab already has, taken from the other plasmids in the
+     inventory with the bases they cover. This is what makes annotation useful:
+     a construct imported from SnapGene teaches the notebook its features. */
+  function labLibrary(plasmids, skipId) {
+    var seen = {}, out = [];
+    (plasmids || []).forEach(function (it) {
+      if (!it || it.id === skipId) return;
+      var seq = clean(it.seq || '');
+      if (!seq) return;
+      var p = { seq: seq, features: it.features || [] };
+      p.features.forEach(function (f) {
+        var nf = normFeature(f, seq.length);
+        if (!nf || featureLen(nf, seq.length) < 8) return;
+        var dna = featureSeq(p, nf);
+        var key = nf.name.toLowerCase() + '|' + dna;
+        if (seen[key] || dna.length > 20000) return;
+        seen[key] = true;
+        out.push({ name: nf.name, type: nf.type, dna: dna, color: nf.color, from: it.name || 'another plasmid' });
+      });
+    });
+    return out;
+  }
+
+  /* Look for every library entry in the plasmid, on both strands, and in
+     protein for entries that carry one. Anything already annotated at the same
+     place is left out, so running it twice adds nothing. */
+  function annotate(p, library, opts) {
+    opts = opts || {};
+    var seq = clean(p.seq || ''), len = seq.length;
+    if (!len) return [];
+    var circular = p.topology === 'circular';
+    var hay = circular ? seq + seq.slice(0, Math.min(len, 20000)) : seq;
+    var existing = {};
+    (p.features || []).forEach(function (f) { existing[f.start + ':' + f.end + ':' + f.strand] = true; });
+    var found = [], seen = {};
+
+    function add(name, type, start, endExcl, strand, color, how) {
+      if (endExcl - start < 1) return;
+      var f = normFeature({ name: name, type: type, start: start % len,
+        end: endExcl > len ? (endExcl % len || len) : endExcl, strand: strand, color: color }, len);
+      if (!f) return;
+      var key = f.start + ':' + f.end + ':' + f.strand;
+      if (existing[key] || seen[key]) return;
+      seen[key] = true;
+      f.how = how;
+      found.push(f);
+    }
+
+    (library || []).forEach(function (entry) {
+      var dna = clean(entry.dna || '');
+      if (dna.length >= (opts.minLen || 8) && dna.length <= len) {
+        [[dna, 1], [revcomp(dna), -1]].forEach(function (pair, i) {
+          if (i && pair[0] === dna) return;                  // palindrome: found already
+          var from = 0, at;
+          while ((at = hay.indexOf(pair[0], from)) >= 0) {
+            from = at + 1;
+            if (at >= len) break;
+            add(entry.name, entry.type || 'misc_feature', at, at + dna.length, pair[1], entry.color, 'sequence');
+          }
+        });
+      }
+      // Protein match, so a tag with different codons is still picked up.
+      if (entry.aa && entry.aa.length >= 5) {
+        for (var frame = 0; frame < 3; frame++) {
+          [1, -1].forEach(function (strand) {
+            var work = strand === 1 ? hay : revcomp(hay);
+            var prot = translate(work.slice(frame));
+            var from = 0, at;
+            while ((at = prot.indexOf(entry.aa, from)) >= 0) {
+              from = at + 1;
+              var s0 = frame + at * 3, e0 = s0 + entry.aa.length * 3;
+              var a = strand === 1 ? s0 : work.length - e0;
+              if (a >= len || a < 0) continue;
+              add(entry.name, entry.type || 'tag', a, a + entry.aa.length * 3, strand, entry.color, 'protein');
+            }
+          });
+        }
+      }
+    });
+    return found.sort(function (a, b) { return a.start - b.start || featureLen(b, len) - featureLen(a, len); });
+  }
+
   // ---------- restriction enzymes ----------
   /* The enzymes a cloning lab reaches for. For each: the recognition site in
      IUPAC letters, and where the cut falls counted from the start of the site
@@ -784,6 +1043,8 @@
     parseFile: parseFile, parseLocation: parseLocation,
     toGenBank: toGenBank, toFasta: toFasta, featuresCsv: featuresCsv, csvCell: csvCell,
     diffEdit: diffEdit, applyEdit: applyEdit,
+    frameString: frameString, orfs: orfs, PAM_TYPES: PAM_TYPES, findGuides: findGuides, designPegRNA: designPegRNA,
+    BUILTIN_FEATURES: BUILTIN_FEATURES, labLibrary: labLibrary, annotate: annotate,
     ENZYMES: ENZYMES, findSites: findSites, siteCounts: siteCounts, filterSites: filterSites, nonCutters: nonCutters, siteRegex: siteRegex,
     linearMapSvg: linearMapSvg, circularMapSvg: circularMapSvg,
     xmlElements: xmlElements, unescapeXml: unescapeXml
