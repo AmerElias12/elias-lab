@@ -130,6 +130,7 @@ BEGIN
     'plasmid', 'entry_plasmid', 'plasmid_lineage', 'sequence_feature',
     'feature_type', 'feature_library_entry', 'plasmid_sample', 'storage_box',
     'primer', 'primer_binding', 'primer_pair',
+    'assembly', 'assembly_fragment',
     'guide_rna', 'pegrna_detail', 'guide_off_target',
     'attachment', 'audit_event'
   ] LOOP
@@ -150,7 +151,7 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'project', 'notebook_entry', 'plasmid', 'storage_box',
-    'primer', 'primer_pair', 'guide_rna'
+    'primer', 'primer_pair', 'guide_rna', 'assembly'
   ] LOOP
     EXECUTE format($f$
       CREATE POLICY %1$I_select ON %1$I FOR SELECT
@@ -274,6 +275,17 @@ CREATE POLICY plasmid_lineage_all ON plasmid_lineage FOR ALL
           AND EXISTS (SELECT 1 FROM plasmid pa
                        WHERE pa.id = plasmid_lineage.parent_id
                          AND pa.lab_id = (SELECT current_lab())));
+
+-- A fragment is reachable exactly when its assembly is, which is the same
+-- rule as sequence_feature and for the same reason: one place decides.
+CREATE POLICY assembly_fragment_all ON assembly_fragment FOR ALL
+  USING (EXISTS (SELECT 1 FROM assembly a
+                  WHERE a.id = assembly_fragment.assembly_id
+                    AND a.lab_id = (SELECT current_lab())))
+  WITH CHECK ((SELECT can_write()) AND EXISTS (
+            SELECT 1 FROM assembly a
+             WHERE a.id = assembly_fragment.assembly_id
+               AND a.lab_id = (SELECT current_lab())));
 
 CREATE POLICY primer_binding_all ON primer_binding FOR ALL
   USING (EXISTS (SELECT 1 FROM primer pr
@@ -399,6 +411,7 @@ CREATE INDEX IF NOT EXISTS plasmid_lab_idx         ON plasmid (lab_id);
 CREATE INDEX IF NOT EXISTS notebook_entry_lab_idx  ON notebook_entry (lab_id);
 CREATE INDEX IF NOT EXISTS guide_rna_lab_idx       ON guide_rna (lab_id);
 CREATE INDEX IF NOT EXISTS primer_lab_idx          ON primer (lab_id);
+CREATE INDEX IF NOT EXISTS assembly_lab_id_idx      ON assembly (lab_id);
 CREATE INDEX IF NOT EXISTS lab_member_lab_user_idx ON lab_member (lab_id, user_id);
 
 -- =============================================================================

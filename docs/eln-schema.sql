@@ -460,11 +460,87 @@ CREATE TABLE primer_pair (
   template_plasmid_id uuid REFERENCES plasmid(id) ON DELETE SET NULL,
   expected_bp        integer,
   annealing_temp_c   numeric(5,2),
+  -- The product, as the design says it should come out. Stored rather than
+  -- recomputed on demand: the template can be edited afterwards, and what was
+  -- amplified then is not what the same primers would give now. A gel that
+  -- disagrees with this row is the interesting case, and it only exists if
+  -- the row does.
+  product_start      integer,
+  product_end        integer,
+  product_sequence   dna_sequence,
+  -- Set when the amplicon was kept as a construct in its own right.
+  product_plasmid_id uuid REFERENCES plasmid(id) ON DELETE SET NULL,
+  designed_in_entry_id uuid REFERENCES notebook_entry(id) ON DELETE SET NULL,
+  notes              text,
   created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  deleted_at         timestamptz,
   CONSTRAINT primer_pair_distinct CHECK (forward_primer_id <> reverse_primer_id),
   CONSTRAINT primer_pair_product_positive CHECK (expected_bp IS NULL OR expected_bp > 0)
 );
 CREATE UNIQUE INDEX primer_pair_name_key ON primer_pair (lab_id, lower(name));
+
+-- A planned assembly: Gibson, Golden Gate, restriction ligation.
+--
+-- plasmid_lineage already records that a construct came from its parents, and
+-- that is the provenance. This is the design — the ordered pieces, the
+-- overlaps and the primers worked out to make them — which is what somebody
+-- needs when the assembly gives no colonies and the question is why. A lineage
+-- row says what happened; this says what was supposed to.
+CREATE TABLE assembly (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lab_id             uuid NOT NULL REFERENCES lab(id) ON DELETE RESTRICT,
+  owner_id           uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  is_shared          boolean NOT NULL DEFAULT true,
+  name               text NOT NULL,
+  method             construction_kind NOT NULL DEFAULT 'gibson',
+  -- The design parameter, kept because it is the first thing to change when
+  -- an assembly fails.
+  overlap_bp         integer,
+  product_plasmid_id uuid REFERENCES plasmid(id) ON DELETE SET NULL,
+  product_bp         integer,
+  product_sequence   dna_sequence,
+  designed_in_entry_id uuid REFERENCES notebook_entry(id) ON DELETE SET NULL,
+  notes              text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  deleted_at         timestamptz,
+  CONSTRAINT assembly_name_present CHECK (length(btrim(name)) > 0),
+  -- Below about fifteen bases an overlap does not anneal; above sixty the
+  -- primers cost more than the experiment.
+  CONSTRAINT assembly_overlap_sane
+    CHECK (overlap_bp IS NULL OR overlap_bp BETWEEN 10 AND 120)
+);
+CREATE UNIQUE INDEX assembly_name_key ON assembly (lab_id, lower(name)) WHERE deleted_at IS NULL;
+CREATE INDEX assembly_lab_idx ON assembly (lab_id);
+CREATE INDEX assembly_product_idx ON assembly (product_plasmid_id);
+
+-- One piece going into an assembly. Ordered, because in a Gibson the order is
+-- the design: each fragment's forward primer carries the previous fragment's
+-- end as its 5' tail, so fragment 3 is only correct after fragment 2.
+CREATE TABLE assembly_fragment (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assembly_id       uuid NOT NULL REFERENCES assembly(id) ON DELETE CASCADE,
+  ordinal           smallint NOT NULL,
+  name              text NOT NULL,
+  source_plasmid_id uuid REFERENCES plasmid(id) ON DELETE SET NULL,
+  -- The stretch taken from the source, in the usual half-open convention.
+  start_pos         integer,
+  end_pos           integer,
+  length_bp         integer,
+  forward_primer_id uuid REFERENCES primer(id) ON DELETE SET NULL,
+  reverse_primer_id uuid REFERENCES primer(id) ON DELETE SET NULL,
+  -- The junction with the previous fragment: the first thing to read when an
+  -- assembly produces the wrong construct.
+  overlap_sequence  dna_sequence,
+  note              text,
+  CONSTRAINT assembly_fragment_ordinal_positive CHECK (ordinal >= 1),
+  CONSTRAINT assembly_fragment_length_positive
+    CHECK (length_bp IS NULL OR length_bp > 0)
+);
+CREATE UNIQUE INDEX assembly_fragment_order_key
+  ON assembly_fragment (assembly_id, ordinal);
+CREATE INDEX assembly_fragment_assembly_idx ON assembly_fragment (assembly_id);
 
 -- -----------------------------------------------------------------------------
 -- 6 · CRISPR guides

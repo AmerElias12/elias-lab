@@ -650,7 +650,10 @@ function showPlasmid(payload) {
 
   // Overlays belong to the plasmid that was open, not to this one.
   overlays = [];
+  marked.clear();
+  $('#pcr-bar').hidden = true;
   showAttachedPrimers();
+  loadDesigns();
   if (libTab === 'primers') loadPrimers().catch(() => {});
   if (libTab === 'guides') loadGuides().catch(() => {});
 }
@@ -796,6 +799,103 @@ function libRow(title, subtitle, monoText, actions, badges) {
   return li;
 }
 
+/* Primers currently drawn on the map, by id. Two of them pointing at each
+   other is a PCR, which is the one derived thing worth offering here: the
+   product is computed by js/plasmid.js — including the case where it runs
+   across the origin — and only the result is ever sent. */
+const marked = new Map();
+
+function updatePcrBar() {
+  const bar = $('#pcr-bar');
+  const fwd = [...marked.values()].find((m) => m.binding.strand === 1);
+  const rev = [...marked.values()].find((m) => m.binding.strand === -1);
+  if (!currentPlasmid || !fwd || !rev) { bar.hidden = true; return; }
+
+  const product = Plasmid.pcrProduct(
+    { seq: openSequence(), topology: currentPlasmid.topology || 'circular' },
+    fwd.binding, rev.binding,
+  );
+  if (product.error) {
+    $('#pcr-bar-text').textContent = `${fwd.primer.name} + ${rev.primer.name}: ${product.error}`;
+    $('#pcr-save').hidden = true;
+    bar.hidden = false;
+    return;
+  }
+  bar.dataset.product = JSON.stringify({
+    forward_primer_id: fwd.primer.id,
+    reverse_primer_id: rev.primer.id,
+    product_start: product.start,
+    product_end: product.end,
+    product_sequence: product.seq,
+    name: `${fwd.primer.name} + ${rev.primer.name}`,
+  });
+  const extra = product.tails ? ` (${product.tails} bp of 5′ tails)` : '';
+  const wraps = product.wraps ? ', across the origin' : '';
+  $('#pcr-bar-text').textContent =
+    `${fwd.primer.name} + ${rev.primer.name} → ${product.len} bp${extra}${wraps}`;
+  $('#pcr-save').hidden = false;
+  bar.hidden = false;
+}
+
+$('#pcr-save').addEventListener('click', async () => {
+  const raw = $('#pcr-bar').dataset.product;
+  if (!raw || !currentPlasmid || !currentPlasmid.id) return;
+  const design = JSON.parse(raw);
+  const btn = $('#pcr-save');
+  btn.disabled = true;
+  try {
+    const saved = await api('/api/pcr', {
+      method: 'POST',
+      body: { ...design, template_plasmid_id: currentPlasmid.id },
+    });
+    toast(`Saved: ${saved.name}, ${saved.expected_bp} bp.`);
+    await loadDesigns();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/** PCRs and assemblies already recorded against the open plasmid. */
+async function loadDesigns() {
+  const list = $('#design-list');
+  list.textContent = '';
+  if (!currentPlasmid || !currentPlasmid.id) return;
+
+  let pcrs, assemblies;
+  try {
+    [pcrs, assemblies] = await Promise.all([
+      api(`/api/pcr?template_plasmid_id=${currentPlasmid.id}`),
+      api(`/api/assemblies?uses_plasmid_id=${currentPlasmid.id}`),
+    ]);
+  } catch {
+    return;                      // a map without its designs is still a map
+  }
+
+  if (!pcrs.items.length && !assemblies.items.length) {
+    list.append(emptyRow('Nothing designed against this plasmid yet.'));
+    return;
+  }
+  for (const p of pcrs.items) {
+    list.append(libRow(p.name, `PCR · ${p.expected_bp || '?'} bp`, null, [{
+      label: 'Show',
+      onClick: () => {
+        addOverlay({
+          name: p.name, type: 'misc_feature',
+          start: p.product_start ?? 0,
+          end: p.product_end ?? (p.product_start ?? 0) + (p.expected_bp || 0),
+          strand: 1,
+        });
+        toast(`${p.name} marked.`);
+      },
+    }], []));
+  }
+  for (const a of assemblies.items) {
+    list.append(libRow(a.name, `${a.method} · ${a.fragment_count} fragments`, null, [], []));
+  }
+}
+
 async function loadPrimers() {
   // The whole library, not a page of it: binding is computed over all of them.
   const params = new URLSearchParams({ limit: '500' });
@@ -836,6 +936,8 @@ async function loadPrimers() {
             end: b.end,
             strand: b.strand,
           });
+          marked.set(p.id, { primer: p, binding: b });
+          updatePcrBar();
           toast(`${p.name} marked at ${b.start + 1}.`);
         },
       });

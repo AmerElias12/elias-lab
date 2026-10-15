@@ -523,6 +523,111 @@ class PrimerBinding(Base, PrimaryKeyMixin):
 # ===========================================================================
 # 5 · CRISPR designs
 # ===========================================================================
+class PrimerPair(
+    Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
+    TimestampMixin, SoftDeleteMixin,
+):
+    """An amplification: two primers, a template, and the product it should give.
+
+    The product is stored rather than recomputed, because the template can be
+    edited afterwards and what was amplified then is not what the same primers
+    would give now. A gel that disagrees with this row is the interesting case,
+    and it only exists if the row does.
+    """
+
+    __tablename__ = "primer_pair"
+
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    forward_primer_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("primer.id", ondelete="RESTRICT"), nullable=False
+    )
+    reverse_primer_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("primer.id", ondelete="RESTRICT"), nullable=False
+    )
+    template_plasmid_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("plasmid.id", ondelete="SET NULL")
+    )
+    expected_bp: Mapped[int | None] = mapped_column(sa.Integer)
+    annealing_temp_c: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
+    product_start: Mapped[int | None] = mapped_column(sa.Integer)
+    product_end: Mapped[int | None] = mapped_column(sa.Integer)
+    product_sequence: Mapped[str | None] = mapped_column(DnaSequence)
+    product_plasmid_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("plasmid.id", ondelete="SET NULL")
+    )
+    designed_in_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("notebook_entry.id", ondelete="SET NULL")
+    )
+    notes: Mapped[str | None] = mapped_column(sa.Text)
+
+
+class Assembly(
+    Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
+    TimestampMixin, SoftDeleteMixin,
+):
+    """A planned assembly and the pieces going into it.
+
+    plasmid_lineage records that a construct came from its parents; that is
+    the provenance. This is the design — the ordered fragments, the overlaps,
+    the primers worked out to make them — which is what somebody needs when
+    the assembly gives no colonies and the question is why.
+    """
+
+    __tablename__ = "assembly"
+
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    method: Mapped[ConstructionKind] = mapped_column(
+        pg_enum(ConstructionKind, "construction_kind"), nullable=False, server_default="gibson"
+    )
+    overlap_bp: Mapped[int | None] = mapped_column(sa.Integer)
+    product_plasmid_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("plasmid.id", ondelete="SET NULL")
+    )
+    product_bp: Mapped[int | None] = mapped_column(sa.Integer)
+    product_sequence: Mapped[str | None] = mapped_column(DnaSequence)
+    designed_in_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("notebook_entry.id", ondelete="SET NULL")
+    )
+    notes: Mapped[str | None] = mapped_column(sa.Text)
+
+    fragments: Mapped[list["AssemblyFragment"]] = relationship(
+        back_populates="assembly", lazy="raise", cascade="all, delete-orphan"
+    )
+
+
+class AssemblyFragment(Base, PrimaryKeyMixin):
+    """One piece of an assembly.
+
+    Ordered, because in a Gibson the order *is* the design: each fragment's
+    forward primer carries the previous fragment's end as its 5' tail, so
+    fragment 3 is only correct after fragment 2.
+    """
+
+    __tablename__ = "assembly_fragment"
+
+    assembly_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("assembly.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ordinal: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source_plasmid_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("plasmid.id", ondelete="SET NULL")
+    )
+    start_pos: Mapped[int | None] = mapped_column(sa.Integer)
+    end_pos: Mapped[int | None] = mapped_column(sa.Integer)
+    length_bp: Mapped[int | None] = mapped_column(sa.Integer)
+    forward_primer_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("primer.id", ondelete="SET NULL")
+    )
+    reverse_primer_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("primer.id", ondelete="SET NULL")
+    )
+    overlap_sequence: Mapped[str | None] = mapped_column(DnaSequence)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+
+    assembly: Mapped[Assembly] = relationship(back_populates="fragments", lazy="raise")
+
+
 class GuideRNA(
     Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
     TimestampMixin, SoftDeleteMixin,

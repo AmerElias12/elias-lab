@@ -30,9 +30,9 @@ uvicorn app.main:app
 ## Checking it
 
 ```bash
-python scripts/check_migrations.py      # 11 checks: the migrations, up and down again
+python scripts/check_migrations.py      # 12 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 58 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 66 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
@@ -258,6 +258,35 @@ A primer's **sequence cannot be edited**. An ordered oligo is a tube in a
 freezer; if the sequence is wrong the answer is a new primer, not an edit that
 leaves every experiment citing this one describing something else.
 
+## Designs: PCR products and assemblies
+
+`js/plasmid.js` computes the product of an amplification and the primers for a
+Gibson. Those results are now stored, so the work survives the tab closing.
+
+- **`/api/pcr`** — `primer_pair` grew the product it was always implying:
+  `product_start`, `product_end`, `product_sequence`, and the construct it
+  became if it was kept. Mark two primers that face each other on the map and
+  the expected size appears; **Save PCR** records it.
+- **`/api/assemblies`** — `assembly` plus `assembly_fragment`: the method, the
+  overlap, and the ordered pieces with the primers worked out for each.
+
+**The arithmetic is not repeated here.** The product arrives already computed,
+including the case where an amplicon runs across the origin of a circular
+plasmid. What is stored is the design *as it was*: the template can be edited
+afterwards, and then the same primers no longer give the same product — which
+is exactly why this is a row and not a function. A gel that disagrees with the
+row is the interesting case, and it only exists if the row does.
+
+**Fragment order is the design, not a display choice.** In a Gibson each
+fragment's forward primer carries the previous fragment's end as its 5′ tail,
+so fragment 3 is only correct after fragment 2. The API refuses ordinals with
+a gap, and the uniqueness of `(assembly_id, ordinal)` is an index rather than
+a convention.
+
+`plasmid_lineage` still records that a construct came from its parents. The
+two answer different questions: lineage is what happened, an assembly is what
+was planned.
+
 ## Known gaps
 
 - **No second migration yet.** The pattern is in place and tested both ways,
@@ -277,5 +306,9 @@ leaves every experiment citing this one describing something else.
   update their own row without restricting *which* columns — the API never
   exposes `is_superuser`, so nothing can reach it today, but a column-level
   restriction would make that structural rather than incidental.
-- **No primer-pair or PCR-product routes.** `js/plasmid.js` computes products,
-  Gibson assemblies and digests; none of that is stored yet.
+- **No Gibson *designer* in this dashboard.** Designs can be stored and read
+  through `/api/assemblies`, and the old site still has the UI that works them
+  out; porting that interface is the remaining piece.
+- **Digests and restriction cloning are not stored.** `js/plasmid.js` computes
+  them; `assembly` would hold the result with `method` set to
+  `restriction_ligation`, but nothing writes it yet.

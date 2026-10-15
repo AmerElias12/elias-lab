@@ -540,6 +540,178 @@ class PrimerRead(PrimerSummary):
     created_at: datetime
 
 
+class PcrCreate(ApiModel):
+    """An amplification, with the product the design says it gives.
+
+    The product is sent rather than computed here: js/plasmid.js worked it out
+    from the template and the two bindings, including the case where the
+    amplicon runs across the origin of a circular plasmid, and recomputing it
+    in Python would be a second answer to the same question.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    forward_primer_id: uuid.UUID
+    reverse_primer_id: uuid.UUID
+    is_shared: bool = True
+    template_plasmid_id: uuid.UUID | None = None
+    expected_bp: int | None = Field(default=None, gt=0)
+    annealing_temp_c: Decimal | None = Field(default=None, ge=0, le=120)
+    product_start: int | None = Field(default=None, ge=0)
+    product_end: int | None = Field(default=None, ge=0)
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+    @field_validator("product_sequence")
+    @classmethod
+    def product_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+    @model_validator(mode="after")
+    def two_different_primers(self) -> "PcrCreate":
+        # The database has the same CHECK; this one produces a sentence.
+        if self.forward_primer_id == self.reverse_primer_id:
+            raise ValueError("a PCR needs two different primers")
+        return self
+
+
+class PcrUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    annealing_temp_c: Decimal | None = Field(default=None, ge=0, le=120)
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class PcrRead(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    is_shared: bool
+    forward_primer_id: uuid.UUID
+    reverse_primer_id: uuid.UUID
+    template_plasmid_id: uuid.UUID | None = None
+    expected_bp: int | None = None
+    annealing_temp_c: Decimal | None = None
+    product_start: int | None = None
+    product_end: int | None = None
+    product_sequence: str | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssemblyFragmentCreate(ApiModel):
+    """One piece. `ordinal` is the design, not a display order."""
+
+    ordinal: int = Field(ge=1, le=20)
+    name: str = Field(min_length=1, max_length=200)
+    source_plasmid_id: uuid.UUID | None = None
+    start_pos: int | None = Field(default=None, ge=0)
+    end_pos: int | None = Field(default=None, ge=0)
+    length_bp: int | None = Field(default=None, gt=0)
+    forward_primer_id: uuid.UUID | None = None
+    reverse_primer_id: uuid.UUID | None = None
+    overlap_sequence: str | None = None
+    note: str | None = None
+
+    @field_validator("overlap_sequence")
+    @classmethod
+    def overlap_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+
+class AssemblyFragmentRead(ReadModel):
+    """Spelled out rather than inherited from the Create model.
+
+    The two carry the same fields and must not carry the same config: a Create
+    model forbids unknown keys so a typo in a request is reported, and a Read
+    model populates from ORM attributes. Inheriting one from the other gets the
+    wrong half — which here meant the response could not be built from a row at
+    all.
+    """
+
+    id: uuid.UUID
+    assembly_id: uuid.UUID
+    ordinal: int
+    name: str
+    source_plasmid_id: uuid.UUID | None = None
+    start_pos: int | None = None
+    end_pos: int | None = None
+    length_bp: int | None = None
+    forward_primer_id: uuid.UUID | None = None
+    reverse_primer_id: uuid.UUID | None = None
+    overlap_sequence: str | None = None
+    note: str | None = None
+
+
+class AssemblyCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=200)
+    method: ConstructionKind = ConstructionKind.gibson
+    is_shared: bool = True
+    overlap_bp: int | None = Field(default=None, ge=10, le=120)
+    product_plasmid_id: uuid.UUID | None = None
+    product_bp: int | None = Field(default=None, gt=0)
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    fragments: list[AssemblyFragmentCreate] = Field(default_factory=list)
+
+    @field_validator("product_sequence")
+    @classmethod
+    def product_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+    @model_validator(mode="after")
+    def fragments_are_an_ordered_set(self) -> "AssemblyCreate":
+        if self.method is ConstructionKind.gibson and len(self.fragments) < 2:
+            raise ValueError("a Gibson assembly needs a vector and at least one insert")
+        ordinals = [f.ordinal for f in self.fragments]
+        if len(set(ordinals)) != len(ordinals):
+            raise ValueError("two fragments cannot share an ordinal")
+        if ordinals and sorted(ordinals) != list(range(1, len(ordinals) + 1)):
+            # A gap means a fragment was dropped on the way, and in a Gibson
+            # the next fragment's primer carries the previous one's end — so a
+            # gap is not a cosmetic problem, it is a design that will not
+            # assemble.
+            raise ValueError("fragment ordinals must run 1..n with no gaps")
+        return self
+
+
+class AssemblyUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class AssemblySummary(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    is_shared: bool
+    method: ConstructionKind
+    overlap_bp: int | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    product_bp: int | None = None
+    fragment_count: int = 0
+    updated_at: datetime
+
+
+class AssemblyRead(AssemblySummary):
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+    fragments: list[AssemblyFragmentRead] = Field(default_factory=list)
+
+
 class PrimerBindingCreate(ApiModel):
     """Where a primer anneals on a plasmid, as the designer found it.
 

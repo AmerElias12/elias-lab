@@ -667,6 +667,140 @@ async def exercise() -> int:
                   _cannot_attach_across_labs())
 
         # ---------------------------------------------------------------
+        # the designs the molecular tool works out
+        # ---------------------------------------------------------------
+        pcr: dict = {}
+
+        async def _store_a_pcr_product():
+            fwd = (await c.get("/api/primers?sequence=ATGAGCAAAGGCGAAGAACTG",
+                               headers=auth(pi_token))).json()["items"][0]
+            rev = (await c.get("/api/primers?q=pTEST-R", headers=auth(pi_token))).json()["items"][0]
+            r = await c.post(
+                "/api/pcr",
+                headers=auth(pi_token),
+                json={
+                    "name": "colony PCR across the insert",
+                    "forward_primer_id": fwd["id"],
+                    "reverse_primer_id": rev["id"],
+                    "template_plasmid_id": plasmid["id"],
+                    "product_start": 0, "product_end": 222,
+                    "product_sequence": "ATGC" * 55 + "AT",
+                    "annealing_temp_c": 58.0,
+                },
+            )
+            assert r.status_code == 201, r.text
+            pcr.update(r.json())
+            assert pcr["expected_bp"] == 222, (
+                "the length should follow from the product rather than be asked for twice"
+            )
+            assert pcr["product_sequence"].startswith("ATGC")
+        await run("a PCR product is stored with its template and primers",
+                  _store_a_pcr_product())
+
+        async def _pcr_is_found_from_the_template():
+            """What the map asks: with this plasmid open, what has been
+            amplified off it."""
+            hits = (await c.get(f"/api/pcr?template_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert hits["total"] == 1, hits
+            assert hits["items"][0]["id"] == pcr["id"]
+        await run("and found again from the plasmid it was run on",
+                  _pcr_is_found_from_the_template())
+
+        async def _one_primer_is_not_a_pcr():
+            fwd = pcr["forward_primer_id"]
+            r = await c.post("/api/pcr", headers=auth(pi_token),
+                             json={"name": "nonsense", "forward_primer_id": fwd,
+                                   "reverse_primer_id": fwd})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "two different primers" in r.text, r.text
+        await run("the same primer twice is refused, with the reason",
+                  _one_primer_is_not_a_pcr())
+
+        assembly: dict = {}
+
+        async def _store_a_gibson_design():
+            """Three fragments, in order, each with the overlap that joins it
+            to the one before. The order is the design, not a display choice."""
+            r = await c.post(
+                "/api/assemblies",
+                headers=auth(pi_token),
+                json={
+                    "name": "pTEST-GFP v2 by Gibson",
+                    "method": "gibson",
+                    "overlap_bp": 25,
+                    "product_bp": 5200,
+                    "fragments": [
+                        {"ordinal": 1, "name": "backbone", "source_plasmid_id": plasmid["id"],
+                         "start_pos": 0, "end_pos": 240, "length_bp": 240,
+                         "overlap_sequence": "ACGTACGTACGTACGTACGTACGTA"},
+                        {"ordinal": 2, "name": "GFP insert", "length_bp": 720,
+                         "overlap_sequence": "TTGCAACGTTGCAACGTTGCAACGT"},
+                        {"ordinal": 3, "name": "terminator", "length_bp": 300,
+                         "overlap_sequence": "GGCCGGCCGGCCGGCCGGCCGGCCG"},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            assembly.update(r.json())
+            assert assembly["fragment_count"] == 3, assembly
+            assert [f["ordinal"] for f in assembly["fragments"]] == [1, 2, 3]
+            assert assembly["fragments"][0]["name"] == "backbone"
+        await run("a Gibson design is stored with its fragments in order",
+                  _store_a_gibson_design())
+
+        async def _fragments_come_back_in_order():
+            """AssemblyRead names `fragments`, which is lazy="raise" — the trap
+            the plasmid and guide routes both fell into."""
+            r = await c.get(f"/api/assemblies/{assembly['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert [f["ordinal"] for f in got["fragments"]] == [1, 2, 3], got["fragments"]
+            assert got["fragments"][1]["overlap_sequence"] == "TTGCAACGTTGCAACGTTGCAACGT"
+            assert got["overlap_bp"] == 25
+        await run("and read back in order, without a lazy-load", _fragments_come_back_in_order())
+
+        async def _a_gap_in_the_order_is_refused():
+            """In a Gibson each fragment's forward primer carries the previous
+            one's end, so a missing ordinal is not cosmetic — it is a design
+            that cannot assemble."""
+            r = await c.post("/api/assemblies", headers=auth(pi_token),
+                             json={"name": "broken", "fragments": [
+                                 {"ordinal": 1, "name": "a"},
+                                 {"ordinal": 3, "name": "c"}]})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "no gaps" in r.text, r.text
+            lonely = await c.post("/api/assemblies", headers=auth(pi_token),
+                                  json={"name": "one piece", "fragments": [
+                                      {"ordinal": 1, "name": "a"}]})
+            assert lonely.status_code == 422, lonely.text
+            assert "vector and at least one insert" in lonely.text, lonely.text
+        await run("a design with a gap, or with nothing to join, is refused",
+                  _a_gap_in_the_order_is_refused())
+
+        async def _assemblies_are_found_from_either_end():
+            used = (await c.get(f"/api/assemblies?uses_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert used["total"] == 1, used
+            assert used["items"][0]["fragment_count"] == 3, used["items"][0]
+            made = (await c.get(f"/api/assemblies?product_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert made["total"] == 0, "this plasmid was a source, not the product"
+        await run("assemblies are findable by what they used and by what they made",
+                  _assemblies_are_found_from_either_end())
+
+        async def _a_design_cannot_point_outside_the_lab():
+            import uuid as _uuid
+            r = await c.post("/api/assemblies", headers=auth(pi_token),
+                             json={"name": "smuggled", "fragments": [
+                                 {"ordinal": 1, "name": "a",
+                                  "source_plasmid_id": str(_uuid.uuid4())},
+                                 {"ordinal": 2, "name": "b"}]})
+            assert r.status_code == 404, f"{r.status_code} {r.text}"
+        await run("a fragment cannot name a plasmid you cannot see",
+                  _a_design_cannot_point_outside_the_lab())
+
+        # ---------------------------------------------------------------
         # guides
         # ---------------------------------------------------------------
         guide: dict = {}

@@ -72,7 +72,7 @@ def main() -> int:
 
         def _stamped():
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0003_refresh_tokens",)], rows
+            assert rows == [("0004_constructions",)], rows
         check("the database records which revision it is at", _stamped)
 
         def _feature_vocabulary():
@@ -111,6 +111,32 @@ def main() -> int:
         check("sessions are rows that can be revoked, behind forced RLS",
               _sessions_are_revocable_rows)
 
+        def _designs_are_storable():
+            cols = {r[0] for r in q(
+                "SELECT column_name FROM information_schema.columns "
+                " WHERE table_name = 'primer_pair'"
+            )}
+            assert {"product_sequence", "product_start", "deleted_at"} <= cols, sorted(cols)
+            frag = {r[0] for r in q(
+                "SELECT column_name FROM information_schema.columns "
+                " WHERE table_name = 'assembly_fragment'"
+            )}
+            assert {"ordinal", "overlap_sequence", "forward_primer_id"} <= frag, sorted(frag)
+            # The ordering constraint is the design, so it is a unique index
+            # rather than a convention.
+            idx = {r[0] for r in q(
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'assembly_fragment'"
+            )}
+            assert "assembly_fragment_order_key" in idx, idx
+            for table in ("assembly", "assembly_fragment"):
+                forced = q(
+                    f"SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                    f" WHERE oid = '{table}'::regclass"
+                )
+                assert forced == [(True, True)], (table, forced)
+        check("PCR products and assembly designs have somewhere to go",
+              _designs_are_storable)
+
         def _second_revision_steps_down_on_its_own():
             command.downgrade(cfg, "0001_initial_schema")
             keys = {r[0] for r in q("SELECT key FROM feature_type")}
@@ -122,6 +148,7 @@ def main() -> int:
             # And 0003 came back with it: stepping down two and up two is the
             # path a rollback actually takes.
             assert q("SELECT to_regclass('refresh_token')") != [(None,)]
+            assert q("SELECT to_regclass('assembly')") != [(None,)]
         check("a single revision can be stepped down and up again", _second_revision_steps_down_on_its_own)
 
         def _tables_exist():
@@ -200,13 +227,16 @@ def main() -> int:
         def _policies_present():
             (count,) = q("SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")[0]
             assert count >= 30, f"only {count} policies; the ownership layer did not apply"
-            restrictive = q(
+            restrictive = {r[0] for r in q(
                 "SELECT tablename FROM pg_policies "
                 " WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'"
-            )
-            assert len(restrictive) == 5, (
-                f"expected the five restrictive floors, found {len(restrictive)}"
-            )
+            )}
+            # One floor per owned table. Named rather than counted, so adding a
+            # table without its floor fails here instead of shifting a number.
+            assert restrictive == {
+                "notebook_entry", "plasmid", "primer", "primer_pair",
+                "guide_rna", "assembly",
+            }, sorted(restrictive)
         check("the policies from all three files are present", _policies_present)
 
         # ---- down and up again ----------------------------------------
@@ -241,7 +271,7 @@ def main() -> int:
         def _upgrade_again():
             command.upgrade(cfg, "head")
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0003_refresh_tokens",)], rows
+            assert rows == [("0004_constructions",)], rows
             (count,) = q("SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")[0]
             assert count >= 30, f"only {count} policies after the second upgrade"
             from app.db import Base

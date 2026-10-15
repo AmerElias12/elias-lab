@@ -250,6 +250,10 @@
           </div>
           <input type="search" id="lib-search" class="lib-search" hidden
                  placeholder="Search the library…" aria-label="Search the library">
+          <div class="pending" id="pcr-bar" hidden>
+            <span id="pcr-bar-text"></span>
+            <button class="btn btn--primary" id="pcr-save">Save PCR</button>
+          </div>
           <ul class="list" id="plasmid-list"></ul>
           <ul class="list" id="primer-list" hidden></ul>
           <ul class="list" id="guide-list" hidden></ul>
@@ -280,6 +284,9 @@
                       placeholder="Click or drag on the map."></textarea>
           </label>
           <button class="btn btn--ghost btn--block" id="vector-copy">Copy bases</button>
+
+          <h2 class="section__title">Saved designs</h2>
+          <ul class="list" id="design-list"></ul>
         </aside>
       </div>
     </section>
@@ -365,6 +372,6 @@
 <script src="/js/plasmid.js?v=1"></script>
 <script src="/js/plasmid-import.js?v=1"></script>
 <script src="/js/vector-viewer.js?v=2"></script>
-<script src="/js/app.js?v=8"></script>
+<script src="/js/app.js?v=9"></script>
 </body>
 </html>
