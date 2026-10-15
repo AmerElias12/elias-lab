@@ -369,6 +369,88 @@ async def exercise() -> int:
         await run("full-text search finds it, and takes punctuation as text", _search())
 
         # ---------------------------------------------------------------
+        # plasmids, which is what the map draws
+        # ---------------------------------------------------------------
+        plasmid: dict = {}
+
+        async def _create_plasmid_with_features():
+            """The shape an import produces: a sequence plus features, one of
+            which crosses the origin."""
+            r = await c.post(
+                "/api/plasmids",
+                headers=auth(pi_token),
+                json={
+                    "name": "pTEST-GFP",
+                    "sequence": "ATGC" * 120,          # 480 bp
+                    "topology": "circular",
+                    "external_source": "GenBank file: pTEST-GFP.gb",
+                    "features": [
+                        {"name": "EGFP", "type_key": "CDS", "start_pos": 0,
+                         "end_pos": 240, "strand": 1, "color": "#2f9e44"},
+                        {"name": "source", "type_key": "source", "start_pos": 0,
+                         "end_pos": 480, "strand": 1},
+                        {"name": "wrapper", "type_key": "misc_feature", "start_pos": 459,
+                         "end_pos": 20, "strand": 1, "wraps_origin": True},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            plasmid.update(r.json())
+            assert plasmid["length_bp"] == 480, plasmid
+            assert len(plasmid["features"]) == 3, plasmid["features"]
+        await run("a plasmid is created with its features in one request",
+                  _create_plasmid_with_features())
+
+        async def _read_it_back():
+            """This is the check that was missing: every relationship is
+            lazy="raise", so building the response from the ORM object walks
+            into that guard and returns 500."""
+            r = await c.get(f"/api/plasmids/{plasmid['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert got["sequence"].startswith("ATGC"), got["sequence"][:10]
+            assert len(got["features"]) == 3, got["features"]
+            by = {f["name"]: f for f in got["features"]}
+            assert by["EGFP"]["color"] == "#2f9e44"
+            assert by["wrapper"]["wraps_origin"] is True
+            assert by["wrapper"]["start_pos"] == 459 and by["wrapper"]["end_pos"] == 20
+        await run("and read back whole, features and all", _read_it_back())
+
+        async def _unknown_feature_key_is_coerced_not_refused():
+            """sequence_feature.type_key is a foreign key into a controlled
+            vocabulary. Real files carry keys that are not in it, and refusing
+            a whole plasmid over one annotation is the wrong answer."""
+            r = await c.post(
+                "/api/plasmids",
+                headers=auth(pi_token),
+                json={
+                    "name": "pOddKeys", "sequence": "ATGC" * 60,
+                    "external_source": "test",
+                    "features": [
+                        {"name": "strange", "type_key": "not_a_real_key",
+                         "start_pos": 0, "end_pos": 30, "strand": 1},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            f = r.json()["features"][0]
+            assert f["type_key"] == "misc_feature", f
+            assert "not_a_real_key" in (f["note"] or ""), (
+                "the original key must survive in the note, or the import is lossy"
+            )
+        await run("an unknown feature key is coerced, and recorded in the note",
+                  _unknown_feature_key_is_coerced_not_refused())
+
+        async def _list_omits_the_sequence():
+            page = (await c.get("/api/plasmids", headers=auth(pi_token))).json()
+            assert page["total"] == 2, page
+            assert "sequence" not in page["items"][0], "a page of 10 kb plasmids is not a list"
+            hit = (await c.get("/api/plasmids?q=pTEST", headers=auth(pi_token))).json()
+            assert hit["total"] == 1, hit
+        await run("the list omits sequences and can be searched by name",
+                  _list_omits_the_sequence())
+
+        # ---------------------------------------------------------------
         # sharing, between real people
         # ---------------------------------------------------------------
         await register("student@braude.ac.il", "A Student")

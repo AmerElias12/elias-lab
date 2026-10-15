@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.deps import Ctx, CtxDep, WriterDep
-from app.models import Plasmid, SequenceFeature
+from app.models import FeatureType, Plasmid, SequenceFeature
 from app.schemas import (
     Page,
     PlasmidCreate,
@@ -56,6 +56,22 @@ async def _features(ctx: Ctx, plasmid_id: uuid.UUID) -> list[SequenceFeatureRead
         )
     ).scalars().all()
     return [SequenceFeatureRead.model_validate(r) for r in rows]
+
+
+def _to_read(plasmid: Plasmid, features: list[SequenceFeatureRead]) -> PlasmidRead:
+    """Build the response without touching Plasmid.features.
+
+    Every relationship on every model is lazy="raise", so that a forgotten
+    join fails loudly instead of quietly issuing one query per row. Pydantic's
+    from_attributes reads every field it knows about, and PlasmidRead knows
+    about `features` — so validating the ORM object directly walks straight
+    into that guard. Correctly: the features it would have lazily loaded are
+    the ones _features() already fetched, in one query and in a defined order.
+
+    So the columns are read by name and the features passed in.
+    """
+    data = {c.name: getattr(plasmid, c.name) for c in Plasmid.__table__.columns}
+    return PlasmidRead(**data, features=features)
 
 
 @router.get("", response_model=Page[PlasmidSummary])
@@ -94,9 +110,38 @@ async def list_plasmids(
 async def get_plasmid(plasmid_id: uuid.UUID, ctx: CtxDep) -> PlasmidRead:
     """The whole plasmid, sequence and features — what the map is drawn from."""
     plasmid = await _load_visible(ctx, plasmid_id)
-    out = PlasmidRead.model_validate(plasmid)
-    out.features = await _features(ctx, plasmid_id)
-    return out
+    return _to_read(plasmid, await _features(ctx, plasmid_id))
+
+
+async def _coerce_feature_types(ctx: Ctx, features: list[dict]) -> None:
+    """Map feature keys the vocabulary does not have onto misc_feature.
+
+    sequence_feature.type_key is a foreign key into feature_type, which holds
+    fourteen curated keys. Real files do not: GenBank's own key list runs to
+    dozens, and `source` — which appears in essentially every GenBank file —
+    is not among the fourteen. Without this, importing almost any real file
+    fails on a foreign key violation, which is how this was found.
+
+    Coercing rather than rejecting, because the alternative is an import that
+    refuses whole plasmids over one annotation nobody was looking at. The
+    original key goes into the note, so nothing is actually lost and a later
+    pass can promote it if the lab decides it matters.
+
+    Done here rather than in the browser so that every client gets it, and so
+    that the vocabulary can change without a frontend release.
+    """
+    if not features:
+        return
+    known = set(
+        (await ctx.session.execute(sa.select(FeatureType.key))).scalars().all()
+    )
+    for f in features:
+        key = f.get("type_key") or "misc_feature"
+        if key in known:
+            continue
+        note = f.get("note")
+        f["note"] = f"original feature key: {key}" + (f" — {note}" if note else "")
+        f["type_key"] = "misc_feature"
 
 
 @router.post("", response_model=PlasmidRead, status_code=status.HTTP_201_CREATED)
@@ -111,6 +156,7 @@ async def create_plasmid(body: PlasmidCreate, ctx: WriterDep) -> PlasmidRead:
     """
     data = body.model_dump()
     features = data.pop("features", [])
+    await _coerce_feature_types(ctx, features)
 
     values = ctx.scope.stamp(data)
     plasmid = Plasmid(**values)
@@ -122,9 +168,7 @@ async def create_plasmid(body: PlasmidCreate, ctx: WriterDep) -> PlasmidRead:
     await ctx.session.flush()
     await ctx.session.refresh(plasmid)
 
-    out = PlasmidRead.model_validate(plasmid)
-    out.features = await _features(ctx, plasmid.id)
-    return out
+    return _to_read(plasmid, await _features(ctx, plasmid.id))
 
 
 @router.delete("/{plasmid_id}", status_code=status.HTTP_204_NO_CONTENT)

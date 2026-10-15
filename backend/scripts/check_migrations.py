@@ -72,8 +72,31 @@ def main() -> int:
 
         def _stamped():
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0001_initial_schema",)], rows
+            assert rows == [("0002_genbank_feature_keys",)], rows
         check("the database records which revision it is at", _stamped)
+
+        def _feature_vocabulary():
+            keys = {r[0] for r in q("SELECT key FROM feature_type")}
+            # The fourteen curated ones, plus the INSDC keys 0002 adds.
+            assert "misc_feature" in keys and "promoter" in keys
+            assert "source" in keys, (
+                "source appears in essentially every GenBank file; without it "
+                "every import coerces at least one feature"
+            )
+            for key in ("5'UTR", "RBS", "sig_peptide", "intron", "enhancer"):
+                assert key in keys, f"{key} is missing from the vocabulary"
+            assert len(keys) >= 36, len(keys)
+        check("the feature vocabulary covers what real files carry", _feature_vocabulary)
+
+        def _second_revision_steps_down_on_its_own():
+            command.downgrade(cfg, "0001_initial_schema")
+            keys = {r[0] for r in q("SELECT key FROM feature_type")}
+            assert "source" not in keys, "0002 did not undo itself"
+            assert "misc_feature" in keys, "and it took the original fourteen with it"
+            assert len(keys) == 14, len(keys)
+            command.upgrade(cfg, "head")
+            assert "source" in {r[0] for r in q("SELECT key FROM feature_type")}
+        check("a single revision can be stepped down and up again", _second_revision_steps_down_on_its_own)
 
         def _tables_exist():
             from app.db import Base
@@ -183,7 +206,7 @@ def main() -> int:
         def _upgrade_again():
             command.upgrade(cfg, "head")
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0001_initial_schema",)], rows
+            assert rows == [("0002_genbank_feature_keys",)], rows
             (count,) = q("SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")[0]
             assert count >= 30, f"only {count} policies after the second upgrade"
             from app.db import Base

@@ -30,10 +30,12 @@ uvicorn app.main:app
 ## Checking it
 
 ```bash
-python scripts/check_migrations.py      #  8 checks: the migration, up and down again
+python scripts/check_migrations.py      # 10 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 36 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 40 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
+node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
+node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
 (cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
 
@@ -146,6 +148,41 @@ an entry that produced a plasmid cannot be removed at all.
 structured fields too. A signature commits to `content_sha256`, so anything
 left out of the snapshot could be changed after signing while the signature
 still verified.
+
+## Importing files
+
+GenBank, SnapGene `.dna` and FASTA, parsed **in the browser** — drop a file on
+the map, or use *Import file…*. Only the resulting JSON is posted; no file ever
+reaches the server.
+
+Three reasons, in order of weight: a `.dna` is an untrusted binary from a
+colleague or a vendor, and parsing it in a tab costs an error message where
+parsing it in the API process is a different risk for the same upside; the
+parser already exists in JavaScript with 73 checks behind it, and a Python
+port would be a second implementation of the GenBank location grammar; and
+there is no upload endpoint, no temp files, nothing to clean up.
+
+The cost is that an import needs a browser — there is no server-side bulk
+import, which is the thing to revisit if the lab ever wants to ingest a
+directory.
+
+`static/js/plasmid.js` is a copy of `../js/plasmid.js`, which the old site
+still serves. `check-plasmid-import.mjs` asserts the two are byte-identical,
+so the duplication cannot drift; it ends when the old site is retired.
+
+Two details that bite:
+
+- **Unknown feature keys are coerced, not refused.** `sequence_feature.type_key`
+  is a foreign key into a controlled vocabulary, and real files carry keys that
+  are not in it. An unknown key becomes `misc_feature` with the original kept
+  in the note — refusing a whole plasmid over one annotation is the wrong
+  answer. Revision `0002` added the standard GenBank keys so this happens
+  rarely.
+- **Only colours the file specified are stored.** `plasmid.js` always sets one,
+  falling back to its own pale defaults; storing those makes every imported map
+  a single wash of colour and suppresses the type-based palette. The import
+  keeps a colour only when it differs from what `plasmid.js` would have
+  invented.
 
 ## Known gaps
 

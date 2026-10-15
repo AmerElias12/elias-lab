@@ -360,6 +360,22 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
   .vector__canvas { height: 60vh; }
 }
 
+.pending {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: .5rem 0 0;
+  padding: .6rem .9rem; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  font-size: .9rem;
+}
+/* Dropping is only a hint until the file lands, so the cue has to be obvious
+   and has to go away again. */
+.vector__canvas.is-dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
 /* --- toast --------------------------------------------------------------- */
 .toast {
   position: fixed; inset: auto 1.25rem 1.25rem auto;

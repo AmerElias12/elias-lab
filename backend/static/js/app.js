@@ -652,6 +652,114 @@ $$('[data-mapview]').forEach((btn) => btn.addEventListener('click', () => {
 
 $('#plasmid-demo').addEventListener('click', () => showPlasmid(EXAMPLE_PLASMID));
 
+/* --- importing a file --------------------------------------------------- */
+
+// What has been parsed but not yet saved. Nothing reaches the API until the
+// person looks at the map and says so: a parser getting a file subtly wrong
+// is much easier to see on a map than in a row of numbers.
+let pendingImport = null;
+
+function setPending(next) {
+  pendingImport = next;
+  const bar = $('#import-pending');
+  if (!next) { bar.hidden = true; return; }
+  const n = next.body.features.length;
+  const warn = next.warnings.length ? ` · ${next.warnings.length} feature(s) skipped` : '';
+  $('#import-pending-text').textContent =
+    `${next.body.name} — ${next.format}, ${next.body.sequence.length} bp, ` +
+    `${n} feature${n === 1 ? '' : 's'}${warn}. Not saved yet.`;
+  bar.hidden = false;
+}
+
+async function importFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  if (files.length > 1) {
+    toast(`Importing ${files[0].name}; one at a time for now.`);
+  }
+  const file = files[0];
+
+  let parsed;
+  try {
+    parsed = await PlasmidImport.readFile(file);
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+
+  let mapped;
+  try {
+    mapped = PlasmidImport.toCreatePayload(parsed, {
+      external_source: `${parsed.format} file: ${file.name}`,
+    });
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+
+  // Preview the payload that will be saved, not the raw parse. They differ in
+  // one way that shows: colours plasmid.js invented are dropped on the way
+  // through, so previewing the parse would show a washed-out map and saving
+  // would produce a different-looking one.
+  showPlasmid({
+    name: mapped.body.name,
+    sequence: mapped.body.sequence,
+    topology: mapped.body.topology,
+    features: mapped.body.features,
+  });
+  setPending({ body: mapped.body, warnings: mapped.warnings, format: parsed.format });
+
+  if (mapped.warnings.length) {
+    const box = $('#vector-warnings');
+    box.textContent = `Not imported: ${mapped.warnings.join('; ')}`;
+    box.hidden = false;
+  }
+  toast(`Read ${file.name} as ${parsed.format}.`);
+}
+
+$('#plasmid-import').addEventListener('click', () => $('#plasmid-file').click());
+$('#plasmid-file').addEventListener('change', (e) => {
+  importFiles(e.target.files);
+  e.target.value = '';          // so the same file can be chosen twice
+});
+
+$('#import-discard').addEventListener('click', () => {
+  setPending(null);
+  toast('Import discarded.');
+});
+
+$('#import-save').addEventListener('click', async () => {
+  if (!pendingImport) return;
+  const btn = $('#import-save');
+  btn.disabled = true;
+  try {
+    const saved = await api('/api/plasmids', { method: 'POST', body: pendingImport.body });
+    toast(`${saved.name} saved with ${saved.features.length} features.`);
+    setPending(null);
+    await loadPlasmids();
+    showPlasmid(saved);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Drag and drop onto the map. dragover must be cancelled or the browser
+// navigates to the file instead of handing it over.
+const dropZone = $('#vector-canvas');
+['dragenter', 'dragover'].forEach((type) => dropZone.addEventListener(type, (e) => {
+  e.preventDefault();
+  dropZone.classList.add('is-dropping');
+}));
+['dragleave', 'drop'].forEach((type) => dropZone.addEventListener(type, (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('is-dropping');
+}));
+dropZone.addEventListener('drop', (e) => {
+  if (e.dataTransfer && e.dataTransfer.files) importFiles(e.dataTransfer.files);
+});
+
 $('#vector-copy').addEventListener('click', async () => {
   const bases = vector && vector.getSelection().bases;
   if (!bases) { toast('Nothing selected yet.', 'error'); return; }
