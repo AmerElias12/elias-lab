@@ -1280,10 +1280,40 @@ function primerRow(tbody, pair, which, index, isFirst) {
   tbody.append(tr);
 }
 
+/* The advice a qPCR design needs and this tool cannot act on: where the exons
+   are. Rendered rather than buried in a notes array, because it is the part
+   somebody has to decide before pasting a sequence in. */
+function renderGuidance(guidance) {
+  const panel = $('#design-guidance');
+  if (!guidance) { panel.hidden = true; return; }
+
+  $('#guidance-title').textContent = guidance.title;
+  $('#guidance-summary').textContent = guidance.summary;
+
+  const body = $('#guidance-body');
+  body.textContent = '';
+  for (const section of guidance.sections) {
+    const col = document.createElement('div');
+    const h = document.createElement('h3');
+    h.textContent = section.heading;
+    const ul = document.createElement('ul');
+    for (const rule of section.rules) {
+      const li = document.createElement('li');
+      li.textContent = rule;
+      ul.append(li);
+    }
+    col.append(h, ul);
+    body.append(col);
+  }
+  panel.hidden = false;
+}
+
 function renderDesign(out) {
   const table = $('#design-table');
   const body = $('#design-body');
   body.textContent = '';
+
+  renderGuidance(out.guidance);
 
   const notes = $('#design-notes');
   if (out.notes.length) {
@@ -1377,6 +1407,7 @@ function openDesign() {
   }
   $('#design-table').hidden = true;
   $('#design-notes').hidden = true;
+  $('#design-guidance').hidden = true;
   syncPurpose();
   show('primer-design');
 }
@@ -1419,6 +1450,7 @@ $('#design-form').addEventListener('submit', async (e) => {
     }));
   } catch (err) {
     $('#design-table').hidden = true;
+    $('#design-guidance').hidden = true;
     const notes = $('#design-notes');
     notes.textContent = err.message;
     notes.hidden = false;

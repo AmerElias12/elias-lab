@@ -723,6 +723,24 @@ class PrimerDesignTarget(BaseModel):
     optimal_tm: float
 
 
+class GuidanceSection(BaseModel):
+    heading: str
+    rules: list[str]
+
+
+class DesignGuidance(BaseModel):
+    """Advice the endpoint cannot act on itself.
+
+    Present for a qRT-PCR design, where placing the pair across an exon–exon
+    junction is what keeps contaminating genomic DNA out of the result — a
+    decision about the transcript, taken before any sequence is pasted in.
+    """
+
+    title: str
+    summary: str
+    sections: list[GuidanceSection]
+
+
 class ScreenSummary(BaseModel):
     name: str
     length_bp: int
@@ -737,6 +755,9 @@ class PrimerDesignResponse(BaseModel):
     #: None when nothing was screened — which for qPCR or analytical work is
     #: itself worth seeing.
     screen: ScreenSummary | None = None
+    #: Present for qPCR, where the thing that matters most is a decision this
+    #: endpoint cannot make for you.
+    guidance: DesignGuidance | None = None
     #: What the quoted Tm means. Biopython's defaults are a hybridisation
     #: experiment, not a PCR, and the difference is around ten degrees — so
     #: the conditions travel with the number.

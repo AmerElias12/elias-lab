@@ -401,6 +401,29 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .design-form .field { min-width: 11rem; }
 #design-template { font-family: var(--mono); font-size: .78rem; }
 
+/* The guidance is the part of a qPCR design the tool cannot do for you, so
+   it sits above the table rather than under it. */
+.guidance {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.guidance h2 { font-size: 1rem; margin-bottom: .35rem; }
+.guidance > p { margin: 0 0 .9rem; max-width: 70ch; font-size: .9rem; }
+.guidance__cols {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+.guidance__cols h3 {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-dim); margin-bottom: .4rem;
+}
+.guidance__cols ul { margin: 0; padding-left: 1.1rem; }
+.guidance__cols li { font-size: .86rem; margin-bottom: .4rem; line-height: 1.5; }
+
 .table-wrap { overflow-x: auto; margin-top: 1.25rem; }
 .data-table {
   width: 100%; border-collapse: collapse; font-size: .85rem;

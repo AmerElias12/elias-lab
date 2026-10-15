@@ -108,6 +108,82 @@ PURPOSES = {
 
 _MUTATIONS = {"A": "TGC", "T": "AGC", "G": "ATC", "C": "ATG"}
 
+#: What this endpoint cannot do for a qRT-PCR, written out so the gap is
+#: actionable rather than only admitted.
+#:
+#: Placing a primer across an exon–exon junction is the standard way of making
+#: sure contaminating genomic DNA is not amplified alongside the cDNA, and it
+#: needs the transcript's exon boundaries — which this endpoint does not take.
+#: Rather than leave a person to find that out from a flat −RT control, the
+#: rules are here, grouped by the decision each one belongs to.
+QPCR_GUIDANCE: dict[str, Any] = {
+    "title": "Designing across an exon–exon junction",
+    "summary": (
+        "This endpoint scores primers against the template it was given; it does "
+        "not know where the exons are. Genomic DNA is the usual contaminant in an "
+        "RNA prep, and placing the pair so that gDNA cannot be amplified is a "
+        "decision about the transcript, taken before the sequence is pasted in."
+    ),
+    "sections": [
+        {
+            "heading": "Where to put the pair",
+            "rules": [
+                "Put one primer across an exon–exon junction, so the primer has no "
+                "contiguous match in genomic DNA — the intron sits where the "
+                "junction is.",
+                "Leave at least 7 bases of that primer on the shorter exon. With "
+                "three or four, the longer half still anneals well enough to "
+                "amplify genomic DNA and the design buys nothing.",
+                "Do not leave only one or two bases past the junction at the 3' "
+                "end. A single terminal mismatch is extended often enough that it "
+                "is not reliable discrimination.",
+                "If no junction suits, fall back to flanking: put the two primers "
+                "in different exons with an intron of 1 kb or more between them. "
+                "The cDNA product is short, the genomic one is too long to "
+                "amplify under qPCR cycling, or is obvious by size.",
+            ],
+        },
+        {
+            "heading": "When a junction cannot save you",
+            "rules": [
+                "Single-exon genes have no junction at all. Treat the RNA with "
+                "DNase I and rely on the −RT control.",
+                "Processed pseudogenes are reverse-transcribed mRNA inserted back "
+                "into the genome: they contain the junction, so a junction-spanning "
+                "primer amplifies them perfectly well. That is the case the "
+                "off-target screen on this page is for — paste the pseudogene or "
+                "the paralogs into the screening box.",
+                "Highly similar paralogs and recent gene families do the same "
+                "thing. Screen against them explicitly rather than assuming the "
+                "junction covers it.",
+            ],
+        },
+        {
+            "heading": "The rest of the design",
+            "rules": [
+                "Keep the product between 70 and 150 bp. Past about 250 bp the "
+                "amplification efficiency drifts away from the doubling a Cq "
+                "assumes, and the quantification stops being linear.",
+                "Aim for a Tm of 58–62 °C with the two primers within 2 °C of each "
+                "other, and 40–60% GC.",
+                "Avoid four or more identical bases in a row, G runs most of all.",
+                "Keep no more than two G or C in the last five bases: a sticky 3' "
+                "end mis-primes.",
+                "Check for common SNPs under the primer, especially within five "
+                "bases of the 3' end — a variant there costs an allele.",
+            ],
+        },
+        {
+            "heading": "On every plate",
+            "rules": [
+                "Run a −RT control. No primer design removes the need for it; it "
+                "is the measurement that tells you whether any of the above worked.",
+                "Confirm a single melt peak, or a single band, before trusting a Cq.",
+            ],
+        },
+    ],
+}
+
 
 def _seed_variants(seed: str) -> list[str]:
     """The seed and every single-substitution neighbour of it.
@@ -770,16 +846,16 @@ def design(
         )
     if purpose == "qpcr":
         notes.append(
-            "Exon structure is not considered here. A pair that spans an "
-            "exon–exon junction is what stops genomic DNA being amplified "
-            "alongside the cDNA, and that needs the transcript's exon "
-            "boundaries, which this endpoint does not take."
+            "Exon structure is not considered here — this endpoint does not take "
+            "exon boundaries. See `guidance` for how to place the pair so that "
+            "contaminating genomic DNA is not amplified alongside the cDNA."
         )
 
     return {
         "template_length": len(cleaned),
         "target": {"product_length": product_length, "optimal_tm": optimal_tm},
         "purpose": purpose,
+        "guidance": QPCR_GUIDANCE if purpose == "qpcr" else None,
         "tm_conditions": TM_CONDITIONS,
         "screen": (
             {"name": index.name, "length_bp": index.length, "seed_len": SEED_LEN,

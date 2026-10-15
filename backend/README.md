@@ -36,7 +36,7 @@ python scripts/check_api.py             # 75 checks: end to end, against real Po
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 python  scripts/check_cloning.py        # 13 checks: the digest and ligation biology
-python  scripts/check_primer_design.py  # 20 checks: duplexes, scoring, off-target, refusals
+python  scripts/check_primer_design.py  # 22 checks: duplexes, scoring, off-target, refusals
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
 (cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
@@ -313,8 +313,16 @@ a job for BLAST on a server that has one.
 
 **Not checked:** exon structure. A pair spanning an exon–exon junction is what
 stops genomic DNA amplifying alongside cDNA, and that needs the transcript's
-exon boundaries, which this endpoint does not take. The response says so on
-every qPCR design.
+exon boundaries, which this endpoint does not take.
+
+Rather than only admitting the gap, a qPCR design carries a `guidance` block —
+rendered above the table — with the rules for placing the pair yourself:
+where to put it (≥7 bases on the shorter exon; the ≥1 kb flanking-intron
+fallback), when a junction cannot save you (single-exon genes, and processed
+pseudogenes, which *contain* the junction — that is what the screening box is
+for), the rest of the design, and the −RT control that catches what the rest
+misses. Telling somebody they have a problem without telling them what to do
+about it is half an answer.
 
 ### Dimers
 

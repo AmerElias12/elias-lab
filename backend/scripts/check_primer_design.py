@@ -409,6 +409,51 @@ check("a qPCR design states the product-length limit and the exon gap",
       _qpcr_says_what_it_does_not_check)
 
 
+def _qpcr_carries_junction_guidance():
+    """The gap is admitted and then made actionable. An endpoint that says
+    "exon structure is not considered" and stops has told somebody they have a
+    problem without telling them what to do about it."""
+    rng = random.Random(14)
+    gene = "".join(rng.choice("ACGT") for _ in range(900))
+    out = design(gene, product_length=150, optimal_tm=60, purpose="qpcr")
+
+    g = out["guidance"]
+    assert g, "a qPCR design should carry the junction guidance"
+    assert "junction" in g["title"].lower(), g["title"]
+    headings = [s["heading"] for s in g["sections"]]
+    assert len(headings) >= 4, headings
+    assert all(s["rules"] for s in g["sections"]), headings
+
+    text = " ".join(r for s in g["sections"] for r in s["rules"]).lower()
+    # The rules that actually decide whether a qRT-PCR is clean.
+    for needed in (
+        "7 bases",           # how much of the primer must sit on the short exon
+        "1 kb",              # the flanking-intron fallback
+        "pseudogene",        # what a junction does not protect against
+        "−rt control",       # the measurement that catches everything else
+        "dnase",             # single-exon genes
+        "snp",               # a variant under the 3' end costs an allele
+    ):
+        assert needed in text, f"the guidance should mention {needed!r}"
+
+    # And it points back at the screening box for the case a junction cannot
+    # cover, which is the one thing on this page that does help.
+    assert "screen" in text, "pseudogenes are what the off-target screen is for"
+
+
+def _guidance_is_only_where_it_applies():
+    rng = random.Random(15)
+    gene = "".join(rng.choice("ACGT") for _ in range(900))
+    for purpose in ("cloning", "analytical"):
+        out = design(gene, product_length=400, optimal_tm=60, purpose=purpose)
+        assert out["guidance"] is None, (
+            f"{purpose} has no exon–exon junction to worry about"
+        )
+check("a qPCR design carries the junction rules, not just the gap",
+      _qpcr_carries_junction_guidance)
+check("the junction guidance appears only for qPCR", _guidance_is_only_where_it_applies)
+
+
 def _screen_parsing_and_limits():
     # Several records join with N, which is not a base, so no seed can span
     # the join and invent a site that exists in neither record.
