@@ -7,6 +7,7 @@ public. Better a service that refuses to start.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 from functools import lru_cache
 
@@ -31,6 +32,14 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_pool_size: int = 5
     db_max_overflow: int = 5
+
+    # Migrations connect as a different role, for two reasons. They create
+    # roles, set BYPASSRLS and change function ownership, none of which
+    # eln_app may do — and eln_app must stay unable to do them, or the
+    # separation the policies rest on is nominal. Left unset, this falls back
+    # to database_url with the driver swapped, which is right for a local
+    # database where one role does everything and wrong everywhere else.
+    migration_database_url: str | None = None
 
     # --- tokens -----------------------------------------------------------
     jwt_secret: str = Field(min_length=32, description="No default. Generate with `openssl rand -hex 32`.")
@@ -59,7 +68,42 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
 
+    @property
+    def sync_migration_url(self) -> str:
+        """The URL Alembic connects with — synchronous, always.
+
+        The migration applies the SQL files in docs/, which are multi-statement
+        scripts full of dollar-quoted function bodies. asyncpg drives those
+        through the extended query protocol, which takes one statement at a
+        time; psycopg sends the script as-is. Alembic is also a command people
+        run and wait for, so there is nothing for async to overlap with.
+        """
+        if self.migration_database_url:
+            return self.migration_database_url
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+
+    # migration_url_from_env() below is the same rule without a Settings
+    # instance; alembic uses that one.
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+DEFAULT_DATABASE_URL = "postgresql+asyncpg://eln_app@localhost:5432/eln"
+
+
+def migration_url_from_env() -> str:
+    """The migration URL, without building a Settings.
+
+    Deliberately standalone: `alembic upgrade head` is a thing a DBA runs, and
+    it should not fail because ELN_JWT_SECRET is unset. Migrations do not sign
+    tokens. Coupling them to the application's whole configuration means the
+    person least able to supply a signing key is the one being asked for it.
+    """
+    url = os.environ.get("ELN_MIGRATION_DATABASE_URL")
+    if url:
+        return url
+    url = os.environ.get("ELN_DATABASE_URL", DEFAULT_DATABASE_URL)
+    return url.replace("postgresql+asyncpg://", "postgresql+psycopg://")

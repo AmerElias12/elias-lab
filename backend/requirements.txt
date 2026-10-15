@@ -9,3 +9,5 @@ PyJWT>=2.8             # not python-jose, which is unmaintained
 argon2-cffi>=21.3      # check_needs_rehash is used on login
 email-validator>=2.2   # pydantic's EmailStr needs it at import, not at call
 python-multipart>=0.0.12
+alembic>=1.13           # migrations; run as the owner, never as eln_app
+psycopg[binary]>=3.2    # the sync driver Alembic uses — see config.sync_migration_url

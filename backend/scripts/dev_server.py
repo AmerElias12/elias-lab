@@ -3,10 +3,10 @@
 
     python scripts/dev_server.py            # http://localhost:8000
 
-Starts an embedded PostgreSQL (pgserver), applies the four SQL files the first
-time, then serves the API and the static frontend. The data directory persists
-between runs so an account created once survives a restart; delete it to start
-clean. The path is printed on startup.
+Starts an embedded PostgreSQL (pgserver), brings it up to date with
+`alembic upgrade head`, then serves the API and the static frontend. The data
+directory persists between runs so an account created once survives a restart;
+delete it to start clean. The path is printed on startup.
 
 This is a convenience for development only. It connects as eln_app, exactly as
 production does, so the policies apply here too — a dev server that quietly ran
@@ -19,10 +19,7 @@ import pathlib
 import sys
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
-DOCS = BACKEND.parent / "docs"
 sys.path.insert(0, str(BACKEND))
-
-SQL_FILES = ["eln-schema.sql", "eln-rls.sql", "eln-rls-ownership.sql", "eln-auth.sql"]
 DATADIR = pathlib.Path(
     os.environ.get("ELN_DEV_DATADIR", pathlib.Path.home() / ".cache" / "eln-dev-db")
 )
@@ -36,21 +33,42 @@ def main() -> int:
     print(f"postgres data directory: {DATADIR}")
     srv = pgserver.get_server(DATADIR)
 
-    existing = srv.psql(
-        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = 'app_user';"
+    # Provision through Alembic, exactly as a real deployment does. A dev
+    # server that applies the SQL its own way is the one place the migration
+    # never gets exercised, which is where migrations rot.
+    os.environ.setdefault(
+        "ELN_MIGRATION_DATABASE_URL", f"postgresql+psycopg://postgres@/postgres?host={DATADIR}"
     )
-    if "1" not in existing.split():
-        for name in SQL_FILES:
-            print(f"applying {name}…")
-            srv.psql((DOCS / name).read_text())
-        srv.psql("ALTER ROLE eln_app WITH LOGIN;")
-        print("schema, policies and auth functions applied")
-    else:
-        print("reusing the existing database")
-
     os.environ.setdefault(
         "ELN_DATABASE_URL", f"postgresql+asyncpg://eln_app@/postgres?host={DATADIR}"
     )
+
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(BACKEND / "alembic.ini"))
+    cfg.set_main_option("script_location", str(BACKEND / "migrations"))
+
+    def _has(table: str) -> bool:
+        out = srv.psql(
+            "SELECT count(*) FROM pg_tables "
+            f"WHERE schemaname = 'public' AND tablename = '{table}';"
+        )
+        return "1" in out.split()
+
+    if _has("app_user") and not _has("alembic_version"):
+        # A database provisioned before migrations existed. Record where it
+        # already is rather than trying to create everything a second time —
+        # the same thing you would do to an existing production database.
+        print("existing schema found; stamping it instead of re-applying")
+        command.stamp(cfg, "head")
+
+    command.upgrade(cfg, "head")
+    print("alembic upgrade head: done")
+    # eln_app is NOLOGIN in production, where it authenticates through the
+    # pooler; here it has to connect for itself.
+    srv.psql("ALTER ROLE eln_app WITH LOGIN;")
+
     os.environ.setdefault("ELN_JWT_SECRET", "dev-only-" + "0" * 32)
     os.environ.setdefault("ELN_ENVIRONMENT", "development")
 

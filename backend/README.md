@@ -21,16 +21,20 @@ no Docker), applies the SQL, and serves the app. Its data directory is
 Against a real database instead:
 
 ```bash
-python scripts/bootstrap_db.py "postgresql://postgres@localhost/eln"   # as a superuser
-psql -c "ALTER ROLE eln_app WITH LOGIN PASSWORD '…'"
 cp .env.example .env && $EDITOR .env
+alembic upgrade head                                    # as the owner, not eln_app
+psql -c "ALTER ROLE eln_app WITH LOGIN PASSWORD '…'"
 uvicorn app.main:app
 ```
 
 ## Checking it
 
 ```bash
-python scripts/check_api.py     # 36 checks, end to end, against real PostgreSQL
+python scripts/check_migrations.py      #  8 checks: the migration, up and down again
+python scripts/check_models.py          # 25 checks: models, schemas, LabScope
+python scripts/check_api.py             # 36 checks: end to end, against real PostgreSQL
+node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
+(cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
 
 It spins up its own PostgreSQL, applies the four SQL files, and drives the app
@@ -82,8 +86,33 @@ app/
   deps.py      the four steps above
   routers/     auth, entries, members, dashboard
 static/        the dashboard: one HTML file, one CSS file, one JS file
-scripts/       bootstrap_db.py, dev_server.py, check_api.py
+migrations/    alembic: env.py and versions/
+scripts/       dev_server.py and the check suites
 ```
+
+## Migrations
+
+```bash
+alembic upgrade head        # apply everything outstanding
+alembic current             # what this database is at
+alembic upgrade head --sql  # print the SQL instead of running it
+```
+
+Run them as a role that can `CREATE ROLE`, set `BYPASSRLS` and change function
+ownership. **Not as `eln_app`** — that role exists to be unable to do those
+things, and letting it run its own migrations would undo the separation the
+policies rest on. Set `ELN_MIGRATION_DATABASE_URL` when that is a different
+connection from the application's.
+
+For a database already provisioned by hand, record where it is instead of
+re-running: `alembic stamp 0001_initial_schema`.
+
+Revision `0001` applies the four SQL files below; everything after it is
+hand-written. **Do not trust `--autogenerate` here.** It compares the database
+against SQLAlchemy metadata that has never heard of row-level security, so it
+will happily emit a revision that drops every policy — and a schema with the
+policies dropped still passes every type check in this repository. Run it for
+a second opinion on a column, read it, throw it away.
 
 The SQL lives in `../docs`, applied in this order and no other:
 
@@ -120,8 +149,9 @@ still verified.
 
 ## Known gaps
 
-- **No migrations.** `bootstrap_db.py` is a bootstrap; changing the schema
-  means recreating the database. Alembic is the next piece of work.
+- **No second migration yet.** The pattern is in place and tested both ways,
+  but every schema change from here is hand-written — there is no autogenerate
+  to lean on, for the reason given above.
 - **No refresh tokens.** `ELN_ACCESS_TOKEN_HOURS` (default 12) is therefore
   also how often people sign in again. A refresh flow needs a revocation table
   to be worth anything.

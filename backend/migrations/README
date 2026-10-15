@@ -1,0 +1,19 @@
+Migrations for the ELN database.
+
+    alembic upgrade head          apply everything outstanding
+    alembic current               what this database is at
+    alembic history               what exists
+    alembic upgrade head --sql    print the SQL instead of running it
+
+Run them as a role that can create roles and change ownership — not as
+eln_app, which deliberately cannot. Set ELN_MIGRATION_DATABASE_URL if that is
+a different connection from the application's.
+
+For a database that already has the schema (provisioned before migrations, or
+applied by hand), mark it as current instead of re-running:
+
+    alembic stamp 0001_initial_schema
+
+The schema's source of truth is ../../docs/*.sql. Revision 0001 applies those
+four files; every revision after it is hand-written. Do not trust
+`--autogenerate` — see the note at the top of env.py.
