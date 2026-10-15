@@ -26,6 +26,8 @@ Thumbs.db
 *.key
 .env
 .env.*
+# ...but the template is documentation, and carries no values.
+!.env.example
 # (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
 #  to be public and is protected by Row-Level Security.)
 .claude/launch.json
@@ -34,3 +36,16 @@ Thumbs.db
 # and its Claude Code hooks point at a machine-specific install path.
 graphify-out/
 .claude/settings.json
+
+# Python (backend/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node (docs/checks)
+node_modules/

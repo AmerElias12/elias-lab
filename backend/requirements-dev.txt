@@ -1,0 +1,5 @@
+-r requirements.txt
+# A real PostgreSQL, as a wheel, so the checks run the actual schema and the
+# actual policies rather than a SQLite approximation that has neither.
+pgserver>=0.1.4
+httpx>=0.27

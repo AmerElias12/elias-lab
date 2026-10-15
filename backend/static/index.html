@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elias Lab — Notebook</title>
+<meta name="description" content="Electronic lab notebook: entries, plasmids, primers and guides.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/css/app.css?v=4">
+</head>
+<body>
+
+<!-- ===================================================================== -->
+<!-- Signed out                                                             -->
+<!-- ===================================================================== -->
+<main id="auth" class="auth" hidden>
+  <div class="auth__card">
+    <div class="auth__brand">
+      <span class="brand__mark" aria-hidden="true">EL</span>
+      <div>
+        <h1>Elias Lab</h1>
+        <p class="muted">Electronic lab notebook</p>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab is-active" role="tab" data-authtab="login" aria-selected="true">Sign in</button>
+      <button class="tab" role="tab" data-authtab="register" aria-selected="false">Create account</button>
+    </div>
+
+    <form id="login-form" class="stack" autocomplete="on">
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" required autocomplete="username" placeholder="you@braude.ac.il">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button class="btn btn--primary" type="submit">Sign in</button>
+    </form>
+
+    <form id="register-form" class="stack" hidden autocomplete="on">
+      <label class="field">
+        <span>Full name</span>
+        <input type="text" name="full_name" required autocomplete="name" placeholder="Dr. Amer Elias">
+      </label>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" required autocomplete="username">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" required minlength="12" autocomplete="new-password">
+        <small class="muted">At least 12 characters. A passphrase beats a short complicated word.</small>
+      </label>
+      <button class="btn btn--primary" type="submit">Create account</button>
+      <p class="muted">A new account has no lab until someone adds you to one.</p>
+    </form>
+
+    <p id="auth-error" class="alert alert--error" role="alert" hidden></p>
+  </div>
+</main>
+
+<!-- ===================================================================== -->
+<!-- Signed in                                                              -->
+<!-- ===================================================================== -->
+<div id="shell" class="shell" hidden>
+
+  <input type="checkbox" id="nav-toggle" class="nav-toggle" hidden>
+
+  <aside class="sidebar">
+    <div class="sidebar__brand">
+      <span class="brand__mark" aria-hidden="true">EL</span>
+      <span class="brand__name">Elias Lab</span>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <button class="nav__item is-active" data-view="dashboard">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h6v6H3zM11 3h6v4h-6zM11 9h6v8h-6zM3 11h6v6H3z"/></svg>
+        Dashboard
+      </button>
+      <button class="nav__item" data-view="notebook">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2h11v16H5zM3 4h2v2H3zM3 9h2v2H3zM3 14h2v2H3z"/></svg>
+        Notebook
+      </button>
+      <button class="nav__item" data-view="lab">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3a3 3 0 110 6 3 3 0 010-6zM1 17c0-3.3 2.7-6 6-6s6 2.7 6 6zM14 9a2.5 2.5 0 110-5 2.5 2.5 0 010 5zm.5 2c2.5 0 4.5 2 4.5 4.5V17h-4v-.5c0-1.9-.8-3.6-2-4.8.5-.1 1-.2 1.5-.2z"/></svg>
+        Lab
+      </button>
+      <button class="nav__item" data-view="plasmids" disabled title="Phase 3">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 3a5 5 0 110 10 5 5 0 010-10z"/></svg>
+        Plasmids
+      </button>
+      <button class="nav__item" data-view="primers" disabled title="Phase 3">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 9h16v2H2z"/><path d="M4 5h3v10H4zM13 5h3v10h-3z"/></svg>
+        Primers
+      </button>
+      <button class="nav__item" data-view="guides" disabled title="Phase 3">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10l5-6v4h9v4H8v4z"/></svg>
+        Guides
+      </button>
+    </nav>
+
+    <div class="sidebar__foot">
+      <div class="who">
+        <span class="who__avatar" id="who-avatar" aria-hidden="true"></span>
+        <span class="who__text">
+          <strong id="who-name">—</strong>
+          <small id="who-role" class="muted">—</small>
+        </span>
+      </div>
+      <button class="btn btn--ghost btn--block" id="sign-out">Sign out</button>
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <label for="nav-toggle" class="icon-btn nav-toggle__label" aria-label="Toggle navigation">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4h16v2H2zM2 9h16v2H2zM2 14h16v2H2z"/></svg>
+    </label>
+
+    <label class="lab-switch">
+      <span class="muted">Lab</span>
+      <select id="lab-select" aria-label="Choose lab"></select>
+    </label>
+
+    <div class="topbar__spacer"></div>
+
+    <form id="search-form" class="search" role="search">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 2a6 6 0 104 10.5l4 4 1.5-1.5-4-4A6 6 0 008 2zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
+      <input type="search" id="search" placeholder="Search entries…" aria-label="Search entries">
+    </form>
+
+    <button class="btn btn--primary" id="new-entry" aria-label="New entry">
+      <span aria-hidden="true">+</span><span class="btn__label">New entry</span>
+    </button>
+  </header>
+
+  <main class="content">
+
+    <!-- Dashboard -->
+    <section class="view is-active" data-view="dashboard">
+      <h1 class="view__title">Dashboard</h1>
+      <p class="muted view__lede" id="dash-lede"></p>
+
+      <div class="cards" id="dash-cards"></div>
+
+      <h2 class="section__title">Recently updated</h2>
+      <ul class="list" id="dash-recent"></ul>
+    </section>
+
+    <!-- Notebook list -->
+    <section class="view" data-view="notebook">
+      <div class="view__head">
+        <h1 class="view__title">Notebook</h1>
+        <label class="check">
+          <input type="checkbox" id="only-mine"> Only mine
+        </label>
+      </div>
+      <p class="muted view__lede" id="notebook-lede"></p>
+
+      <ul class="list list--entries" id="entry-list"></ul>
+
+      <div class="pager">
+        <button class="btn btn--ghost" id="prev-page">Previous</button>
+        <span class="muted" id="page-info"></span>
+        <button class="btn btn--ghost" id="next-page">Next</button>
+      </div>
+    </section>
+
+    <!-- Entry editor -->
+    <section class="view" data-view="entry">
+      <div class="view__head">
+        <button class="btn btn--ghost" id="back-to-list">← Notebook</button>
+        <div class="view__head-actions">
+          <span class="badge" id="entry-version"></span>
+          <button class="btn btn--ghost" id="print-entry">Print</button>
+          <button class="btn btn--danger" id="delete-entry">Delete</button>
+          <button class="btn btn--primary" id="save-entry">Save</button>
+        </div>
+      </div>
+
+      <form id="entry-form" class="entry">
+        <input class="entry__title" name="title" placeholder="Untitled experiment" required
+               maxlength="300" aria-label="Title">
+
+        <div class="entry__meta">
+          <label class="field field--inline">
+            <span>Performed on</span>
+            <input type="date" name="performed_on">
+          </label>
+          <label class="check" title="Unshared entries are visible only to you and the lab admins">
+            <input type="checkbox" name="is_shared" checked> Shared with the lab
+          </label>
+          <span class="muted" id="entry-author"></span>
+        </div>
+
+        <label class="field"><span>Hypothesis</span>
+          <textarea name="hypothesis" rows="2"></textarea></label>
+        <label class="field"><span>Methods</span>
+          <textarea name="methods" rows="4"></textarea></label>
+        <label class="field"><span>Notes</span>
+          <textarea name="body_text" rows="10"
+                    placeholder="The free-form page. Write it as you would on paper."></textarea></label>
+        <label class="field"><span>Results</span>
+          <textarea name="results" rows="4"></textarea></label>
+        <label class="field"><span>Conclusions</span>
+          <textarea name="conclusions" rows="3"></textarea></label>
+        <label class="field"><span>Next steps</span>
+          <textarea name="next_steps" rows="2"></textarea></label>
+        <label class="field"><span>What changed <small class="muted">(recorded in the history)</small></span>
+          <input type="text" name="change_note" maxlength="500" placeholder="e.g. added the qPCR results">
+        </label>
+      </form>
+
+      <h2 class="section__title">History</h2>
+      <ul class="list list--versions" id="version-list"></ul>
+    </section>
+
+    <!-- Lab members -->
+    <section class="view" data-view="lab">
+      <h1 class="view__title">Lab</h1>
+      <p class="muted view__lede" id="lab-lede"></p>
+
+      <form id="add-member-form" class="add-member" hidden>
+        <label class="field">
+          <span>Add somebody who has already registered</span>
+          <input type="email" name="email" required placeholder="colleague@braude.ac.il">
+        </label>
+        <label class="field">
+          <span>Role</span>
+          <select name="role">
+            <option value="member" selected>Member — writes their own records</option>
+            <option value="read_only">Read only — sees what the lab shares</option>
+            <option value="admin">Admin — manages the lab</option>
+          </select>
+        </label>
+        <button class="btn btn--primary" type="submit">Add to lab</button>
+      </form>
+
+      <h2 class="section__title">Members</h2>
+      <ul class="list list--members" id="member-list"></ul>
+    </section>
+
+    <!-- No lab yet -->
+    <section class="view" data-view="nolab">
+      <div class="empty">
+        <h1>You are not in a lab yet</h1>
+        <p class="muted">
+          Your account exists, but until somebody adds you to a lab there is nothing
+          to show — the database itself returns nothing, not just this page.
+        </p>
+        <form id="create-lab-form" class="stack stack--narrow">
+          <h2 class="section__title">Or start one</h2>
+          <label class="field"><span>Lab name</span>
+            <input type="text" name="name" required placeholder="Elias Lab"></label>
+          <label class="field"><span>Short name <small class="muted">(lowercase, used in links)</small></span>
+            <input type="text" name="slug" required pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?" placeholder="elias"></label>
+          <button class="btn btn--primary" type="submit">Create lab</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</div>
+
+<script src="/js/app.js?v=4"></script>
+</body>
+</html>

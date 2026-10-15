@@ -1,0 +1,12 @@
+{
+  "name": "eln-sql-checks",
+  "private": true,
+  "type": "module",
+  "description": "Applies the SQL in docs/ to a real PostgreSQL (PGlite, WebAssembly) and asserts the constraints and policies behave. See README.md.",
+  "scripts": {
+    "check": "node check-schema.mjs ../eln-schema.sql && node check-rls.mjs ../eln-schema.sql ../eln-rls.sql && node check-ownership.mjs ../eln-schema.sql ../eln-rls.sql ../eln-rls-ownership.sql"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.10"
+  }
+}
