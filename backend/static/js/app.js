@@ -169,7 +169,7 @@ async function loadMe() {
   // step, not a bug, so it gets its own view rather than an empty dashboard.
   const hasLab = Boolean(me.current_lab_id);
   $$('.nav__item').forEach((el) => {
-    if (['dashboard', 'notebook', 'lab'].includes(el.dataset.view)) el.disabled = !hasLab;
+    if (['dashboard', 'notebook', 'lab', 'plasmids'].includes(el.dataset.view)) el.disabled = !hasLab;
   });
   $('#new-entry').disabled = !hasLab;
   $('#search').disabled = !hasLab;
@@ -515,6 +515,188 @@ async function loadMembers() {
   }
 }
 
+/* --- plasmids and the vector viewer ------------------------------------- */
+
+let vector = null;          // the controller from VectorViewer.createViewer
+let currentPlasmid = null;
+
+/* A real plasmid, so the page has something to show before the lab has put
+   anything in. pUC19's backbone features at their usual coordinates. */
+const EXAMPLE_PLASMID = {
+  name: 'pUC19 (example)',
+  topology: 'circular',
+  external_source: 'example payload, not saved',
+  sequence: (
+    'TCGCGCGTTTCGGTGATGACGGTGAAAACCTCTGACACATGCAGCTCCCGGAGACGGTCACAGCTTGTCTGTAAGCGGATGCCGGGAGCAGACAAGCCCGTCAGGGCGCGTCAGCGGGTGTTGGCGGGTGTCGGGGCTGGCTTAACTATGCGGCATCAGAGCAGATTGTACTGAGAGTGCACCATATGCGGTGTGAAATACCGCACAGATGCGTAAGGAGAAAATACCGCATCAGGCGCCATTCGCCATTCAGGCTGCGCAACTGTTGGGAAGGGCGATCGGTGCGGGCCTCTTCGCTATTACGCCAGCTGGCGAAAGGGGGATGTGCTGCAAGGCGATTAAGTTGGGTAACGCCAGGGTTTTCCCAGTCACGACGTTGTAAAACGACGGCCAGTGAATTCGAGCTCGGTACCCGGGGATCCTCTAGAGTCGACCTGCAGGCATGCAAGCTTGGCACTGGCCGTCGTTTTACAACGTCGTGACTGGGAAAACCCTGGCGTTACCCAACTTAATCGCCTTGCAGCACATCCCCCTTTCGCCAGCTGGCGTAATAGCGAAGAGGCCCGCACCGATCGCCCTTCCCAACAGTTGCGCAGCCTGAATGGCGAATGGCGCCTGATGCGGTATTTTCTCCTTACGCATCTGTGCGGTATTTCACACCGCATATGGTGCACTCTCAGTACAATCTGCTCTGATGCCGCATAGTTAAGCCAGCCCCGACACCCGCCAACACCCGCTGACGCGCCCTGACGGGCTTGTCTGCTCCCGGCATCCGCTTACAGACAAGCTGTGACCGTCTCCGGGAGCTGCATGTGTCAGAGGTTTTCACCGTCATCACCGAAACGCGCGA'
+  ).repeat(1),
+  features: [
+    { name: 'lac promoter',  type_key: 'promoter',   start_pos: 356, end_pos: 387, strand: -1 },
+    { name: 'lacZ-alpha',    type_key: 'CDS',        start_pos: 387, end_pos: 460, strand: -1 },
+    { name: 'MCS',           type_key: 'misc_feature', start_pos: 396, end_pos: 454, strand: 1 },
+    { name: 'AmpR promoter', type_key: 'promoter',   start_pos: 700, end_pos: 760, strand: 1 },
+    { name: 'ori',           type_key: 'rep_origin', start_pos: 120, end_pos: 300, strand: 1 },
+    { name: 'M13 fwd primer', type_key: 'primer_bind', start_pos: 340, end_pos: 356, strand: 1 },
+  ],
+};
+
+function renderFacts(d) {
+  const facts = $('#vector-facts');
+  facts.textContent = '';
+  const rows = d.length
+    ? [
+        ['Coordinates', d.crossesOrigin
+          ? `${d.startDisplay}–${d.endDisplay} (wraps)`
+          : `${d.startDisplay}–${d.endDisplay}`],
+        ['Length', `${d.length} bp`],
+        ['GC', `${d.gc}%`],
+        ['On', d.kind === 'feature' ? (d.featureName || 'a feature') : 'the sequence'],
+      ]
+    : [['Coordinates', '—'], ['Length', '—'], ['GC', '—'], ['On', '—']];
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = v;
+    facts.append(dt, dd);
+  }
+}
+
+function showPlasmid(payload) {
+  currentPlasmid = payload;
+  const target = $('#vector-canvas');
+
+  $('#vector-name').textContent = payload.name || 'Unnamed';
+  const seq = payload.sequence || payload.seq || '';
+  $('#vector-size').textContent = `${seq.replace(/[\s\d]/g, '').length} bp`;
+
+  const options = {
+    output: $('#vector-bases'),          // the sidebar textbox
+    log: true,                            // and the console, as asked
+    onSelect: renderFacts,
+  };
+
+  try {
+    if (vector) {
+      vector.destroy();
+      vector = null;
+    }
+    vector = VectorViewer.createViewer(target, payload, options);
+  } catch (err) {
+    target.textContent = '';
+    toast(err.message, 'error');
+    return;
+  }
+
+  const warnings = vector.getWarnings();
+  const box = $('#vector-warnings');
+  if (warnings.length) {
+    box.textContent = `${warnings.length} feature(s) not drawn — ${warnings.join('; ')}`;
+    box.hidden = false;
+  } else {
+    box.hidden = true;
+  }
+
+  // A linear construct has no circular view to offer.
+  const circular = (payload.topology || 'circular') !== 'linear';
+  $$('[data-mapview]').forEach((b) => {
+    b.disabled = !circular && b.dataset.mapview !== 'linear';
+    b.classList.toggle('is-active',
+      b.dataset.mapview === (circular ? 'both' : 'linear'));
+  });
+
+  renderFacts(VectorViewer.describeSelection(seq, null));
+  $('#vector-bases').value = '';
+}
+
+async function loadPlasmids() {
+  const page = await api('/api/plasmids?limit=50');
+  const list = $('#plasmid-list');
+  list.textContent = '';
+
+  if (!page.items.length) {
+    list.append(emptyRow('No plasmids yet. Add one, or load the example.'));
+    return;
+  }
+  for (const p of page.items) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.className = 'row';
+    btn.type = 'button';
+    const main = document.createElement('div');
+    main.className = 'row__main';
+    const t = document.createElement('div');
+    t.className = 'row__title';
+    t.textContent = p.name;
+    const sub = document.createElement('div');
+    sub.className = 'row__sub';
+    sub.textContent = `${p.length_bp} bp · ${p.topology}`;
+    main.append(t, sub);
+    btn.append(main);
+    btn.addEventListener('click', async () => {
+      try {
+        showPlasmid(await api(`/api/plasmids/${p.id}`));
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+    li.append(btn);
+    list.append(li);
+  }
+}
+
+$$('[data-mapview]').forEach((btn) => btn.addEventListener('click', () => {
+  if (!vector) return;
+  if (!vector.setView(btn.dataset.mapview)) return;
+  $$('[data-mapview]').forEach((b) => b.classList.toggle('is-active', b === btn));
+}));
+
+$('#plasmid-demo').addEventListener('click', () => showPlasmid(EXAMPLE_PLASMID));
+
+$('#vector-copy').addEventListener('click', async () => {
+  const bases = vector && vector.getSelection().bases;
+  if (!bases) { toast('Nothing selected yet.', 'error'); return; }
+  try {
+    await navigator.clipboard.writeText(bases);
+    toast(`${bases.length} bp copied.`);
+  } catch {
+    // Clipboard access can be refused; selecting the text is the fallback
+    // that always works.
+    $('#vector-bases').select();
+    toast('Press the copy shortcut to copy the selected text.');
+  }
+});
+
+$('#plasmid-new').addEventListener('click', () => {
+  $('#plasmid-form').reset();
+  show('plasmid-new');
+});
+$('#plasmid-back').addEventListener('click', () => show('plasmids'));
+
+$('#plasmid-save').addEventListener('click', async () => {
+  const f = $('#plasmid-form').elements;
+  if (!f.name.value.trim() || !f.sequence.value.trim()) {
+    toast('A name and a sequence are needed.', 'error');
+    return;
+  }
+  try {
+    const created = await api('/api/plasmids', {
+      method: 'POST',
+      body: {
+        name: f.name.value.trim(),
+        sequence: f.sequence.value,
+        topology: f.topology.value,
+        external_source: f.external_source.value.trim() || 'pasted',
+      },
+    });
+    toast(`${created.name} saved.`);
+    show('plasmids');
+    await loadPlasmids();
+    showPlasmid(created);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
 /* --- events ------------------------------------------------------------- */
 
 $$('[data-authtab]').forEach((tab) => tab.addEventListener('click', () => {
@@ -601,6 +783,7 @@ $$('.nav__item').forEach((item) => item.addEventListener('click', async () => {
     if (view === 'dashboard') await loadDashboard();
     if (view === 'notebook') await loadEntries();
     if (view === 'lab') await loadMembers();
+    if (view === 'plasmids') await loadPlasmids();
   } catch (err) {
     toast(err.message, 'error');
   }

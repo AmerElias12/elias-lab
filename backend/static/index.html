@@ -6,7 +6,7 @@
 <title>Elias Lab — Notebook</title>
 <meta name="description" content="Electronic lab notebook: entries, plasmids, primers and guides.">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="/css/app.css?v=4">
+<link rel="stylesheet" href="/css/app.css?v=5">
 </head>
 <body>
 
@@ -88,7 +88,7 @@
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3a3 3 0 110 6 3 3 0 010-6zM1 17c0-3.3 2.7-6 6-6s6 2.7 6 6zM14 9a2.5 2.5 0 110-5 2.5 2.5 0 010 5zm.5 2c2.5 0 4.5 2 4.5 4.5V17h-4v-.5c0-1.9-.8-3.6-2-4.8.5-.1 1-.2 1.5-.2z"/></svg>
         Lab
       </button>
-      <button class="nav__item" data-view="plasmids" disabled title="Phase 3">
+      <button class="nav__item" data-view="plasmids">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 3a5 5 0 110 10 5 5 0 010-10z"/></svg>
         Plasmids
       </button>
@@ -217,6 +217,77 @@
       <ul class="list list--versions" id="version-list"></ul>
     </section>
 
+    <!-- Plasmids: list + interactive map -->
+    <section class="view" data-view="plasmids">
+      <div class="view__head">
+        <h1 class="view__title">Plasmids</h1>
+        <div class="view__head-actions">
+          <button class="btn btn--ghost" id="plasmid-demo">Load an example</button>
+          <button class="btn btn--primary" id="plasmid-new">+ Add from sequence</button>
+        </div>
+      </div>
+      <p class="muted view__lede">Click or drag on either map to read off the bases.</p>
+
+      <div class="vector">
+        <aside class="vector__list">
+          <ul class="list" id="plasmid-list"></ul>
+        </aside>
+
+        <div class="vector__main">
+          <div class="vector__bar">
+            <strong id="vector-name">No plasmid selected</strong>
+            <span class="badge" id="vector-size"></span>
+            <span class="topbar__spacer"></span>
+            <div class="segmented" role="group" aria-label="Map view">
+              <button class="seg is-active" data-mapview="both">Both</button>
+              <button class="seg" data-mapview="circular">Circular</button>
+              <button class="seg" data-mapview="linear">Linear</button>
+            </div>
+          </div>
+
+          <div id="vector-canvas" class="vector__canvas"></div>
+          <p class="alert alert--error" id="vector-warnings" hidden></p>
+        </div>
+
+        <aside class="vector__side">
+          <h2 class="section__title">Selection</h2>
+          <dl class="facts" id="vector-facts"></dl>
+          <label class="field">
+            <span>Selected bases</span>
+            <textarea id="vector-bases" rows="8" readonly
+                      placeholder="Click or drag on the map."></textarea>
+          </label>
+          <button class="btn btn--ghost btn--block" id="vector-copy">Copy bases</button>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Add a plasmid -->
+    <section class="view" data-view="plasmid-new">
+      <div class="view__head">
+        <button class="btn btn--ghost" id="plasmid-back">← Plasmids</button>
+        <button class="btn btn--primary" id="plasmid-save">Save</button>
+      </div>
+      <h1 class="view__title">Add a plasmid</h1>
+      <p class="muted view__lede">
+        Paste a sequence. Line numbers and spacing from a GenBank block are fine.
+      </p>
+      <form id="plasmid-form" class="entry stack--wide">
+        <label class="field"><span>Name</span>
+          <input type="text" name="name" required maxlength="200" placeholder="pLenti-GFP"></label>
+        <label class="field"><span>Topology</span>
+          <select name="topology">
+            <option value="circular" selected>Circular</option>
+            <option value="linear">Linear</option>
+          </select></label>
+        <label class="field"><span>Where it came from</span>
+          <input type="text" name="external_source" placeholder="Addgene #12345, or a colleague"></label>
+        <label class="field"><span>Sequence</span>
+          <textarea name="sequence" rows="10" required
+                    placeholder="ATGAGCAAAGGCGAAGAACTG…"></textarea></label>
+      </form>
+    </section>
+
     <!-- Lab members -->
     <section class="view" data-view="lab">
       <h1 class="view__title">Lab</h1>
@@ -266,6 +337,10 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </div>
 
-<script src="/js/app.js?v=4"></script>
+<script src="/vendor/seqviz.min.js"
+        integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"
+        crossorigin="anonymous"></script>
+<script src="/js/vector-viewer.js?v=1"></script>
+<script src="/js/app.js?v=5"></script>
 </body>
 </html>

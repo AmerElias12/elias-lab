@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import DBAPIError
 
 from app.config import get_settings
-from app.routers import auth, dashboard, entries, members
+from app.routers import auth, dashboard, entries, members, plasmids
 from app.session import check_rls_is_effective, dispose_engine
 
 log = logging.getLogger("eln")
@@ -138,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(entries.router)
     app.include_router(dashboard.router)
     app.include_router(members.router)
+    app.include_router(plasmids.router)
 
     # Mounted last and at the root, so it only sees paths no API route claimed.
     # html=True serves index.html for unknown paths, which is what makes the

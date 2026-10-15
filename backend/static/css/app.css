@@ -305,6 +305,61 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 }
 @media (max-width: 720px) { .add-member { grid-template-columns: 1fr; } }
 
+/* --- vector viewer ------------------------------------------------------- */
+.vector {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr) 19rem;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+.vector__list, .vector__side {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .75rem;
+  max-height: 78vh; overflow: auto;
+}
+.vector__side { padding: 1rem; display: grid; gap: .75rem; }
+.vector__side .section__title { margin: 0; }
+.vector__main {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.vector__bar {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--border);
+}
+/* SeqViz measures its own height from the container, so this needs a real
+   one — a percentage against an auto-height parent collapses to nothing and
+   the map renders 0px tall with no error anywhere. */
+.vector__canvas { height: 72vh; min-height: 24rem; }
+.vector__canvas:empty::after {
+  content: "Choose a plasmid from the list.";
+  display: grid; place-items: center; height: 100%;
+  color: var(--text-dim); font-size: .9rem;
+}
+/* The library draws its own type; keep it monospace so bases line up. */
+.vector__canvas text { font-family: var(--mono); }
+
+.segmented { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: .15rem; }
+.seg {
+  border: 0; background: transparent; color: var(--text-dim);
+  font: inherit; font-size: .85rem; font-weight: 550;
+  padding: .3rem .7rem; border-radius: 6px; cursor: pointer;
+}
+.seg.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+.facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; font-size: .88rem; }
+.facts dt { color: var(--text-dim); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+#vector-bases { font-family: var(--mono); font-size: .8rem; line-height: 1.5; word-break: break-all; }
+.stack--wide { max-width: 44rem; }
+
+@media (max-width: 1200px) {
+  .vector { grid-template-columns: 1fr; }
+  .vector__list, .vector__side { max-height: none; }
+  .vector__canvas { height: 60vh; }
+}
+
 /* --- toast --------------------------------------------------------------- */
 .toast {
   position: fixed; inset: auto 1.25rem 1.25rem auto;
