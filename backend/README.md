@@ -30,9 +30,9 @@ uvicorn app.main:app
 ## Checking it
 
 ```bash
-python scripts/check_migrations.py      # 10 checks: the migrations, up and down again
+python scripts/check_migrations.py      # 11 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 51 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 58 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
@@ -184,6 +184,48 @@ Two details that bite:
   keeps a colour only when it differs from what `plasmid.js` would have
   invented.
 
+## Sessions
+
+A JWT cannot be withdrawn — valid until it expires is what "stateless" means —
+so the long-lived half of a session is a row in `refresh_token` and the access
+token is short enough that losing one matters for minutes.
+
+| | where it lives | how long |
+|---|---|---|
+| access token | a variable in the page, never stored | 15 minutes |
+| refresh token | httpOnly, SameSite=strict cookie on `/api/auth` | 30 days, rotated on use |
+
+**The access token is never written to storage.** A reload has none and asks
+`/api/auth/refresh` for a new one, which is why the session survives a reload
+without anything being readable by script. An XSS on this origin can act while
+the page is open; it cannot walk away with the session.
+
+**Rotation with reuse detection.** Every refresh mints a successor and links
+the two. Presenting a token that has already been replaced means somebody kept
+a copy — and there is no way to tell the thief from the owner, so the whole
+family is revoked and both sign in again. That is the only reason rotation is
+worth the complexity; without it, a stolen refresh token renews forever.
+
+Three consequences worth knowing:
+
+- **Signing out ends the session on the server.** It revokes the family, so the
+  successor dies too. It is deliberately unauthenticated: by the time somebody
+  clicks it the access token has usually expired, and a sign-out that only
+  works while you are signed in is not one.
+- **`GET /api/auth/sessions`** lists where the account is signed in, and
+  `DELETE` one to sign out from somewhere else. Your own only — the policy has
+  no administrator branch, because whoever can read a session can become its
+  owner.
+- **The client refreshes once per 401, and only one refresh at a time.** Three
+  requests failing together must not start three rotations; the second would
+  present a token the first already replaced, which the server would correctly
+  read as a theft.
+
+What is stored is a SHA-256, not the token. Unlike a password there is nothing
+to guess — it is 256 bits from the CSPRNG — so argon2 would cost 50 ms per
+refresh for no gain; the hash is there so a leaked backup holds no live
+sessions.
+
 ## The oligo and guide library
 
 `/api/primers` and `/api/guides` are the lab's library, and the Plasmids page
@@ -227,9 +269,9 @@ leaves every experiment citing this one describing something else.
 - **No rate limiting on login.** It belongs in front of the API, where the
   client address is known. Argon2 at these parameters costs ~50 ms a try,
   which is a speed bump, not a defence.
-- **The token is in `localStorage`**, so any XSS on this origin can read it.
-  The frontend never uses `innerHTML`, which is what keeps that side closed; a
-  cookie would move the problem to CSRF rather than remove it.
+- **No rate limiting on `/refresh`.** The token is unguessable, so this is
+  about load rather than guessing, but it belongs in front of the API with the
+  login limiter.
 - **`app_user.is_superuser` is unused.** Authorisation comes from
   `lab_member.role`. Note that `app_user_update` currently permits a person to
   update their own row without restricting *which* columns — the API never

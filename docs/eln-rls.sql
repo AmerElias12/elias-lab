@@ -125,7 +125,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'lab', 'app_user', 'lab_member', 'project',
+    'lab', 'app_user', 'lab_member', 'project', 'refresh_token',
     'notebook_entry', 'notebook_entry_version', 'entry_signature',
     'plasmid', 'entry_plasmid', 'plasmid_lineage', 'sequence_feature',
     'feature_type', 'feature_library_entry', 'plasmid_sample', 'storage_box',
@@ -197,6 +197,25 @@ CREATE POLICY app_user_update ON app_user FOR UPDATE
        WHERE m.user_id = app_user.id AND m.lab_id = (SELECT current_lab())))
   )
   WITH CHECK (true);
+
+-- Your own sessions, and nobody else's — not even a lab administrator's. A
+-- session is not lab data; it is the thing that proves somebody is who they
+-- say they are, and an admin who can read one can become its owner.
+--
+-- There is no SELECT of other people's rows at any privilege level here, which
+-- is also why reuse detection and revocation run inside the SECURITY DEFINER
+-- function in docs/eln-auth.sql: at refresh time nobody is authenticated yet,
+-- so current_user_id() is null and these policies correctly show nothing.
+CREATE POLICY refresh_token_select ON refresh_token FOR SELECT
+  USING (user_id = (SELECT current_user_id()));
+CREATE POLICY refresh_token_insert ON refresh_token FOR INSERT
+  WITH CHECK (user_id = (SELECT current_user_id()));
+-- Revoking is an UPDATE. There is no DELETE policy: a session that ended is
+-- part of the record of who was signed in when, and an audit that can be
+-- tidied away is not one.
+CREATE POLICY refresh_token_update ON refresh_token FOR UPDATE
+  USING (user_id = (SELECT current_user_id()))
+  WITH CHECK (user_id = (SELECT current_user_id()));
 
 CREATE POLICY lab_member_select ON lab_member FOR SELECT
   USING (lab_id = (SELECT current_lab()) AND (SELECT can_read()));

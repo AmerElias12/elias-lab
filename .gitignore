@@ -30,6 +30,16 @@ Thumbs.db
 !.env.example
 # (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
 #  to be public and is protected by Row-Level Security.)
+#
+# Source files are not secrets, and the patterns above are broad on purpose.
+# git matches them case-insensitively on macOS, so *TOKEN* also catches
+# refresh_tokens.py — which silently kept a migration out of a commit until a
+# check noticed it was missing. Anything named for what it *implements* is
+# exempted here; anything holding a real value still is not.
+!backend/migrations/versions/*.py
+!backend/app/*.py
+!backend/scripts/*.py
+!backend/static/js/*.js
 .claude/launch.json
 
 # graphify: the knowledge graph is rebuilt locally with `graphify update .`,

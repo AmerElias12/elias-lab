@@ -72,7 +72,7 @@ def main() -> int:
 
         def _stamped():
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0002_genbank_feature_keys",)], rows
+            assert rows == [("0003_refresh_tokens",)], rows
         check("the database records which revision it is at", _stamped)
 
         def _feature_vocabulary():
@@ -88,6 +88,29 @@ def main() -> int:
             assert len(keys) >= 36, len(keys)
         check("the feature vocabulary covers what real files carry", _feature_vocabulary)
 
+        def _sessions_are_revocable_rows():
+            cols = {r[0] for r in q(
+                "SELECT column_name FROM information_schema.columns "
+                " WHERE table_name = 'refresh_token'"
+            )}
+            for needed in ("token_sha256", "family_id", "replaced_by_id", "revoked_at"):
+                assert needed in cols, f"refresh_token has no {needed}"
+            forced = q(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                " WHERE oid = 'refresh_token'::regclass"
+            )
+            assert forced == [(True, True)], forced
+            # No administrator branch, and no DELETE policy at all.
+            pols = {(r[0], r[1]) for r in q(
+                "SELECT policyname, cmd FROM pg_policies WHERE tablename = 'refresh_token'"
+            )}
+            assert ("refresh_token_select", "SELECT") in pols, pols
+            assert not any(cmd == "DELETE" for _, cmd in pols), (
+                "a session that ended is part of the record of who was signed in when"
+            )
+        check("sessions are rows that can be revoked, behind forced RLS",
+              _sessions_are_revocable_rows)
+
         def _second_revision_steps_down_on_its_own():
             command.downgrade(cfg, "0001_initial_schema")
             keys = {r[0] for r in q("SELECT key FROM feature_type")}
@@ -96,6 +119,9 @@ def main() -> int:
             assert len(keys) == 14, len(keys)
             command.upgrade(cfg, "head")
             assert "source" in {r[0] for r in q("SELECT key FROM feature_type")}
+            # And 0003 came back with it: stepping down two and up two is the
+            # path a rollback actually takes.
+            assert q("SELECT to_regclass('refresh_token')") != [(None,)]
         check("a single revision can be stepped down and up again", _second_revision_steps_down_on_its_own)
 
         def _tables_exist():
@@ -146,9 +172,18 @@ def main() -> int:
                 " ORDER BY p.proname"
             )
             by_name = dict(rows)
+            # Every name here is a line past the policies, so the list is
+            # short on purpose and adding to it is meant to be a decision.
             expected = {
                 "auth_create_lab", "auth_find_user_by_email",
                 "auth_lookup_credentials", "auth_register_user",
+                # Refreshing happens before anybody is authenticated, so the
+                # policies on refresh_token cannot see the row that is about
+                # to establish who the caller is.
+                "auth_rotate_refresh_token",
+                # And signing out, for the same reason: by the time somebody
+                # clicks it the access token has usually expired.
+                "auth_revoke_refresh_family",
             }
             assert expected <= set(by_name), f"missing: {sorted(expected - set(by_name))}"
             for name in expected:
@@ -206,7 +241,7 @@ def main() -> int:
         def _upgrade_again():
             command.upgrade(cfg, "head")
             rows = q("SELECT version_num FROM alembic_version")
-            assert rows == [("0002_genbank_feature_keys",)], rows
+            assert rows == [("0003_refresh_tokens",)], rows
             (count,) = q("SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")[0]
             assert count >= 30, f"only {count} policies after the second upgrade"
             from app.db import Base

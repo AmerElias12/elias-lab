@@ -241,6 +241,135 @@ async def exercise() -> int:
                   _fresh_account_has_no_lab())
 
         # ---------------------------------------------------------------
+        # sessions: the part a JWT cannot do on its own
+        # ---------------------------------------------------------------
+        async def refresh_with(cookie: str | None):
+            """Refresh carrying exactly one cookie, and no jar.
+
+            httpx merges a per-request `cookies=` with the client's own jar
+            rather than replacing it, so the live session cookie went along
+            for the ride and every negative case here passed when it should
+            have failed. A throwaway client with an explicit header is the
+            only way to be sure what was sent.
+            """
+            headers = {"Cookie": f"eln_refresh={cookie}"} if cookie is not None else {}
+            fresh = httpx.AsyncClient(transport=transport, base_url="http://test")
+            try:
+                return await fresh.post("/api/auth/refresh", headers=headers)
+            finally:
+                await fresh.aclose()
+
+        async def _login_sets_an_httponly_cookie():
+            r = await c.post("/api/auth/login",
+                             json={"email": "pi@braude.ac.il",
+                                   "password": "correct horse battery staple"})
+            assert r.status_code == 200, r.text
+            assert r.json()["refresh_token"] is None, (
+                "the refresh token must not come back in the body as well; that "
+                "hands it to the script it is being hidden from"
+            )
+            raw = r.headers.get("set-cookie", "")
+            assert "eln_refresh=" in raw, raw
+            assert "HttpOnly" in raw, raw
+            assert "SameSite=strict" in raw.replace("samesite", "SameSite"), raw
+            assert "Path=/api/auth" in raw, raw
+        await run("signing in sets an httpOnly, same-site refresh cookie",
+                  _login_sets_an_httponly_cookie())
+
+        async def _refresh_rotates():
+            before = c.cookies.get("eln_refresh")
+            assert before, "the client is holding the cookie"
+            r = await c.post("/api/auth/refresh")
+            assert r.status_code == 200, r.text
+            assert r.json()["access_token"], r.text
+            after = c.cookies.get("eln_refresh")
+            assert after and after != before, "each refresh must mint a new token"
+        await run("a refresh returns a new access token and rotates the cookie",
+                  _refresh_rotates())
+
+        async def _a_spent_token_kills_the_family():
+            """The reason rotation is worth having. A refresh token that has
+            already been replaced is one somebody kept a copy of; there is no
+            way to tell the thief from the owner, so both are signed out."""
+            spent = c.cookies.get("eln_refresh")
+            r1 = await c.post("/api/auth/refresh")
+            assert r1.status_code == 200, r1.text
+            live = c.cookies.get("eln_refresh")
+            assert live != spent
+
+            # Present the one that was already used.
+            replay = await refresh_with(spent)
+            assert replay.status_code == 401, f"{replay.status_code} {replay.text}"
+
+            # And the successor the honest holder had is now dead too.
+            after = await refresh_with(live)
+            assert after.status_code == 401, (
+                f"the family should have been revoked: {after.status_code} {after.text}"
+            )
+        await run("replaying a spent refresh token revokes the whole family",
+                  _a_spent_token_kills_the_family())
+
+        async def _every_failure_looks_the_same():
+            for cookie in ("not-a-token", "", "x" * 60):
+                r = await refresh_with(cookie)
+                assert r.status_code == 401, f"{cookie!r} gave {r.status_code}"
+            bare = await refresh_with(None)
+            assert bare.status_code == 401, bare.text
+        await run("an unknown, empty or malformed refresh token is the same 401",
+                  _every_failure_looks_the_same())
+
+        # Sign in again: the family above was deliberately destroyed.
+        pi_token = await login("pi@braude.ac.il")
+
+        async def _logout_ends_the_session():
+            held = c.cookies.get("eln_refresh")
+            r = await c.post("/api/auth/logout")
+            assert r.status_code == 204, r.text
+            dead = await refresh_with(held)
+            assert dead.status_code == 401, (
+                f"signing out must end the session, not just clear the cookie: {dead.text}"
+            )
+        await run("signing out ends the session on the server, not just in the browser",
+                  _logout_ends_the_session())
+
+        pi_token = await login("pi@braude.ac.il")
+
+        async def _sessions_are_listed_and_revocable():
+            # A second sign-in, as if from another machine.
+            other = httpx.AsyncClient(transport=transport, base_url="http://test")
+            try:
+                await other.post("/api/auth/login",
+                                 json={"email": "pi@braude.ac.il",
+                                       "password": "correct horse battery staple"})
+                sessions = (await c.get("/api/auth/sessions", headers=auth(pi_token))).json()
+                assert len(sessions) >= 2, sessions
+                assert sum(1 for s in sessions if s["current"]) == 1, (
+                    "exactly one session is the one asking"
+                )
+                elsewhere = next(s for s in sessions if not s["current"])
+                gone = await c.delete(f"/api/auth/sessions/{elsewhere['id']}",
+                                      headers=auth(pi_token))
+                assert gone.status_code == 204, gone.text
+                # That other browser can no longer refresh.
+                still = await other.post("/api/auth/refresh")
+                assert still.status_code == 401, still.text
+            finally:
+                await other.aclose()
+        await run("sessions can be listed and signed out from somewhere else",
+                  _sessions_are_listed_and_revocable())
+
+        async def _sessions_are_private_even_from_admins():
+            """A session is not lab data: whoever can read one can become its
+            owner. The policy has no administrator branch."""
+            import sqlalchemy as sa
+            from app.session import get_engine
+            async with get_engine().connect() as conn:
+                n = (await conn.execute(sa.text("SELECT count(*) FROM refresh_token"))).scalar()
+                assert n == 0, f"the application read {n} sessions with no scope set"
+        await run("nobody reads somebody else's sessions, administrators included",
+                  _sessions_are_private_even_from_admins())
+
+        # ---------------------------------------------------------------
         # starting a lab
         # ---------------------------------------------------------------
         async def _create_lab():

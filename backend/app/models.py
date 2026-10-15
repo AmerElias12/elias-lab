@@ -79,6 +79,34 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     )
 
 
+class RefreshToken(Base, PrimaryKeyMixin):
+    """A signed-in session, as a row that can be revoked.
+
+    See the table comment in docs/eln-schema.sql: the long-lived half of a
+    session lives here so that signing out is an UPDATE rather than a wish,
+    and only a SHA-256 of the token is stored.
+    """
+
+    __tablename__ = "refresh_token"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False
+    )
+    token_sha256: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    family_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("refresh_token.id", ondelete="SET NULL")
+    )
+    issued_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    revoked_reason: Mapped[str | None] = mapped_column(sa.Text)
+    user_agent: Mapped[str | None] = mapped_column(sa.Text)
+
+
 class LabMember(Base):
     """Which labs a person belongs to, and with what rights. The composite key
     is the membership: a person cannot hold two roles in one lab."""

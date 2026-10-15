@@ -85,6 +85,46 @@ CREATE TABLE app_user (
 -- Case-insensitive uniqueness without the citext extension.
 CREATE UNIQUE INDEX app_user_email_key ON app_user (lower(email));
 
+-- A signed-in session, as something that can be taken away.
+--
+-- A JWT cannot be withdrawn: it is valid until it expires because that is what
+-- "stateless" means. So the long-lived half of a session lives here, as a row,
+-- and the short-lived half is a token that dies on its own within minutes.
+-- Signing out, or discovering a stolen session, is then an UPDATE rather than
+-- a wish.
+--
+-- What is stored is a SHA-256 of the token, not the token. Unlike a password
+-- this needs no argon2: the token is 256 bits from the system CSPRNG, so there
+-- is no guessing to slow down, and a per-request argon2 verification would cost
+-- 50 ms to defend against nothing. The hash is here so that a stolen database
+-- backup does not hand over live sessions.
+CREATE TABLE refresh_token (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  token_sha256  bytea NOT NULL,
+  -- Every token descended from one sign-in shares a family. Rotation replaces
+  -- a token with its successor; if an already-replaced one is ever presented
+  -- again, somebody has a copy they should not, and the whole family goes.
+  family_id     uuid NOT NULL,
+  replaced_by_id uuid REFERENCES refresh_token(id) ON DELETE SET NULL,
+  issued_at     timestamptz NOT NULL DEFAULT now(),
+  expires_at    timestamptz NOT NULL,
+  last_used_at  timestamptz,
+  revoked_at    timestamptz,
+  revoked_reason text,
+  -- For the person reading their own session list: "Firefox on the bench Mac".
+  user_agent    text,
+  CONSTRAINT refresh_token_hash_len CHECK (octet_length(token_sha256) = 32),
+  CONSTRAINT refresh_token_expires_after_issue CHECK (expires_at > issued_at),
+  CONSTRAINT refresh_token_not_its_own_successor CHECK (replaced_by_id IS DISTINCT FROM id)
+);
+
+-- The lookup every refresh does, and it must be unique: two rows with the same
+-- hash would make "which session is this" ambiguous.
+CREATE UNIQUE INDEX refresh_token_hash_key ON refresh_token (token_sha256);
+CREATE INDEX refresh_token_user_idx ON refresh_token (user_id, issued_at DESC);
+CREATE INDEX refresh_token_family_idx ON refresh_token (family_id);
+
 CREATE TABLE lab_member (
   lab_id     uuid NOT NULL REFERENCES lab(id)      ON DELETE CASCADE,
   user_id    uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
@@ -671,4 +711,28 @@ INSERT INTO feature_type (key, label, default_color, is_builtin) VALUES
   ('tag',          'Epitope or purification tag', '#f5f09a', true),
   ('gRNA',         'Guide RNA target',  '#ffb347', true),
   ('pegRNA',       'Prime editing guide target', '#ff9a3c', true),
-  ('misc_feature', 'Other feature',     '#d7d7d7', true);
+  ('misc_feature', 'Other feature',     '#d7d7d7', true),
+  -- INSDC keys that real GenBank files carry. Added by migration 0002 as
+  -- well, idempotently, for databases built before it existed.
+  ('source',         'Source',                    '#eeeeee', true),
+  ('5''UTR',         '5'' untranslated region',   '#cfe3f7', true),
+  ('3''UTR',         '3'' untranslated region',   '#cfe3f7', true),
+  ('RBS',            'Ribosome binding site',     '#cde8b5', true),
+  ('sig_peptide',    'Signal peptide',            '#e5d4f5', true),
+  ('mat_peptide',    'Mature peptide',            '#d9c2ef', true),
+  ('intron',         'Intron',                    '#e8e8c0', true),
+  ('exon',           'Exon',                      '#c7e3c7', true),
+  ('enhancer',       'Enhancer',                  '#f6c99a', true),
+  ('misc_RNA',       'Other RNA',                 '#f0c0e0', true),
+  ('ncRNA',          'Non-coding RNA',            '#efb8d8', true),
+  ('tRNA',           'Transfer RNA',              '#e8aed0', true),
+  ('rRNA',           'Ribosomal RNA',             '#e1a4c8', true),
+  ('polyA_site',     'PolyA site',                '#f0b6dd', true),
+  ('repeat_region',  'Repeat region',             '#d5d5ea', true),
+  ('mobile_element', 'Mobile element',            '#c3c3e4', true),
+  ('misc_binding',   'Other binding site',        '#f2e39a', true),
+  ('misc_recomb',    'Recombination site',        '#ffd9a0', true),
+  ('oriT',           'Origin of transfer',        '#c9b3f0', true),
+  ('stem_loop',      'Stem loop',                 '#bcd9d9', true),
+  ('CDS_motif',      'Coding sequence motif',     '#c7ddc7', true),
+  ('assembly_gap',   'Assembly gap',              '#d0d0d0', true);

@@ -44,10 +44,16 @@ class Settings(BaseSettings):
     # --- tokens -----------------------------------------------------------
     jwt_secret: str = Field(min_length=32, description="No default. Generate with `openssl rand -hex 32`.")
     jwt_algorithm: str = "HS256"
-    # A lab tool people keep open all day. Short expiry without a refresh flow
-    # just means being logged out mid-experiment, so this is deliberately long
-    # and the trade-off is written down in README.md.
-    access_token_hours: int = 12
+    # Short, because it can no longer be withdrawn once issued and because
+    # there is now a refresh flow to renew it quietly. This is the window in
+    # which a stolen access token is still worth something.
+    access_token_minutes: int = 15
+    # How long somebody stays signed in without touching the app. Rotation
+    # means a session in daily use renews indefinitely; this is the idle limit.
+    refresh_token_days: int = 30
+    # The refresh cookie is Secure in production and not in development, where
+    # localhost is http and a Secure cookie would simply never be sent.
+    cookie_secure: bool | None = None
 
     # --- http -------------------------------------------------------------
     # Empty by default: the API serves its own frontend from the same origin,
@@ -63,6 +69,12 @@ class Settings(BaseSettings):
         if v.strip().lower() in {"change-me", "changeme", "secret", "dev", "development"}:
             raise ValueError("set ELN_JWT_SECRET to a real random value")
         return v
+
+    @property
+    def refresh_cookie_secure(self) -> bool:
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return self.is_production
 
     @property
     def is_production(self) -> bool:

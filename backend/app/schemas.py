@@ -156,10 +156,30 @@ class LoginRequest(ApiModel):
 
 
 class Token(BaseModel):
+    """What a sign-in hands back.
+
+    `refresh_token` is deliberately always None here. The refresh token goes
+    out as an httpOnly cookie instead, so that script on this origin cannot
+    read it — which is the entire reason for having one. Putting it in the
+    body as well would hand it straight back to the thing it is hiding from.
+    The field stays so that the shape does not change if that is ever revisited.
+    """
+
     access_token: str
     refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int
+
+
+class SessionRead(ReadModel):
+    """One signed-in session, for the person who owns it."""
+
+    id: uuid.UUID
+    issued_at: datetime
+    expires_at: datetime
+    last_used_at: datetime | None = None
+    user_agent: str | None = None
+    current: bool = False
 
 
 class TokenPayload(BaseModel):

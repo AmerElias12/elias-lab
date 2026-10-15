@@ -15,14 +15,15 @@
      3. Every fetch goes through api(), so a 401 has exactly one meaning and
         one handler.
 
-   The access token is kept in localStorage. That is a real trade-off: any
-   cross-site scripting on this origin can read it, where an httpOnly cookie
-   could not. A cookie would need CSRF protection on every write instead, and
-   rule 1 above is what keeps the XSS side closed.
+   The access token is never stored. It lives in a variable for fifteen
+   minutes and is renewed from an httpOnly refresh cookie that script cannot
+   read — so an XSS on this origin can act while the page is open but cannot
+   take the session away with it. The cookie is SameSite=strict and scoped to
+   /api/auth, which is what stands in for a CSRF token on the two endpoints
+   that act on it.
    ======================================================================== */
 'use strict';
 
-const TOKEN_KEY = 'eln.token';
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -37,11 +38,35 @@ const state = {
 
 /* --- plumbing ----------------------------------------------------------- */
 
-const token = {
-  get: () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } },
-  set: (v) => { try { localStorage.setItem(TOKEN_KEY, v); } catch { /* private mode */ } },
-  clear: () => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } },
-};
+/* The access token lives here and nowhere else — not in localStorage, not in
+   sessionStorage. It is good for fifteen minutes and is replaced from the
+   refresh cookie, which is httpOnly and therefore unreadable from script. So
+   an XSS on this origin can use the session while the page is open and cannot
+   walk away with it, which is the whole reason the refresh flow exists.
+
+   The cost is that a reload has no token. That is what refreshOnce() on boot
+   is for, and it is why the first paint can briefly show nothing. */
+let accessToken = null;
+
+/* One refresh in flight at a time. Three requests failing with 401 together
+   must not start three rotations: the second would present a token the first
+   has already replaced, which is precisely the reuse the server treats as a
+   theft — and it would sign the person out for being quick. */
+let refreshing = null;
+
+function refreshOnce() {
+  if (!refreshing) {
+    refreshing = fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        accessToken = data ? data.access_token : null;
+        return accessToken;
+      })
+      .catch(() => null)
+      .finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
 
 class ApiError extends Error {
   constructor(status, detail) {
@@ -50,21 +75,28 @@ class ApiError extends Error {
   }
 }
 
-async function api(path, { method = 'GET', body, auth = true } = {}) {
+async function api(path, { method = 'GET', body, auth = true, retried = false } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const t = token.get();
-  if (auth && t) headers.Authorization = `Bearer ${t}`;
+  if (auth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   const res = await fetch(path, {
     method,
     headers,
+    credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-  if (res.status === 401 && auth) {
-    signOut({ silent: true });
-    throw new ApiError(401, 'your session has expired — sign in again');
+  if (res.status === 401 && auth && !retried) {
+    // The access token expires every fifteen minutes, so this is the ordinary
+    // case rather than an error: renew it and repeat the request once. Once,
+    // because a second 401 after a fresh token means the session is genuinely
+    // over and retrying forever would just hide that.
+    if (await refreshOnce()) {
+      return api(path, { method, body, auth, retried: true });
+    }
+    signOut({ silent: true, server: false });
+    throw new ApiError(401, 'your session has ended — sign in again');
   }
   if (res.status === 204) return null;
 
@@ -125,8 +157,14 @@ function showAuth(message) {
   if (message) { err.textContent = message; err.hidden = false; } else { err.hidden = true; }
 }
 
-function signOut({ silent = false } = {}) {
-  token.clear();
+function signOut({ silent = false, server = true } = {}) {
+  // Tell the server, so the session is actually over rather than merely
+  // forgotten here. Nothing waits on it: the page should sign out instantly
+  // even if the request fails, and the cookie is cleared by the response.
+  if (server) {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+  }
+  accessToken = null;
   state.me = null;
   showAuth(silent ? null : 'Signed out.');
 }
@@ -134,7 +172,10 @@ function signOut({ silent = false } = {}) {
 /* --- bootstrap ---------------------------------------------------------- */
 
 async function start() {
-  if (!token.get()) { showAuth(); return; }
+  // There is no stored token to find, so the question on boot is whether the
+  // browser still holds a refresh cookie. It is httpOnly, so the only way to
+  // ask is to try.
+  if (!(await refreshOnce())) { showAuth(); return; }
   try {
     await loadMe();
   } catch (err) {
@@ -1102,7 +1143,7 @@ $('#login-form').addEventListener('submit', async (e) => {
       method: 'POST', auth: false,
       body: { email: f.email.value, password: f.password.value },
     });
-    token.set(res.access_token);
+    accessToken = res.access_token;
     await loadMe();
   } catch (err) {
     showAuth(err.message);
@@ -1121,7 +1162,7 @@ $('#register-form').addEventListener('submit', async (e) => {
       method: 'POST', auth: false,
       body: { email: f.email.value, password: f.password.value },
     });
-    token.set(res.access_token);
+    accessToken = res.access_token;
     await loadMe();
   } catch (err) {
     showAuth(err.message);
@@ -1138,7 +1179,7 @@ $('#create-lab-form').addEventListener('submit', async (e) => {
     });
     // The lab lives in the token, so working in it needs a new one.
     const res = await api('/api/auth/switch-lab', { method: 'POST', body: { lab_id: lab.id } });
-    token.set(res.access_token);
+    accessToken = res.access_token;
     toast(`Created ${lab.name}.`);
     await loadMe();
   } catch (err) {
@@ -1151,7 +1192,7 @@ $('#lab-select').addEventListener('change', async (e) => {
     const res = await api('/api/auth/switch-lab', {
       method: 'POST', body: { lab_id: e.target.value },
     });
-    token.set(res.access_token);
+    accessToken = res.access_token;
     state.page.offset = 0;
     await loadMe();
   } catch (err) {
