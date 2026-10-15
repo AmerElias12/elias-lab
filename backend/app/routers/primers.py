@@ -147,6 +147,9 @@ async def design_primers(body: PrimerDesignRequest, ctx: CtxDep) -> PrimerDesign
             product_length=body.product_length,
             optimal_tm=body.optimal_tm,
             max_pairs=body.max_pairs,
+            purpose=body.purpose,
+            screen_against=body.screen_against,
+            screen_name=body.screen_name,
         )
     except primer_design.DesignError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

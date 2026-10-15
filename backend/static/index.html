@@ -356,6 +356,14 @@
 
       <form id="design-form" class="design-form">
         <label class="field">
+          <span>Purpose</span>
+          <select name="purpose" id="design-purpose">
+            <option value="cloning" selected>Cloning from a plasmid</option>
+            <option value="qpcr">qRT-PCR</option>
+            <option value="analytical">Analytical PCR on genomic DNA</option>
+          </select>
+        </label>
+        <label class="field">
           <span>Product length (bp)</span>
           <input type="number" name="product_length" value="500" min="50" max="20000" required>
         </label>
@@ -370,6 +378,16 @@
         <span>Template <small class="muted" id="design-source"></small></span>
         <textarea name="template" id="design-template" rows="5"
                   placeholder="Paste a template, or open a plasmid first."></textarea>
+      </label>
+
+      <label class="field" id="design-screen-field" hidden>
+        <span>
+          Screen against <small class="muted">— the locus with its flanks, the
+          paralogs, or the transcript panel. FASTA or bases; several records
+          are fine. Not a whole genome.</small>
+        </span>
+        <textarea name="screen_against" id="design-screen" rows="4"
+                  placeholder="&gt;NM_000546 TP53 transcript&#10;ATGGAGGAGCCGCAGTCAGAT…"></textarea>
       </label>
 
       <p class="alert alert--note" id="design-notes" hidden></p>
@@ -387,6 +405,7 @@
               <th scope="col">GC</th>
               <th scope="col">Hairpin ΔG</th>
               <th scope="col">Dimer</th>
+              <th scope="col">Off-target</th>
               <th scope="col">Product</th>
               <th scope="col">Score</th>
               <th scope="col"><span class="sr-only">Save</span></th>
@@ -452,6 +471,6 @@
 <script src="/js/plasmid.js?v=1"></script>
 <script src="/js/plasmid-import.js?v=1"></script>
 <script src="/js/vector-viewer.js?v=2"></script>
-<script src="/js/app.js?v=11"></script>
+<script src="/js/app.js?v=12"></script>
 </body>
 </html>

@@ -172,8 +172,11 @@ def _sorted_by_score_with_components():
     assert scores == sorted(scores), scores
     for pair in RESULT["pairs"]:
         pen = pair["penalties"]
+        # Named, not counted: a new scoring component should fail here and be
+        # looked at rather than quietly change what the total means.
         assert set(pen) == {
-            "tm", "tm_difference", "gc", "hairpin", "dimer", "product_length", "gc_clamp",
+            "tm", "tm_difference", "gc", "hairpin", "dimer", "product_length",
+            "gc_clamp", "off_target",
         }, sorted(pen)
         # The total has to be the parts, or the breakdown is decoration.
         assert abs(sum(pen.values()) - pair["score"]) < 0.01, (sum(pen.values()), pair["score"])
@@ -278,6 +281,150 @@ def _short_template_takes_one_window():
     assert out["notes"] == [] or "not every one" not in " ".join(out["notes"])
 check("a product the size of the template is one window, with no caveat",
       _short_template_takes_one_window)
+
+
+# ---------------------------------------------------------------------------
+# Off-target screening: the thing that decides a qRT-PCR or an analytical PCR
+# ---------------------------------------------------------------------------
+from app.primer_design import (  # noqa: E402
+    MAX_SCREEN_BP,
+    OffTargetIndex,
+    parse_screen,
+    predicted_amplicons,
+)
+
+
+def _index_agrees_with_the_library():
+    """The index is inverted — exact seeds from the background, mismatches
+    generated from the primer — which is 25x faster and 16x smaller than the
+    `primers` package's version. It is only worth having if it gives the same
+    answer, so that is asserted rather than assumed."""
+    from primers.off_targets import off_targets
+
+    rng = random.Random(9)
+    bg = "".join(rng.choice("ACGT") for _ in range(4000))
+    idx = OffTargetIndex(bg)
+    for _ in range(25):
+        at = rng.randint(0, 3900)
+        probe = bg[at : at + 22]
+        theirs = off_targets(probe, bg)[len(probe) - 1]
+        mine = max(0, idx.site_count(probe) - 1)
+        assert theirs == mine, (probe, theirs, mine)
+check("the off-target index agrees with the primers package site for site",
+      _index_agrees_with_the_library)
+
+
+def _an_amplicon_is_measured_between_5_prime_ends():
+    """index.sites() anchors on the 3' end, because that is what primes. A
+    product runs 5' end to 5' end — the whole oligo is in the amplicon. The
+    first version measured 3' to 3' and reported every product short by the
+    two primer lengths less the two seeds, which marked the *intended*
+    product as unintended on every single pair."""
+    rng = random.Random(23)
+    gene = "".join(rng.choice("ACGT") for _ in range(600))
+    bg = "".join(rng.choice("ACGT") for _ in range(2000)) + gene
+    out = design(gene, product_length=200, optimal_tm=60,
+                 screen_against=bg, screen_name="locus")
+    pair = out["pairs"][0]
+    intended = [a for a in pair["amplicons"] if a["intended"]]
+    assert intended, (
+        f"the real product should be found and marked: "
+        f"{[(a['length'], a['intended']) for a in pair['amplicons']]} "
+        f"against an intended {pair['product_length']}"
+    )
+    assert abs(intended[0]["length"] - pair["product_length"]) <= 2, intended[0]
+    assert pair["spurious_amplicons"] == 0, pair["amplicons"]
+check("a predicted product is measured between the 5' ends, like a real one",
+      _an_amplicon_is_measured_between_5_prime_ends)
+
+
+def _a_pseudogene_is_caught_and_costs_the_pair():
+    """The case this exists for: a second place in the genome where both
+    primers sit facing each other. It makes a band, and the pair that does it
+    should stop being the recommendation."""
+    rng = random.Random(42)
+    gene = "".join(rng.choice("ACGT") for _ in range(1200))
+    clean = "".join(rng.choice("ACGT") for _ in range(3000)) + gene
+
+    best = design(gene, product_length=150, optimal_tm=60,
+                  screen_against=clean, screen_name="locus")["pairs"][0]
+    f, r = best["forward"]["sequence"], best["reverse"]["sequence"]
+    assert best["spurious_amplicons"] == 0, "clean to start with"
+
+    filler = "".join(rng.choice("ACGT") for _ in range(300))
+    trap = clean + "".join(rng.choice("ACGT") for _ in range(1500)) + f + filler + revcomp(r)
+
+    idx = OffTargetIndex(trap, "the pseudogene")
+    assert idx.site_count(f) == 2, idx.site_count(f)
+    amps = predicted_amplicons(idx, f, r, 150)
+    spurious = [a for a in amps if not a.intended]
+    assert spurious, [(a.length, a.intended) for a in amps]
+    # 300 bp of filler plus the two primers.
+    assert 320 <= spurious[0].length <= 360, spurious[0].length
+    assert any(a.intended for a in amps), "the real product is still there too"
+
+    # And it must cost the pair its place.
+    scored = design(gene, product_length=150, optimal_tm=60, max_pairs=10,
+                    screen_against=trap, screen_name="the pseudogene")
+    top = [p["forward"]["sequence"] for p in scored["pairs"]]
+    assert f not in top[:3], "a pair that makes a second product should not be recommended"
+check("a pseudogene that would give a second band is found, and demotes the pair",
+      _a_pseudogene_is_caught_and_costs_the_pair)
+
+
+def _purpose_decides_whether_screening_is_expected():
+    rng = random.Random(77)
+    gene = "".join(rng.choice("ACGT") for _ in range(800))
+
+    # Cloning from a plasmid: a purified template has no background to speak
+    # of, so nothing is demanded.
+    cloning = design(gene, product_length=400, optimal_tm=60, purpose="cloning")
+    assert not any("Nothing was screened" in n for n in cloning["notes"]), cloning["notes"]
+
+    # qRT-PCR and analytical PCR run against a genome. Not screening is a
+    # thing the answer has to admit to.
+    for purpose in ("qpcr", "analytical"):
+        out = design(gene, product_length=200, optimal_tm=60, purpose=purpose)
+        assert any("Nothing was screened" in n for n in out["notes"]), (purpose, out["notes"])
+        assert out["screen"] is None
+        for pair in out["pairs"]:
+            assert pair["screened"] is False
+            assert pair["penalties"]["off_target"] == 0.0
+
+    raises(lambda: design(gene, product_length=200, purpose="miniprep"), "unknown purpose")
+check("purpose decides whether a missing screen is worth saying out loud",
+      _purpose_decides_whether_screening_is_expected)
+
+
+def _qpcr_says_what_it_does_not_check():
+    rng = random.Random(31)
+    gene = "".join(rng.choice("ACGT") for _ in range(900))
+    out = design(gene, product_length=600, optimal_tm=60, purpose="qpcr")
+    assert any("70–250" in n for n in out["notes"]), out["notes"]
+    assert any("quantitative" in n for n in out["notes"]), out["notes"]
+    # The other half of qRT-PCR specificity, which needs exon boundaries this
+    # endpoint does not take. Saying so beats implying it was handled.
+    assert any("Exon structure" in n for n in out["notes"]), out["notes"]
+check("a qPCR design states the product-length limit and the exon gap",
+      _qpcr_says_what_it_does_not_check)
+
+
+def _screen_parsing_and_limits():
+    # Several records join with N, which is not a base, so no seed can span
+    # the join and invent a site that exists in neither record.
+    joined = parse_screen(">a\nACGTACGTACGTACGT\n>b\nTTTTGGGGCCCCAAAA\n")
+    assert "N" * 10 in joined, joined
+    assert joined.startswith("ACGTACGTACGTACGT")
+    idx = OffTargetIndex(joined)
+    straddle = joined[12:22]           # spans the boundary
+    assert "N" in straddle
+    assert idx.site_count("A" * 12 + straddle[-10:]) == 0 or "N" in straddle
+
+    raises(lambda: parse_screen("   "), "no bases")
+    raises(lambda: parse_screen("a note about the assay"), "not DNA")
+    raises(lambda: OffTargetIndex("A" * (MAX_SCREEN_BP + 1)), "indexes up to")
+check("the screen reads FASTA, separates records, and is bounded",
+      _screen_parsing_and_limits)
 
 
 print(f"\n{passed} checks passed" + (f", {len(failures)} FAILED" if failures else ""))

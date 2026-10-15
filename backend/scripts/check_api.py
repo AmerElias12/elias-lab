@@ -830,6 +830,74 @@ async def exercise() -> int:
         await run("primer design returns ranked pairs with their scores broken down",
                   _design_route_is_not_eaten_by_the_id_route())
 
+        async def _design_screens_for_qpcr_and_analytical_work():
+            """The distinction the purpose switch exists for: amplifying from a
+            purified plasmid has no background to mis-prime against, a qRT-PCR
+            or an analytical PCR runs against a genome."""
+            import random as _r
+            rng = _r.Random(17)
+            gene = "".join(rng.choice("ACGT") for _ in range(900))
+            background = "".join(rng.choice("ACGT") for _ in range(3000)) + gene
+
+            # Without a screen, a qPCR design has to admit the check was skipped.
+            bare = await c.post("/api/primers/design", headers=auth(pi_token),
+                                json={"template": gene, "product_length": 150,
+                                      "purpose": "qpcr"})
+            assert bare.status_code == 200, bare.text
+            out = bare.json()
+            assert out["screen"] is None
+            assert any("Nothing was screened" in n for n in out["notes"]), out["notes"]
+            assert out["pairs"][0]["screened"] is False
+
+            # With one, every primer reports where else it could sit.
+            screened = await c.post(
+                "/api/primers/design", headers=auth(pi_token),
+                json={"template": gene, "product_length": 150, "purpose": "qpcr",
+                      "screen_against": background, "screen_name": "the locus"},
+            )
+            assert screened.status_code == 200, screened.text
+            got = screened.json()
+            assert got["screen"]["length_bp"] == len(background), got["screen"]
+            assert got["screen"]["max_mismatches"] == 1
+            best = got["pairs"][0]
+            assert best["screened"] is True
+            assert best["forward"]["binding_sites"] >= 1, best["forward"]
+            # The real product should be found in the background and marked.
+            assert any(a["intended"] for a in best["amplicons"]), best["amplicons"]
+            assert best["spurious_amplicons"] == 0, best["amplicons"]
+            assert "off_target" in best["penalties"]
+        await run("a qPCR design screens against the background, or says it did not",
+                  _design_screens_for_qpcr_and_analytical_work())
+
+        async def _a_second_binding_site_shows_up_in_the_answer():
+            """A pseudogene where both primers sit facing each other makes a
+            band. The pair that does it must stop being the recommendation."""
+            import random as _r
+            rng = _r.Random(5)
+            gene = "".join(rng.choice("ACGT") for _ in range(900))
+            clean = "".join(rng.choice("ACGT") for _ in range(2500)) + gene
+
+            first = (await c.post("/api/primers/design", headers=auth(pi_token),
+                                  json={"template": gene, "product_length": 150,
+                                        "purpose": "analytical",
+                                        "screen_against": clean})).json()["pairs"][0]
+            f, r = first["forward"]["sequence"], first["reverse"]["sequence"]
+            assert first["spurious_amplicons"] == 0
+
+            rc = str.maketrans("ACGT", "TGCA")
+            filler = "".join(rng.choice("ACGT") for _ in range(300))
+            trap = clean + ("N" * 50) + f + filler + r.translate(rc)[::-1]
+
+            after = (await c.post("/api/primers/design", headers=auth(pi_token),
+                                  json={"template": gene, "product_length": 150,
+                                        "purpose": "analytical", "max_pairs": 3,
+                                        "screen_against": trap})).json()
+            assert f not in [p["forward"]["sequence"] for p in after["pairs"]], (
+                "a pair that would give a second band should not be recommended"
+            )
+        await run("a pair that would amplify a pseudogene loses its place",
+                  _a_second_binding_site_shows_up_in_the_answer())
+
         async def _design_refuses_what_cannot_work():
             import random as _r
             rng = _r.Random(6)

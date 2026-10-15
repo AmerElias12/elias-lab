@@ -18,7 +18,7 @@ import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -656,6 +656,16 @@ class PrimerDesignRequest(ApiModel):
     product_length: int = Field(ge=50, le=20_000)
     optimal_tm: float = Field(default=60.0, ge=40, le=75)
     max_pairs: int = Field(default=3, ge=1, le=10)
+    #: What the primers are for, which decides whether off-target screening is
+    #: expected. Amplifying from a purified plasmid has no background to
+    #: mis-prime against; a qRT-PCR or an analytical PCR runs against a genome
+    #: or a transcriptome, where mis-priming is the usual reason it fails.
+    purpose: Literal["cloning", "qpcr", "analytical"] = "cloning"
+    #: The background to screen against — the locus with its flanks, the
+    #: paralogs, the transcript panel. FASTA or bases; several records are
+    #: fine. Not a whole genome: that is a job for BLAST on a server with one.
+    screen_against: str | None = None
+    screen_name: str = Field(default="the screening sequence", max_length=120)
 
 
 class DesignedPrimer(BaseModel):
@@ -671,6 +681,21 @@ class DesignedPrimer(BaseModel):
     self_dimer_3prime_run: int
     gc_clamp: bool
     gc_in_last_five: int
+    #: Places in the background where this primer's 3' end could sit, counting
+    #: one mismatch, on either strand. One of them is normally the intended
+    #: site. Zero when nothing was screened.
+    binding_sites: int = 0
+
+
+class PredictedAmplicon(BaseModel):
+    """A product the background would give — wanted or not."""
+
+    start: int
+    end: int
+    length: int
+    forward_primer: str
+    reverse_primer: str
+    intended: bool
 
 
 class DesignedPair(BaseModel):
@@ -687,6 +712,9 @@ class DesignedPair(BaseModel):
     #: The score broken into the things it is made of, so somebody can
     #: disagree with the weighting rather than only with the total.
     penalties: dict[str, float]
+    screened: bool = False
+    spurious_amplicons: int = 0
+    amplicons: list[PredictedAmplicon] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -695,9 +723,20 @@ class PrimerDesignTarget(BaseModel):
     optimal_tm: float
 
 
+class ScreenSummary(BaseModel):
+    name: str
+    length_bp: int
+    seed_len: int
+    max_mismatches: int
+
+
 class PrimerDesignResponse(BaseModel):
     template_length: int
     target: PrimerDesignTarget
+    purpose: str
+    #: None when nothing was screened — which for qPCR or analytical work is
+    #: itself worth seeing.
+    screen: ScreenSummary | None = None
     #: What the quoted Tm means. Biopython's defaults are a hybridisation
     #: experiment, not a PCR, and the difference is around ten degrees — so
     #: the conditions travel with the number.

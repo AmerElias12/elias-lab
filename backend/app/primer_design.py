@@ -68,6 +68,195 @@ IUPAC_DNA = re.compile(r"^[ACGT]+$")
 _COMPLEMENT = str.maketrans("ACGT", "TGCA")
 
 
+#: Screening is an index over the background sequence, so it is bounded by
+#: memory rather than by patience. Half a megabase covers the realistic cases —
+#: a gene locus with flanks, a family of paralogs, a panel of transcripts — and
+#: a whole genome is a job for BLAST on a server that has one.
+MAX_SCREEN_BP = 500_000
+
+#: How far apart two opposing 3' ends can be and still give a product. Past a
+#: few kb a standard extension time will not finish it.
+MAX_SPURIOUS_AMPLICON_BP = 5_000
+
+#: The 3' window that decides whether a primer primes. Matching the length the
+#: `primers` package screens on, so the two agree about what an off-target is.
+SEED_LEN = 10
+
+#: What the design is for. Off-target screening is the difference: amplifying a
+#: fragment from a purified plasmid has essentially no background to mis-prime
+#: against, while a qRT-PCR or an analytical PCR runs against a whole genome or
+#: transcriptome and mis-priming is the usual reason it fails.
+PURPOSES = {
+    "cloning": {
+        "label": "cloning from a plasmid",
+        "screen_expected": False,
+        "product_range": (100, 20_000),
+    },
+    "qpcr": {
+        "label": "qRT-PCR",
+        "screen_expected": True,
+        # Short products amplify efficiently and stay quantitative; past about
+        # 250 bp the efficiency drops away from the 2× a Cq assumes.
+        "product_range": (70, 250),
+    },
+    "analytical": {
+        "label": "analytical PCR on genomic DNA",
+        "screen_expected": True,
+        "product_range": (150, 3_000),
+    },
+}
+
+_MUTATIONS = {"A": "TGC", "T": "AGC", "G": "ATC", "C": "ATG"}
+
+
+def _seed_variants(seed: str) -> list[str]:
+    """The seed and every single-substitution neighbour of it.
+
+    One mismatch is the line the `primers` package draws and it is a reasonable
+    one: a 3' decamer with a single mismatch still primes, two usually does not.
+    """
+    out = [seed]
+    for i, base in enumerate(seed):
+        for other in _MUTATIONS.get(base, ""):
+            out.append(seed[:i] + other + seed[i + 1 :])
+    return out
+
+
+class OffTargetIndex:
+    """Where else in a background sequence a primer's 3' end could sit.
+
+    The index holds the exact seeds of the background; the mismatches are
+    generated from the *primer* at lookup. That is the same question asked the
+    other way round, and it is what makes screening a locus practical: the
+    `primers` package expands every background position into 31 variants, which
+    for 60 kb is 3.3 s and 82 MB and is rebuilt on every call. Inverting it is
+    1.25 s and 48 MB for a megabase, built once.
+
+    scripts/check_primer_design.py asserts the two agree site for site, because
+    "faster" is only worth having if the answer is the same.
+
+    Positions are kept rather than counts. A primer that binds somewhere else
+    is a nuisance; two primers that bind near each other in opposing
+    orientations make a product, and that product is what appears on the gel
+    instead of the one that was wanted.
+    """
+
+    __slots__ = ("length", "name", "_seeds")
+
+    def __init__(self, screen: str, name: str = "screen") -> None:
+        if len(screen) > MAX_SCREEN_BP:
+            raise DesignError(
+                f"the screening sequence is {len(screen):,} bp; this endpoint indexes "
+                f"up to {MAX_SCREEN_BP:,}. Screen against the locus and its paralogs, "
+                f"or use BLAST for a whole genome."
+            )
+        self.length = len(screen)
+        self.name = name
+        seeds: dict[str, list[int]] = {}
+        for i in range(len(screen) - SEED_LEN + 1):
+            seeds.setdefault(screen[i : i + SEED_LEN], []).append(i)
+        self._seeds = seeds
+
+    def sites(self, primer: str) -> tuple[list[int], list[int]]:
+        """Where this primer's 3' end could land, as (pointing right, pointing left).
+
+        A hit on the given strand puts the 3' end just past the seed and the
+        polymerase extends rightwards; a hit on the reverse strand puts it at
+        the left edge, extending leftwards. The two lists are what a product
+        is made of.
+        """
+        if len(primer) < SEED_LEN:
+            return [], []
+        seed = primer[-SEED_LEN:]
+        right: list[int] = []
+        for variant in _seed_variants(seed):
+            for at in self._seeds.get(variant, ()):
+                right.append(at + SEED_LEN)
+        left: list[int] = []
+        for variant in _seed_variants(revcomp(seed)):
+            for at in self._seeds.get(variant, ()):
+                left.append(at)
+        return sorted(right), sorted(left)
+
+    def site_count(self, primer: str) -> int:
+        right, left = self.sites(primer)
+        return len(right) + len(left)
+
+
+@dataclass(slots=True)
+class Amplicon:
+    """A product the background would give, wanted or not."""
+
+    start: int
+    end: int
+    length: int
+    forward_primer: str   #: "forward" or "reverse" — which oligo primed each end
+    reverse_primer: str
+    intended: bool
+
+
+def predicted_amplicons(
+    index: OffTargetIndex,
+    fwd: str,
+    rev: str,
+    intended_length: int,
+    *,
+    max_bp: int = MAX_SPURIOUS_AMPLICON_BP,
+    limit: int = 20,
+) -> list[Amplicon]:
+    """Every product these two oligos could make against the background.
+
+    All four pairings are considered, including each primer with itself: a
+    single primer whose 3' end lands in both orientations nearby amplifies
+    perfectly well, and that is a classic source of a band nobody ordered.
+
+    A product whose length matches the intended one is marked rather than
+    dropped — on a background that contains the target it is the real product,
+    and seeing it listed is how somebody knows the screen covered the template
+    at all.
+    """
+    # index.sites() anchors on the 3' end, which is what decides whether a
+    # primer primes. A product, though, runs from one primer's 5' end to the
+    # other's — the whole oligo ends up in the amplicon. Measuring 3' to 3'
+    # makes every product short by the two primer lengths less the two seeds,
+    # which misreports the intended product as an unintended one on every
+    # single pair. Found by a product coming back 117 bp when 150 was asked for.
+    rights: list[tuple[int, str]] = []
+    lefts: list[tuple[int, str]] = []
+    for seq, name in ((fwd, "forward"), (rev, "reverse")):
+        right, left = index.sites(seq)
+        rights.extend((at - len(seq), name) for at in right)   # 5' end, upstream
+        lefts.extend((at + len(seq), name) for at in left)     # 5' end, downstream
+
+    found: list[Amplicon] = []
+    lefts.sort()
+    for start, right_name in sorted(rights):
+        for end, left_name in lefts:
+            if end <= start:
+                continue
+            size = end - start
+            if size > max_bp:
+                break
+            found.append(
+                Amplicon(
+                    start=start,
+                    end=end,
+                    length=size,
+                    forward_primer=right_name,
+                    reverse_primer=left_name,
+                    intended=abs(size - intended_length) <= 2,
+                )
+            )
+            if len(found) >= limit * 4:
+                break
+        if len(found) >= limit * 4:
+            break
+
+    # Smallest first: a short spurious product out-competes the intended one.
+    found.sort(key=lambda a: (not a.intended, a.length))
+    return found[:limit]
+
+
 class DesignError(ValueError):
     """Something about the request cannot work, phrased for the caller."""
 
@@ -205,6 +394,9 @@ class PrimerResult:
     self_dimer_3prime_run: int
     gc_clamp: bool
     gc_in_last_five: int
+    #: Places in the screening background where this primer's 3' end could
+    #: sit, counting one mismatch. Zero when nothing was screened.
+    binding_sites: int = 0
 
 
 @dataclass(slots=True)
@@ -220,6 +412,10 @@ class PairResult:
     hetero_dimer_severity: str
     score: float
     penalties: dict[str, float]
+    screened: bool = False
+    #: Products the background would give that are not the one asked for.
+    spurious_amplicons: int = 0
+    amplicons: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def payload(self) -> dict[str, Any]:
@@ -240,6 +436,9 @@ def _score(
     *,
     target_tm: float,
     target_length: int,
+    screened: bool = False,
+    spurious: int = 0,
+    screen_name: str = "the background",
 ) -> tuple[float, dict[str, float], list[str]]:
     """Lower is better, and every component is reported.
 
@@ -307,6 +506,30 @@ def _score(
             warnings.append(f"the {name} primer ends in {p.gc_in_last_five} G/C of five — a sticky 3' end mis-primes")
     penalties["gc_clamp"] = round(clamp, 2)
 
+    # Off-target, weighted above everything else when it was checked at all.
+    # A primer with a perfect Tm that also primes in four other places is not
+    # a good primer; on a genomic or cDNA template this is the usual reason a
+    # reaction fails, and it is the one thing a plasmid prep does not suffer.
+    off = 0.0
+    if screened:
+        for p, name in ((fwd, "forward"), (rev, "reverse")):
+            extra = max(0, p.binding_sites - 1)
+            if extra:
+                off += extra * 4.0
+                warnings.append(
+                    f"the {name} primer's 3' end matches {extra} other "
+                    f"place(s) in {screen_name}"
+                )
+        if spurious:
+            # A product beats a binding site: two off-target ends facing each
+            # other within range give a band, and a short one out-competes the
+            # intended product for polymerase.
+            off += spurious * 10.0
+            warnings.append(
+                f"{spurious} unintended product(s) predicted against {screen_name}"
+            )
+    penalties["off_target"] = round(off, 2)
+
     total = round(sum(penalties.values()), 2)
     return total, penalties, warnings
 
@@ -347,6 +570,37 @@ def _primer_result(
     )
 
 
+def parse_screen(text: str) -> str:
+    """Read the background to screen against: FASTA, several records, or bases.
+
+    Records are joined with a run of N. N is not a base, so no seed can span
+    the boundary and two transcripts cannot be fused into a site that exists
+    in neither — which is the kind of false positive that would teach somebody
+    to ignore the warnings.
+    """
+    cleaned_parts: list[str] = []
+    if text.lstrip().startswith(">"):
+        for block in text.split(">"):
+            if not block.strip():
+                continue
+            body = "".join(block.splitlines()[1:])
+            bases = re.sub(r"[\s\d]", "", body).upper()
+            if bases:
+                cleaned_parts.append(bases)
+    else:
+        bases = re.sub(r"[\s\d]", "", text).upper()
+        if bases:
+            cleaned_parts.append(bases)
+
+    joined = ("N" * SEED_LEN).join(cleaned_parts)
+    if not joined:
+        raise DesignError("the screening sequence holds no bases")
+    if not re.match(r"^[ACGTN]+$", joined):
+        bad = "".join(sorted(set(re.sub(r"[ACGTN]", "", joined))))
+        raise DesignError(f"the screening sequence has characters that are not DNA: {bad}")
+    return joined
+
+
 def design(
     template: str,
     *,
@@ -354,8 +608,25 @@ def design(
     optimal_tm: float = 60.0,
     max_pairs: int = 3,
     max_windows: int = MAX_WINDOWS,
+    purpose: str = "cloning",
+    screen_against: str | None = None,
+    screen_name: str = "the screening sequence",
 ) -> dict[str, Any]:
-    """Design primer pairs for a product of about `product_length` bases."""
+    """Design primer pairs for a product of about `product_length` bases.
+
+    `purpose` decides whether off-target screening is expected. Amplifying a
+    fragment from a purified plasmid has almost no background to mis-prime
+    against; a qRT-PCR or an analytical PCR runs against a genome or a
+    transcriptome, where a primer that is merely thermodynamically good is not
+    good enough. For those, pass `screen_against` — the locus with its flanks,
+    the paralogs, the transcript panel — and the result says where else each
+    primer could sit and what those sites would amplify.
+    """
+    if purpose not in PURPOSES:
+        raise DesignError(
+            f"unknown purpose {purpose!r}; use one of {', '.join(sorted(PURPOSES))}"
+        )
+    spec = PURPOSES[purpose]
     cleaned = re.sub(r"[\s\d]", "", template or "").upper()
     if not cleaned:
         raise DesignError("no template given")
@@ -377,6 +648,10 @@ def design(
         )
     if not 40 <= optimal_tm <= 75:
         raise DesignError("an annealing temperature outside 40–75 °C is not a PCR")
+
+    index: OffTargetIndex | None = None
+    if screen_against and screen_against.strip():
+        index = OffTargetIndex(parse_screen(screen_against), screen_name)
 
     span = len(cleaned) - product_length
     if span <= 0:
@@ -411,11 +686,23 @@ def design(
 
         hetero = duplex(fwd_p.seq, rev_p.seq)
         length = rev.end - fwd.start
+
+        amplicons: list[Amplicon] = []
+        spurious = 0
+        if index is not None:
+            fwd.binding_sites = index.site_count(fwd_p.seq)
+            rev.binding_sites = index.site_count(rev_p.seq)
+            amplicons = predicted_amplicons(index, fwd_p.seq, rev_p.seq, length)
+            spurious = sum(1 for a in amplicons if not a.intended)
+
         score, penalties, warnings = _score(
             fwd, rev, hetero,
             length,
             target_tm=optimal_tm,
             target_length=product_length,
+            screened=index is not None,
+            spurious=spurious,
+            screen_name=screen_name,
         )
         pairs.append(
             PairResult(
@@ -430,6 +717,9 @@ def design(
                 hetero_dimer_severity=hetero.severity,
                 score=score,
                 penalties=penalties,
+                screened=index is not None,
+                spurious_amplicons=spurious,
+                amplicons=[asdict(a) for a in amplicons],
                 warnings=warnings,
             )
         )
@@ -449,10 +739,54 @@ def design(
             f"these are the best of those, not the best possible."
         )
 
+    # The point of the purpose switch: say plainly when the check that matters
+    # for this kind of PCR was not performed.
+    if spec["screen_expected"] and index is None:
+        notes.append(
+            f"Nothing was screened against. For {spec['label']} the template is a "
+            f"genome or a transcriptome, where mis-priming is the usual reason a "
+            f"reaction fails — these pairs are thermodynamically sound and "
+            f"unproven for specificity. Pass the locus with its flanks, the "
+            f"paralogs, or the transcript panel."
+        )
+    elif index is not None:
+        notes.append(
+            f"Screened against {index.length:,} bp of {index.name}. A 3' decamer "
+            f"with up to one mismatch counts as a site, on either strand; "
+            f"specificity beyond that background is not evidence of anything."
+        )
+
+    low, high = spec["product_range"]
+    if not low <= product_length <= high:
+        notes.append(
+            f"{product_length} bp is outside the usual {low}–{high} bp for "
+            f"{spec['label']}."
+            + (
+                " Past about 250 bp a qPCR stops being reliably quantitative, "
+                "because the efficiency drifts from the doubling a Cq assumes."
+                if purpose == "qpcr"
+                else ""
+            )
+        )
+    if purpose == "qpcr":
+        notes.append(
+            "Exon structure is not considered here. A pair that spans an "
+            "exon–exon junction is what stops genomic DNA being amplified "
+            "alongside the cDNA, and that needs the transcript's exon "
+            "boundaries, which this endpoint does not take."
+        )
+
     return {
         "template_length": len(cleaned),
         "target": {"product_length": product_length, "optimal_tm": optimal_tm},
+        "purpose": purpose,
         "tm_conditions": TM_CONDITIONS,
+        "screen": (
+            {"name": index.name, "length_bp": index.length, "seed_len": SEED_LEN,
+             "max_mismatches": 1}
+            if index is not None
+            else None
+        ),
         "windows_tried": len(starts),
         "pairs_found": len(pairs),
         "pairs": [p.payload() for p in best],

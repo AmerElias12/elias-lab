@@ -1216,7 +1216,7 @@ function primerRow(tbody, pair, which, index, isFirst) {
   if (p.hairpin_dg >= -2) hp.classList.add('good');
 
   if (isFirst) {
-    // Dimer, product and score describe the pair, not either primer.
+    // Dimer, off-target, product and score describe the pair, not either primer.
     const dimer = document.createElement('td');
     dimer.rowSpan = 2;
     dimer.textContent = pair.hetero_dimer_severity === 'none'
@@ -1224,6 +1224,29 @@ function primerRow(tbody, pair, which, index, isFirst) {
       : `${pair.hetero_dimer_severity} (${pair.hetero_dimer_3prime_run || pair.hetero_dimer_run} bp)`;
     if (pair.hetero_dimer_3prime_run >= 4) dimer.classList.add('warn');
     tr.append(dimer);
+
+    // Off-target: the column that decides a qRT-PCR or an analytical PCR.
+    // "not screened" is a real answer and must not look like "clean".
+    const off = document.createElement('td');
+    off.rowSpan = 2;
+    if (!pair.screened) {
+      off.textContent = 'not screened';
+      off.className = 'muted';
+    } else {
+      const extra = (pair.forward.binding_sites - 1) + (pair.reverse.binding_sites - 1);
+      if (pair.spurious_amplicons) {
+        const sizes = pair.amplicons.filter((a) => !a.intended).map((a) => `${a.length} bp`);
+        off.textContent = `${pair.spurious_amplicons} product(s): ${sizes.slice(0, 3).join(', ')}`;
+        off.className = 'warn';
+      } else if (extra > 0) {
+        off.textContent = `${extra} extra site(s)`;
+        off.className = 'warn';
+      } else {
+        off.textContent = 'unique';
+        off.className = 'good';
+      }
+    }
+    tr.append(off);
 
     const prod = document.createElement('td');
     prod.rowSpan = 2;
@@ -1273,11 +1296,16 @@ function renderDesign(out) {
   if (!out.pairs.length) { table.hidden = true; return; }
 
   const c = out.tm_conditions;
+  const screened = out.screen
+    ? `Screened against ${out.screen.length_bp.toLocaleString()} bp ` +
+      `(${out.screen.seed_len} bp 3′ seed, ≤${out.screen.max_mismatches} mismatch).`
+    : 'Not screened against any background.';
   $('#design-caption').textContent =
     `${out.pairs_found} usable pair(s) from ${out.windows_tried} window(s) across ` +
     `${out.template_length} bp — best ${out.pairs.length}, lowest score first. ` +
     `Hover a score for the breakdown. ` +
-    `Tm at ${c.primer_nm} nM primer, ${c.na_mm} mM Na⁺, ${c.mg_mm} mM Mg²⁺.`;
+    `Tm at ${c.primer_nm} nM primer, ${c.na_mm} mM Na⁺, ${c.mg_mm} mM Mg²⁺. ` +
+    screened;
 
   out.pairs.forEach((pair, i) => {
     primerRow(body, pair, 'forward', i, true);
@@ -1286,7 +1314,7 @@ function renderDesign(out) {
       const tr = document.createElement('tr');
       tr.className = 'pair-warnings';
       const td = document.createElement('td');
-      td.colSpan = 11;
+      td.colSpan = 12;
       td.textContent = pair.warnings.join(' · ');
       tr.append(td);
       body.append(tr);
@@ -1349,8 +1377,22 @@ function openDesign() {
   }
   $('#design-table').hidden = true;
   $('#design-notes').hidden = true;
+  syncPurpose();
   show('primer-design');
 }
+
+function syncPurpose() {
+  const purpose = $('#design-purpose').value;
+  const wanted = purpose !== 'cloning';
+  $('#design-screen-field').hidden = !wanted;
+  // Sensible defaults rather than a form that has to be corrected: a qPCR
+  // product is short so it stays quantitative, an analytical one is longer so
+  // it can be seen on a gel.
+  const len = $('#design-form').elements.product_length;
+  if (purpose === 'qpcr' && Number(len.value) > 250) len.value = 150;
+  if (purpose === 'analytical' && Number(len.value) < 150) len.value = 500;
+}
+$('#design-purpose').addEventListener('change', syncPurpose);
 
 $('#open-design').addEventListener('click', openDesign);
 $('#design-back').addEventListener('click', () => show('plasmids'));
@@ -1370,6 +1412,9 @@ $('#design-form').addEventListener('submit', async (e) => {
         template,
         product_length: Number(f.product_length.value),
         optimal_tm: Number(f.optimal_tm.value),
+        purpose: f.purpose.value,
+        screen_against: $('#design-screen').value.trim() || null,
+        screen_name: 'the screening sequence',
       },
     }));
   } catch (err) {

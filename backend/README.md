@@ -32,11 +32,11 @@ uvicorn app.main:app
 ```bash
 python scripts/check_migrations.py      # 12 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 73 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 75 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 python  scripts/check_cloning.py        # 13 checks: the digest and ligation biology
-python  scripts/check_primer_design.py  # 14 checks: duplexes, scoring, refusals
+python  scripts/check_primer_design.py  # 20 checks: duplexes, scoring, off-target, refusals
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
 (cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
@@ -283,7 +283,42 @@ than guessed at. Ranking against the true figure is also what pulls the chosen
 pairs onto the requested temperature: ask for 60 °C and they come back at
 59–61, not 68.
 
-Dimers are counted two ways, because the two failures are different:
+### Off-target screening
+
+`purpose` decides whether it happens, and that is the whole distinction:
+
+| purpose | background | screening |
+|---|---|---|
+| `cloning` | a purified plasmid | not expected — there is nothing to mis-prime against |
+| `qpcr` | a transcriptome | expected |
+| `analytical` | genomic DNA | expected |
+
+Pass `screen_against` — the locus with its flanks, the paralogs, a transcript
+panel. Each primer then reports how many other places its 3′ end could sit,
+and the pair reports **what those sites would amplify**: two opposing 3′ ends
+within a few kb make a band, and a short one out-competes the product you
+wanted. A pair that would amplify a pseudogene loses its place in the ranking.
+
+A missing screen is stated rather than passed over — for qPCR or analytical
+work the answer says the pairs are *thermodynamically sound and unproven for
+specificity*, because silence there reads like a clean result.
+
+The index is inverted relative to the one in `primers`: exact 10-mers come
+from the background and the mismatches are generated from the primer at
+lookup. Same question, asked the other way round — **25× faster and 16× less
+memory** (a megabase in 1.25 s and 48 MB, against 60 kb in 3.3 s and 82 MB),
+which is what makes screening a locus practical rather than theoretical. The
+checks assert the two agree site for site. Capped at 500 kb; a whole genome is
+a job for BLAST on a server that has one.
+
+**Not checked:** exon structure. A pair spanning an exon–exon junction is what
+stops genomic DNA amplifying alongside cDNA, and that needs the transcript's
+exon boundaries, which this endpoint does not take. The response says so on
+every qPCR design.
+
+### Dimers
+
+Counted two ways, because the two failures are different:
 
 | | what it costs |
 |---|---|
