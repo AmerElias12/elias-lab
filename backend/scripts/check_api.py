@@ -801,6 +801,79 @@ async def exercise() -> int:
                   _a_design_cannot_point_outside_the_lab())
 
         # ---------------------------------------------------------------
+        # in-silico cloning
+        # ---------------------------------------------------------------
+        ECORI, BAMHI = "GAATTC", "GGATCC"
+        PAYLOAD = "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT"
+        VECTOR_SEQ = ("ATGC" * 10) + ECORI + ("T" * 20) + BAMHI + ("CGCG" * 10)
+        INSERT_SEQ = ("A" * 30) + ECORI + PAYLOAD + BAMHI + ("C" * 30)
+
+        async def _cloning_needs_a_lab():
+            r = await c.post(
+                "/api/cloning/digest-ligation",
+                json={"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                      "enzymes": ["EcoRI", "BamHI"]},
+            )
+            assert r.status_code == 401, f"{r.status_code} {r.text}"
+        await run("the cloning endpoint is not an open compute service",
+                  _cloning_needs_a_lab())
+
+        async def _simulate_a_cloning():
+            r = await c.post(
+                "/api/cloning/digest-ligation",
+                headers=auth(pi_token),
+                json={"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                      "enzymes": ["EcoRI", "BamHI"],
+                      "name_a": "vector", "name_b": "insert"},
+            )
+            assert r.status_code == 200, r.text
+            out = r.json()
+            assert out["enzymes"] == ["BamHI", "EcoRI"], out["enzymes"]
+            assert len(out["inputs"]["a"]["fragments"]) == 2, out["inputs"]["a"]
+            wanted = [k for k in out["constructs"] if PAYLOAD in k["sequence"]]
+            assert wanted, [k["length_bp"] for k in out["constructs"]]
+            got = wanted[0]
+            # The response has to be drawable without translation: this is the
+            # shape static/js/vector-viewer.js takes.
+            assert got["topology"] == "circular"
+            assert set(["name", "sequence", "topology", "features"]) <= set(got)
+            assert all(
+                {"name", "type", "start", "end", "strand"} <= set(f) for f in got["features"]
+            ), got["features"]
+            by = {j["enzyme"]: j for j in got["junctions"]}
+            assert by["EcoRI"]["regenerated"] is True, by["EcoRI"]
+        await run("two plasmids and two enzymes come back as a construct the viewer can draw",
+                  _simulate_a_cloning())
+
+        async def _cloning_failures_are_the_callers():
+            """An enzyme that does not cut, a sequence that is not DNA, a
+            misspelled name. All 400 with a sentence saying which."""
+            cases = [
+                ({"sequence_a": "ATGC" * 40, "sequence_b": "ATGC" * 40,
+                  "enzymes": ["EcoRI"]}, "nothing to ligate"),
+                ({"sequence_a": "a note about the cloning", "sequence_b": INSERT_SEQ,
+                  "enzymes": ["EcoRI"]}, "not a DNA sequence"),
+                ({"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                  "enzymes": ["ecori"]}, "did you mean"),
+            ]
+            for body, fragment in cases:
+                r = await c.post("/api/cloning/digest-ligation",
+                                 headers=auth(pi_token), json=body)
+                assert r.status_code == 400, f"{body['enzymes']}: {r.status_code} {r.text}"
+                assert fragment.lower() in r.text.lower(), (fragment, r.text)
+        await run("a cloning that cannot work says which part cannot",
+                  _cloning_failures_are_the_callers())
+
+        async def _enzyme_names_are_searchable():
+            r = await c.get("/api/cloning/enzymes?q=bam", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            names = r.json()
+            assert "BamHI" in names, names[:10]
+            assert all("bam" in n.lower() for n in names), names[:10]
+        await run("enzyme names can be searched, so nobody guesses the spelling",
+                  _enzyme_names_are_searchable())
+
+        # ---------------------------------------------------------------
         # guides
         # ---------------------------------------------------------------
         guide: dict = {}

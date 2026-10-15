@@ -540,6 +540,110 @@ class PrimerRead(PrimerSummary):
     created_at: datetime
 
 
+# ---------------------------------------------------------------------------
+# In-silico cloning
+# ---------------------------------------------------------------------------
+class CloningRequest(ApiModel):
+    """Two molecules and the enzymes to cut them with.
+
+    Sequences arrive as text — GenBank, FASTA or bare bases — rather than as
+    plasmid ids, because the common case is simulating against something that
+    is not in the notebook yet: a vendor's map, a colleague's attachment, a
+    construct somebody is still deciding whether to order.
+    """
+
+    sequence_a: str = Field(min_length=1, description="GenBank, FASTA or plain bases")
+    sequence_b: str = Field(min_length=1, description="GenBank, FASTA or plain bases")
+    enzymes: list[str] = Field(min_length=1, max_length=8)
+    name_a: str = Field(default="A", max_length=40)
+    name_b: str = Field(default="B", max_length=40)
+    # Linear products are usually an intermediate nobody wants to see; asking
+    # for them is how you work out why no circle formed.
+    circular_only: bool = True
+
+    @field_validator("enzymes")
+    @classmethod
+    def names_look_like_enzymes(cls, v: list[str]) -> list[str]:
+        cleaned = [n.strip() for n in v if n and n.strip()]
+        if not cleaned:
+            raise ValueError("name at least one enzyme")
+        for name in cleaned:
+            if not re.fullmatch(r"[A-Za-z0-9.\-]{2,20}", name):
+                raise ValueError(f"{name!r} is not an enzyme name")
+        return cleaned
+
+
+class CloningEnd(BaseModel):
+    kind: str
+    overhang: str
+
+
+class CloningFeature(BaseModel):
+    name: str
+    type: str
+    start: int
+    end: int
+    strand: int
+
+
+class CloningFragment(BaseModel):
+    source: str
+    index: int
+    length_bp: int
+    five_prime: CloningEnd
+    three_prime: CloningEnd
+    features: list[CloningFeature] = Field(default_factory=list)
+
+
+class CloningInput(BaseModel):
+    name: str
+    length_bp: int
+    topology: str
+    fragments: list[CloningFragment]
+
+
+class CloningJunction(BaseModel):
+    """Whether an enzyme can still cut the product.
+
+    The question underneath: did the junction rebuild the site. Two EcoRI ends
+    do; a BamHI end joined to a BglII end does not, and the insert cannot be
+    cut back out afterwards.
+    """
+
+    enzyme: str
+    site: str
+    sites_in_product: int
+    regenerated: bool
+
+
+class CloningPart(BaseModel):
+    source: str
+    fragment: int
+    length_bp: int
+    orientation: str
+
+
+class CloningConstruct(BaseModel):
+    """Shaped so static/js/vector-viewer.js can draw it with no translation."""
+
+    name: str
+    sequence: str
+    topology: str
+    length_bp: int
+    features: list[CloningFeature] = Field(default_factory=list)
+    parts: list[CloningPart] = Field(default_factory=list)
+    junctions: list[CloningJunction] = Field(default_factory=list)
+
+
+class CloningResponse(BaseModel):
+    enzymes: list[str]
+    inputs: dict[str, CloningInput]
+    constructs: list[CloningConstruct]
+    #: Things worth reading beside the result: why nothing formed, or why
+    #: there are nine products and most of them are unwanted.
+    notes: list[str] = Field(default_factory=list)
+
+
 class PcrCreate(ApiModel):
     """An amplification, with the product the design says it gives.
 

@@ -32,9 +32,10 @@ uvicorn app.main:app
 ```bash
 python scripts/check_migrations.py      # 12 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 66 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 70 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
+python  scripts/check_cloning.py        # 13 checks: the digest and ligation biology
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
 (cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
@@ -257,6 +258,41 @@ Searching:
 A primer's **sequence cannot be edited**. An ordered oligo is a tube in a
 freezer; if the sequence is wrong the answer is a new primer, not an edit that
 leaves every experiment citing this one describing something else.
+
+## In-silico cloning
+
+`POST /api/cloning/digest-ligation` takes two sequences — GenBank, FASTA or
+bare bases — and a list of enzymes; digests both, joins the ends that fit, and
+returns the constructs in the shape `static/js/vector-viewer.js` draws, so the
+result goes straight into the viewer with nothing translated. Stateless: it
+writes nothing, and what the lab keeps goes through `/api/plasmids`
+afterwards. The **Clone** tab on the Plasmids page is the frontend for it.
+
+**This is a second digest implementation, deliberately.** `js/plasmid.js`
+carries 81 enzymes written out by hand; Biopython carries REBASE, about 1,090,
+maintained by people whose job that is. The two are not peers — the browser's
+digest is a preview for drawing sites while somebody scrolls, this one is what
+a result gets saved from — and `check_cloning.py` asserts they agree on where
+an enzyme cuts, so a drift between them shows up here rather than at the
+bench.
+
+Three things the response says that a sequence alone does not:
+
+- **Which junctions regenerated their site.** Two EcoRI ends rebuild GAATTC
+  and the insert can be cut back out; a BamHI end joined to a BglII end
+  rebuilds neither, which is usually the point and occasionally a nasty
+  surprise six months later.
+- **Which orientation each fragment went in.** One enzyme leaves identical
+  ends, so the insert goes in either way round and both products are real —
+  showing one would be lying about what comes out of the ligation. Two
+  different enzymes leave ends that fit one way, which is why directional
+  cloning uses two.
+- **When the answer is a mixture.** Blunt ends join to any other blunt end,
+  so a blunt digest gives many products, all real and most unwanted. The notes
+  say so rather than presenting the first one as the answer.
+
+An enzyme that does not cut is named — the commonest reason a cloning plan
+fails, and an empty result with no explanation reads like a server fault.
 
 ## Designs: PCR products and assemblies
 

@@ -247,6 +247,7 @@
             <button class="tab is-active" role="tab" data-libtab="plasmids">Plasmids</button>
             <button class="tab" role="tab" data-libtab="primers">Primers</button>
             <button class="tab" role="tab" data-libtab="guides">Guides</button>
+            <button class="tab" role="tab" data-libtab="clone">Clone</button>
           </div>
           <input type="search" id="lib-search" class="lib-search" hidden
                  placeholder="Search the library…" aria-label="Search the library">
@@ -257,6 +258,30 @@
           <ul class="list" id="plasmid-list"></ul>
           <ul class="list" id="primer-list" hidden></ul>
           <ul class="list" id="guide-list" hidden></ul>
+
+          <div id="clone-panel" hidden class="stack">
+            <p class="muted" id="clone-lede">Digest both, join the ends that fit.</p>
+            <label class="field">
+              <span>Cut with</span>
+              <input type="text" id="clone-enzymes" placeholder="EcoRI, BamHI"
+                     list="enzyme-options" autocomplete="off">
+              <datalist id="enzyme-options"></datalist>
+            </label>
+            <label class="field">
+              <span>Join to</span>
+              <select id="clone-partner"></select>
+            </label>
+            <label class="field" id="clone-paste-field">
+              <span>Paste GenBank, FASTA or bases</span>
+              <textarea id="clone-paste" rows="4" placeholder="LOCUS …, &gt;name …, or ATGC…"></textarea>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="clone-linear"> Show linear products too
+            </label>
+            <button class="btn btn--primary btn--block" id="clone-run">Simulate</button>
+            <p class="alert" id="clone-notes" hidden></p>
+            <ul class="list" id="clone-results"></ul>
+          </div>
         </aside>
 
         <div class="vector__main">
@@ -372,6 +397,6 @@
 <script src="/js/plasmid.js?v=1"></script>
 <script src="/js/plasmid-import.js?v=1"></script>
 <script src="/js/vector-viewer.js?v=2"></script>
-<script src="/js/app.js?v=9"></script>
+<script src="/js/app.js?v=10"></script>
 </body>
 </html>

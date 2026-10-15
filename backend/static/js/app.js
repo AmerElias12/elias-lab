@@ -1041,18 +1041,152 @@ async function loadGuides() {
   }
 }
 
+/* --- in-silico cloning -------------------------------------------------- */
+
+/* The one place the browser does not do the biology. Digest and ligation run
+   on the server against Biopython's REBASE set — about 1,090 enzymes against
+   the 81 js/plasmid.js carries — and pydna decides which ends actually join.
+   The browser's digest stays for drawing sites while somebody scrolls; this
+   is what a result gets saved from. */
+
+async function loadClonePartners() {
+  const select = $('#clone-partner');
+  select.textContent = '';
+  const paste = document.createElement('option');
+  paste.value = '';
+  paste.textContent = '— paste below —';
+  select.append(paste);
+  try {
+    const page = await api('/api/plasmids?limit=100');
+    for (const p of page.items) {
+      if (currentPlasmid && p.id === currentPlasmid.id) continue;
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.length_bp} bp)`;
+      select.append(opt);
+    }
+  } catch { /* the paste box still works */ }
+  $('#clone-lede').textContent = currentPlasmid
+    ? `Digest ${currentPlasmid.name} and the partner, then join the ends that fit.`
+    : 'Open a plasmid first — it is the other half of the cloning.';
+}
+
+let enzymeTimer;
+$('#clone-enzymes').addEventListener('input', (e) => {
+  clearTimeout(enzymeTimer);
+  // REBASE is particular about case, so the list is there to stop people
+  // guessing rather than to save typing.
+  const tail = e.target.value.split(',').pop().trim();
+  if (tail.length < 2) return;
+  enzymeTimer = setTimeout(async () => {
+    try {
+      const names = await api(`/api/cloning/enzymes?q=${encodeURIComponent(tail)}&limit=20`);
+      const list = $('#enzyme-options');
+      list.textContent = '';
+      for (const n of names) {
+        const opt = document.createElement('option');
+        opt.value = n;
+        list.append(opt);
+      }
+    } catch { /* the field still accepts typing */ }
+  }, 250);
+});
+
+$('#clone-run').addEventListener('click', async () => {
+  if (!currentPlasmid) { toast('Open a plasmid first.', 'error'); return; }
+  const enzymes = $('#clone-enzymes').value.split(',').map((x) => x.trim()).filter(Boolean);
+  if (!enzymes.length) { toast('Name at least one enzyme.', 'error'); return; }
+
+  let sequenceB = $('#clone-paste').value.trim();
+  const partnerId = $('#clone-partner').value;
+  if (partnerId) {
+    try {
+      sequenceB = (await api(`/api/plasmids/${partnerId}`)).sequence;
+    } catch (err) { toast(err.message, 'error'); return; }
+  }
+  if (!sequenceB) { toast('Choose a partner, or paste one.', 'error'); return; }
+
+  const btn = $('#clone-run');
+  btn.disabled = true;
+  try {
+    const out = await api('/api/cloning/digest-ligation', {
+      method: 'POST',
+      body: {
+        sequence_a: openSequence(),
+        sequence_b: sequenceB,
+        enzymes,
+        name_a: currentPlasmid.name || 'A',
+        name_b: partnerId ? ($('#clone-partner').selectedOptions[0].textContent) : 'pasted',
+        circular_only: !$('#clone-linear').checked,
+      },
+    });
+    renderCloneResults(out);
+  } catch (err) {
+    $('#clone-results').textContent = '';
+    const notes = $('#clone-notes');
+    notes.className = 'alert alert--error';
+    notes.textContent = err.message;
+    notes.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderCloneResults(out) {
+  const notes = $('#clone-notes');
+  if (out.notes.length) {
+    notes.className = 'alert alert--note';
+    notes.textContent = out.notes.join(' ');
+    notes.hidden = false;
+  } else {
+    notes.hidden = true;
+  }
+
+  const list = $('#clone-results');
+  list.textContent = '';
+  const cutA = out.inputs.a.fragments.length;
+  const cutB = out.inputs.b.fragments.length;
+  list.append(emptyRow(`${cutA} + ${cutB} fragments → ${out.constructs.length} product(s)`));
+
+  for (const k of out.constructs) {
+    // What the junctions say is the part worth reading: a site that did not
+    // come back is an insert that cannot be cut out again.
+    const lost = k.junctions.filter((j) => !j.regenerated).map((j) => j.enzyme);
+    const sub = `${k.length_bp} bp ${k.topology}` +
+      (lost.length ? ` · ${lost.join(', ')} site not regenerated` : '');
+    const orient = k.parts.map((p) => p.orientation === 'reverse' ? '↺' : '→').join(' ');
+
+    list.append(libRow(`${orient} ${k.length_bp} bp`, sub, null, [{
+      label: 'View',
+      onClick: () => {
+        // Straight into the viewer: the response is already the shape
+        // normalizePayload takes, which is why nothing is translated here.
+        showPlasmid({
+          name: k.name,
+          sequence: k.sequence,
+          topology: k.topology,
+          features: k.features,
+        });
+        toast(`${k.length_bp} bp construct — not saved.`);
+      },
+    }], lost.length ? [] : [{ good: true, text: 'sites intact' }]));
+  }
+}
+
 async function showLibTab(tab) {
   libTab = tab;
   $$('[data-libtab]').forEach((b) => b.classList.toggle('is-active', b.dataset.libtab === tab));
   $('#plasmid-list').hidden = tab !== 'plasmids';
   $('#primer-list').hidden = tab !== 'primers';
   $('#guide-list').hidden = tab !== 'guides';
-  $('#lib-search').hidden = tab === 'plasmids';
+  $('#clone-panel').hidden = tab !== 'clone';
+  $('#lib-search').hidden = tab === 'plasmids' || tab === 'clone';
   $('#lib-search').value = '';
   try {
     if (tab === 'plasmids') await loadPlasmids();
     if (tab === 'primers') await loadPrimers();
     if (tab === 'guides') await loadGuides();
+    if (tab === 'clone') await loadClonePartners();
   } catch (err) {
     toast(err.message, 'error');
   }

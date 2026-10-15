@@ -358,6 +358,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .mono-sm { font-family: var(--mono); font-size: .78rem; color: var(--text-dim); word-break: break-all; }
 .badge--binds { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
 
+#clone-panel { padding: .25rem; }
+#clone-panel .field > span { font-size: .8rem; }
+#clone-paste { font-family: var(--mono); font-size: .75rem; }
+.alert--note {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+
 .facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; font-size: .88rem; }
 .facts dt { color: var(--text-dim); }
 .facts dd { margin: 0; font-variant-numeric: tabular-nums; }

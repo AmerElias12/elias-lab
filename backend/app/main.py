@@ -18,7 +18,8 @@ from sqlalchemy.exc import DBAPIError
 
 from app.config import get_settings
 from app.routers import (
-    auth, constructions, dashboard, entries, guides, members, plasmids, primers,
+    auth, cloning, constructions, dashboard, entries, guides, members, plasmids,
+    primers,
 )
 from app.session import check_rls_is_effective, dispose_engine
 
@@ -169,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(guides.router)
     app.include_router(constructions.pcr_router)
     app.include_router(constructions.assembly_router)
+    app.include_router(cloning.router)
 
     # Mounted last and at the root, so it only sees paths no API route claimed.
     # html=True serves index.html for unknown paths, which is what makes the
