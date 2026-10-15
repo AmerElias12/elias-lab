@@ -15,3 +15,6 @@ psycopg[binary]>=3.2    # the sync driver Alembic uses — see config.sync_migra
 # sticky ends and decides which ones will actually ligate.
 biopython>=1.83
 pydna>=5.2
+# Primer design. `primers` proposes pairs (and uses seqfold for folding
+# energy); the scoring, dimer checks and Tm under PCR conditions are ours.
+primers>=0.5

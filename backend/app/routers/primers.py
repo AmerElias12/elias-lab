@@ -24,6 +24,7 @@ and it should not change because somebody later edited the plasmid.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -31,6 +32,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.deps import Ctx, CtxDep, WriterDep
+from app import primer_design
 from app.models import Plasmid, Primer, PrimerBinding
 from app.schemas import (
     Page,
@@ -38,10 +40,14 @@ from app.schemas import (
     PrimerBindingDetail,
     PrimerBindingRead,
     PrimerCreate,
+    PrimerDesignRequest,
+    PrimerDesignResponse,
     PrimerRead,
     PrimerSummary,
     PrimerUpdate,
 )
+
+log = logging.getLogger("eln.primers")
 
 router = APIRouter(prefix="/api/primers", tags=["primers"])
 
@@ -114,6 +120,44 @@ async def delete_binding(binding_id: uuid.UUID, ctx: WriterDep) -> Response:
         # silence. Checking the count is what turns that into an answer.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such binding")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Design
+#
+# Also before /{primer_id}, for the same reason as /bindings: "design" is not
+# a UUID and the path parameter would reject it.
+# ---------------------------------------------------------------------------
+@router.post("/design", response_model=PrimerDesignResponse)
+async def design_primers(body: PrimerDesignRequest, ctx: CtxDep) -> PrimerDesignResponse:
+    """Propose primer pairs for a product of about the requested length.
+
+    Nothing is stored. The pairs come back ranked with the score broken into
+    its parts, and whichever one the lab picks is saved through POST
+    /api/primers afterwards — a design somebody is still comparing should not
+    be filling the oligo library with rows nobody ordered.
+
+    Authenticated and lab-scoped like everything else: the template is
+    unpublished sequence, and an endpoint that will design against anything
+    for anybody is a free compute service with the lab's name on it.
+    """
+    try:
+        result = primer_design.design(
+            body.template,
+            product_length=body.product_length,
+            optimal_tm=body.optimal_tm,
+            max_pairs=body.max_pairs,
+        )
+    except primer_design.DesignError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — the design libraries raise broadly
+        log.exception("primer design failed for lab %s", ctx.scope.lab_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"the design could not be run: {exc}",
+        ) from exc
+
+    return PrimerDesignResponse.model_validate(result)
 
 
 # ---------------------------------------------------------------------------

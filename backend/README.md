@@ -32,10 +32,11 @@ uvicorn app.main:app
 ```bash
 python scripts/check_migrations.py      # 12 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 70 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 73 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 python  scripts/check_cloning.py        # 13 checks: the digest and ligation biology
+python  scripts/check_primer_design.py  # 14 checks: duplexes, scoring, refusals
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
 (cd ../docs/checks && npm install && npm run check)   # 68 checks: the SQL itself
 ```
@@ -258,6 +259,41 @@ Searching:
 A primer's **sequence cannot be edited**. An ordered oligo is a tube in a
 freezer; if the sequence is wrong the answer is a new primer, not an edit that
 leaves every experiment citing this one describing something else.
+
+## Primer design
+
+`POST /api/primers/design` takes a template and a target product length and
+Tm, and returns the best pairs ranked, with the score broken into its parts.
+The **Design primers…** button on the Primers tab opens the table; **Save
+pair** writes both oligos to the library and the PCR record that links them.
+
+`primers` proposes a pair for a sequence; it has no notion of "find me a
+500 bp product somewhere in this 3 kb template". So the template is cut into
+candidate windows of about the requested length, one pair is designed into
+each, and the results are ranked — which is why the answer is a list. The
+windows are **sampled, not exhaustive** (forty, evenly spaced), and the
+response says so rather than implying a global optimum.
+
+**Tm is quoted at 250 nM primer, 50 mM Na⁺ and 1.5 mM Mg²⁺.** Biopython's
+defaults assume 25 nM oligo and no magnesium, which is a hybridisation
+experiment rather than a PCR — the difference is 9–12 °C, enough to set an
+annealing temperature ten degrees too low and get no band from a good design.
+The conditions travel with every response so the number can be read rather
+than guessed at. Ranking against the true figure is also what pulls the chosen
+pairs onto the requested temperature: ask for 60 °C and they come back at
+59–61, not 68.
+
+Dimers are counted two ways, because the two failures are different:
+
+| | what it costs |
+|---|---|
+| long **internal** duplex | sequesters primer — lower yield |
+| short duplex at a **3′ end** | the polymerase extends it — primer-dimer, a smear |
+
+Reporting only the longest hides the second behind the first, so both come
+back. `primers` checks each oligo's own folding; the two primers **against
+each other** are checked here, and that is the classic failure it does not
+cover.
 
 ## In-silico cloning
 

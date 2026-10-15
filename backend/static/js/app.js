@@ -1173,6 +1173,216 @@ function renderCloneResults(out) {
   }
 }
 
+/* --- primer design ------------------------------------------------------ */
+
+function cell(row, text, cls) {
+  const td = document.createElement('td');
+  if (cls) td.className = cls;
+  td.textContent = text;
+  row.append(td);
+  return td;
+}
+
+/** One primer's row. The pair occupies two, sharing the spanned columns. */
+function primerRow(tbody, pair, which, index, isFirst) {
+  const p = pair[which];
+  const tr = document.createElement('tr');
+  if (isFirst) tr.className = 'pair-start';
+
+  if (isFirst) {
+    const n = document.createElement('td');
+    n.className = 'num';
+    n.rowSpan = 2;
+    n.textContent = String(index + 1);
+    tr.append(n);
+  }
+
+  cell(tr, which === 'forward' ? 'Forward' : 'Reverse');
+  cell(tr, p.sequence, 'seq');
+  cell(tr, p.length, 'num');
+
+  // Tm matters as a pair, so the difference is shown once, beside the pair.
+  const tm = cell(tr, `${p.tm} °C`, 'num');
+  if (isFirst && pair.tm_difference > 5) tm.classList.add('warn');
+
+  const gc = cell(tr, `${p.gc_percent}%`, 'num');
+  if (p.gc_percent < 35 || p.gc_percent > 70) gc.classList.add('warn');
+
+  // A positive or near-zero dG means the oligo does not fold. Printing the
+  // number there invites somebody to read "1.6" as a hairpin when it is the
+  // opposite.
+  const folds = p.hairpin_dg < -2;
+  const hp = cell(tr, folds ? `${p.hairpin_dg} kcal/mol` : 'none', folds ? 'num warn' : 'num');
+  if (p.hairpin_dg >= -2) hp.classList.add('good');
+
+  if (isFirst) {
+    // Dimer, product and score describe the pair, not either primer.
+    const dimer = document.createElement('td');
+    dimer.rowSpan = 2;
+    dimer.textContent = pair.hetero_dimer_severity === 'none'
+      ? 'none'
+      : `${pair.hetero_dimer_severity} (${pair.hetero_dimer_3prime_run || pair.hetero_dimer_run} bp)`;
+    if (pair.hetero_dimer_3prime_run >= 4) dimer.classList.add('warn');
+    tr.append(dimer);
+
+    const prod = document.createElement('td');
+    prod.rowSpan = 2;
+    prod.className = 'num';
+    prod.textContent = `${pair.product_length} bp`;
+    tr.append(prod);
+
+    const score = document.createElement('td');
+    score.rowSpan = 2;
+    score.className = 'num';
+    score.textContent = pair.score.toFixed(2);
+    // The breakdown is the useful part; a total on its own says nothing
+    // about why one pair beat another.
+    score.title = Object.entries(pair.penalties)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n') || 'nothing counted against it';
+    tr.append(score);
+
+    const action = document.createElement('td');
+    action.rowSpan = 2;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Save pair';
+    btn.addEventListener('click', () => savePair(pair, index, btn));
+    action.append(btn);
+    tr.append(action);
+  }
+
+  tbody.append(tr);
+}
+
+function renderDesign(out) {
+  const table = $('#design-table');
+  const body = $('#design-body');
+  body.textContent = '';
+
+  const notes = $('#design-notes');
+  if (out.notes.length) {
+    notes.textContent = out.notes.join(' ');
+    notes.hidden = false;
+  } else {
+    notes.hidden = true;
+  }
+
+  if (!out.pairs.length) { table.hidden = true; return; }
+
+  const c = out.tm_conditions;
+  $('#design-caption').textContent =
+    `${out.pairs_found} usable pair(s) from ${out.windows_tried} window(s) across ` +
+    `${out.template_length} bp — best ${out.pairs.length}, lowest score first. ` +
+    `Hover a score for the breakdown. ` +
+    `Tm at ${c.primer_nm} nM primer, ${c.na_mm} mM Na⁺, ${c.mg_mm} mM Mg²⁺.`;
+
+  out.pairs.forEach((pair, i) => {
+    primerRow(body, pair, 'forward', i, true);
+    primerRow(body, pair, 'reverse', i, false);
+    if (pair.warnings.length) {
+      const tr = document.createElement('tr');
+      tr.className = 'pair-warnings';
+      const td = document.createElement('td');
+      td.colSpan = 11;
+      td.textContent = pair.warnings.join(' · ');
+      tr.append(td);
+      body.append(tr);
+    }
+  });
+  table.hidden = false;
+}
+
+/** Keep a pair: two primers in the library, plus the PCR that links them. */
+async function savePair(pair, index, btn) {
+  btn.disabled = true;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = (currentPlasmid && currentPlasmid.name) || 'design';
+  try {
+    const made = [];
+    for (const [which, suffix] of [['forward', 'F'], ['reverse', 'R']]) {
+      made.push(await api('/api/primers', {
+        method: 'POST',
+        body: {
+          name: `${base} ${stamp} #${index + 1} ${suffix}`,
+          sequence: pair[which].sequence,
+          purpose: `designed for a ${pair.product_length} bp product`,
+          tm_c: pair[which].tm,
+          gc_percent: pair[which].gc_percent,
+        },
+      }));
+    }
+    const body = {
+      name: `${base} ${stamp} #${index + 1}`,
+      forward_primer_id: made[0].id,
+      reverse_primer_id: made[1].id,
+      product_start: pair.product_start,
+      product_end: pair.product_end,
+      annealing_temp_c: Math.min(pair.forward.tm, pair.reverse.tm) - 3,
+    };
+    // Only claim the plasmid as the template when that is what was designed
+    // against; a pasted template is not one of ours.
+    if (currentPlasmid && currentPlasmid.id && $('#design-source').dataset.fromPlasmid === '1') {
+      body.template_plasmid_id = currentPlasmid.id;
+    }
+    await api('/api/pcr', { method: 'POST', body });
+    toast(`Pair ${index + 1} saved, with its PCR.`);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openDesign() {
+  const box = $('#design-template');
+  const source = $('#design-source');
+  if (currentPlasmid && openSequence()) {
+    box.value = openSequence();
+    source.textContent = `— from ${currentPlasmid.name}`;
+    source.dataset.fromPlasmid = currentPlasmid.id ? '1' : '0';
+  } else {
+    source.textContent = '';
+    source.dataset.fromPlasmid = '0';
+  }
+  $('#design-table').hidden = true;
+  $('#design-notes').hidden = true;
+  show('primer-design');
+}
+
+$('#open-design').addEventListener('click', openDesign);
+$('#design-back').addEventListener('click', () => show('plasmids'));
+
+$('#design-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  const template = $('#design-template').value.trim();
+  if (!template) { toast('Paste a template, or open a plasmid first.', 'error'); return; }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    renderDesign(await api('/api/primers/design', {
+      method: 'POST',
+      body: {
+        template,
+        product_length: Number(f.product_length.value),
+        optimal_tm: Number(f.optimal_tm.value),
+      },
+    }));
+  } catch (err) {
+    $('#design-table').hidden = true;
+    const notes = $('#design-notes');
+    notes.textContent = err.message;
+    notes.hidden = false;
+    notes.className = 'alert alert--error';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function showLibTab(tab) {
   libTab = tab;
   $$('[data-libtab]').forEach((b) => b.classList.toggle('is-active', b.dataset.libtab === tab));
@@ -1180,6 +1390,7 @@ async function showLibTab(tab) {
   $('#primer-list').hidden = tab !== 'primers';
   $('#guide-list').hidden = tab !== 'guides';
   $('#clone-panel').hidden = tab !== 'clone';
+  $('#open-design').hidden = tab !== 'primers';
   $('#lib-search').hidden = tab === 'plasmids' || tab === 'clone';
   $('#lib-search').value = '';
   try {

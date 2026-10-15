@@ -801,6 +801,64 @@ async def exercise() -> int:
                   _a_design_cannot_point_outside_the_lab())
 
         # ---------------------------------------------------------------
+        # primer design
+        # ---------------------------------------------------------------
+        async def _design_route_is_not_eaten_by_the_id_route():
+            """/api/primers/design sits beside /api/primers/{primer_id}.
+            Declared the wrong way round, "design" is handed to the UUID
+            parser and the endpoint 422s for everyone, forever."""
+            import random as _r
+            rng = _r.Random(5)
+            template = "".join(rng.choice("ACGT") for _ in range(900))
+            r = await c.post(
+                "/api/primers/design",
+                headers=auth(pi_token),
+                json={"template": template, "product_length": 400, "optimal_tm": 60},
+            )
+            assert r.status_code == 200, f"{r.status_code} {r.text[:300]}"
+            out = r.json()
+            assert out["pairs"], out["notes"]
+            assert len(out["pairs"]) <= 3
+            best = out["pairs"][0]
+            # Everything the table shows has to be in the payload.
+            for side in ("forward", "reverse"):
+                p = best[side]
+                assert {"sequence", "tm", "gc_percent", "hairpin_dg", "length"} <= set(p), p
+                assert template[p["start"]:p["end"]], "the primer should be placed on the template"
+            assert set(best["penalties"]) >= {"tm", "gc", "dimer", "hairpin"}, best["penalties"]
+            assert abs(sum(best["penalties"].values()) - best["score"]) < 0.01
+        await run("primer design returns ranked pairs with their scores broken down",
+                  _design_route_is_not_eaten_by_the_id_route())
+
+        async def _design_refuses_what_cannot_work():
+            import random as _r
+            rng = _r.Random(6)
+            template = "".join(rng.choice("ACGT") for _ in range(600))
+            cases = [
+                ({"template": "a note about the PCR", "product_length": 200},
+                 "A, C, G and T"),
+                ({"template": template, "product_length": 5000}, "does not fit"),
+                ({"template": template[:200] + "N" * 20 + template[220:],
+                  "product_length": 300}, "ambiguous"),
+            ]
+            for body, fragment in cases:
+                r = await c.post("/api/primers/design", headers=auth(pi_token), json=body)
+                assert r.status_code == 400, f"{body['product_length']}: {r.status_code} {r.text[:200]}"
+                assert fragment.lower() in r.text.lower(), (fragment, r.text[:200])
+            # And the schema catches the ones it can before any work is done.
+            short = await c.post("/api/primers/design", headers=auth(pi_token),
+                                 json={"template": template, "product_length": 10})
+            assert short.status_code == 422, short.text
+        await run("a design that cannot work says which part cannot",
+                  _design_refuses_what_cannot_work())
+
+        async def _design_needs_a_lab():
+            r = await c.post("/api/primers/design",
+                             json={"template": "ATGC" * 50, "product_length": 100})
+            assert r.status_code == 401, f"{r.status_code} {r.text}"
+        await run("primer design is not an open compute service", _design_needs_a_lab())
+
+        # ---------------------------------------------------------------
         # in-silico cloning
         # ---------------------------------------------------------------
         ECORI, BAMHI = "GAATTC", "GGATCC"

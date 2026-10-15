@@ -394,6 +394,46 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
+.design-form {
+  display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;
+  margin: 1rem 0;
+}
+.design-form .field { min-width: 11rem; }
+#design-template { font-family: var(--mono); font-size: .78rem; }
+
+.table-wrap { overflow-x: auto; margin-top: 1.25rem; }
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: .85rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.data-table caption {
+  caption-side: top; text-align: left; padding: .75rem 1rem;
+  color: var(--text-dim); font-size: .85rem; border-bottom: 1px solid var(--border);
+}
+.data-table th, .data-table td {
+  padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table thead th {
+  background: var(--surface-2); font-weight: 600; font-size: .78rem;
+  color: var(--text-dim); position: sticky; top: 0;
+}
+/* The two rows of a pair read as one block; the rule between pairs is what
+   separates them. */
+.data-table tbody tr.pair-start td { border-top: 2px solid var(--border); }
+.data-table tbody tr:hover td { background: var(--surface-2); }
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .seq { font-family: var(--mono); font-size: .8rem; }
+.data-table .warn { color: var(--danger); }
+.data-table .good { color: var(--ok); }
+.data-table tr.pair-warnings td { white-space: normal; color: var(--danger); font-size: .8rem; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 /* --- toast --------------------------------------------------------------- */
 .toast {
   position: fixed; inset: auto 1.25rem 1.25rem auto;

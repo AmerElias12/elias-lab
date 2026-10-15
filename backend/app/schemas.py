@@ -644,6 +644,70 @@ class CloningResponse(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class PrimerDesignRequest(ApiModel):
+    """A template and what the product should look like.
+
+    The template is sent as text rather than as a plasmid id: the common case
+    is designing against a region somebody has just pasted, or a stretch of a
+    genome that is not in the notebook at all.
+    """
+
+    template: str = Field(min_length=1)
+    product_length: int = Field(ge=50, le=20_000)
+    optimal_tm: float = Field(default=60.0, ge=40, le=75)
+    max_pairs: int = Field(default=3, ge=1, le=10)
+
+
+class DesignedPrimer(BaseModel):
+    sequence: str
+    length: int
+    tm: float
+    gc_percent: float
+    start: int
+    end: int
+    strand: int
+    hairpin_dg: float
+    self_dimer_run: int
+    self_dimer_3prime_run: int
+    gc_clamp: bool
+    gc_in_last_five: int
+
+
+class DesignedPair(BaseModel):
+    forward: DesignedPrimer
+    reverse: DesignedPrimer
+    product_start: int
+    product_end: int
+    product_length: int
+    tm_difference: float
+    hetero_dimer_run: int
+    hetero_dimer_3prime_run: int
+    hetero_dimer_severity: str
+    score: float
+    #: The score broken into the things it is made of, so somebody can
+    #: disagree with the weighting rather than only with the total.
+    penalties: dict[str, float]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PrimerDesignTarget(BaseModel):
+    product_length: int
+    optimal_tm: float
+
+
+class PrimerDesignResponse(BaseModel):
+    template_length: int
+    target: PrimerDesignTarget
+    #: What the quoted Tm means. Biopython's defaults are a hybridisation
+    #: experiment, not a PCR, and the difference is around ten degrees — so
+    #: the conditions travel with the number.
+    tm_conditions: dict[str, float | str]
+    windows_tried: int
+    pairs_found: int
+    pairs: list[DesignedPair]
+    notes: list[str] = Field(default_factory=list)
+
+
 class PcrCreate(ApiModel):
     """An amplification, with the product the design says it gives.
 

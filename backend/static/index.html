@@ -6,7 +6,7 @@
 <title>Elias Lab — Notebook</title>
 <meta name="description" content="Electronic lab notebook: entries, plasmids, primers and guides.">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="/css/app.css?v=7">
+<link rel="stylesheet" href="/css/app.css?v=8">
 </head>
 <body>
 
@@ -256,6 +256,7 @@
             <button class="btn btn--primary" id="pcr-save">Save PCR</button>
           </div>
           <ul class="list" id="plasmid-list"></ul>
+          <button class="btn btn--ghost btn--block" id="open-design" hidden>Design primers…</button>
           <ul class="list" id="primer-list" hidden></ul>
           <ul class="list" id="guide-list" hidden></ul>
 
@@ -342,6 +343,60 @@
       </form>
     </section>
 
+    <!-- Primer design -->
+    <section class="view" data-view="primer-design">
+      <div class="view__head">
+        <button class="btn btn--ghost" id="design-back">← Plasmids</button>
+      </div>
+      <h1 class="view__title">Design primers</h1>
+      <p class="muted view__lede">
+        Candidate windows of about the target length are designed into and ranked.
+        Nothing is saved until you choose a pair.
+      </p>
+
+      <form id="design-form" class="design-form">
+        <label class="field">
+          <span>Product length (bp)</span>
+          <input type="number" name="product_length" value="500" min="50" max="20000" required>
+        </label>
+        <label class="field">
+          <span>Annealing T<sub>m</sub> (°C)</span>
+          <input type="number" name="optimal_tm" value="60" min="40" max="75" step="0.5" required>
+        </label>
+        <button class="btn btn--primary" type="submit">Design</button>
+      </form>
+
+      <label class="field">
+        <span>Template <small class="muted" id="design-source"></small></span>
+        <textarea name="template" id="design-template" rows="5"
+                  placeholder="Paste a template, or open a plasmid first."></textarea>
+      </label>
+
+      <p class="alert alert--note" id="design-notes" hidden></p>
+
+      <div class="table-wrap">
+        <table class="data-table" id="design-table" hidden>
+          <caption id="design-caption"></caption>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Primer</th>
+              <th scope="col">Sequence (5′→3′)</th>
+              <th scope="col">Len</th>
+              <th scope="col">T<sub>m</sub></th>
+              <th scope="col">GC</th>
+              <th scope="col">Hairpin ΔG</th>
+              <th scope="col">Dimer</th>
+              <th scope="col">Product</th>
+              <th scope="col">Score</th>
+              <th scope="col"><span class="sr-only">Save</span></th>
+            </tr>
+          </thead>
+          <tbody id="design-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Lab members -->
     <section class="view" data-view="lab">
       <h1 class="view__title">Lab</h1>
@@ -397,6 +452,6 @@
 <script src="/js/plasmid.js?v=1"></script>
 <script src="/js/plasmid-import.js?v=1"></script>
 <script src="/js/vector-viewer.js?v=2"></script>
-<script src="/js/app.js?v=10"></script>
+<script src="/js/app.js?v=11"></script>
 </body>
 </html>
