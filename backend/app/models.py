@@ -33,6 +33,7 @@ from app.db import (
     LabScopedMixin,
     OwnedMixin,
     PrimaryKeyMixin,
+    ShareableMixin,
     SignatureRole,
     SoftDeleteMixin,
     TimestampMixin,
@@ -115,7 +116,9 @@ class Project(Base, PrimaryKeyMixin, LabScopedMixin, TimestampMixin):
 # ===========================================================================
 # 2 · Notebook entries
 # ===========================================================================
-class NotebookEntry(Base, PrimaryKeyMixin, LabScopedMixin, TimestampMixin, SoftDeleteMixin):
+class NotebookEntry(
+    Base, PrimaryKeyMixin, LabScopedMixin, ShareableMixin, TimestampMixin, SoftDeleteMixin
+):
     """The stable identity of an entry and its current state. The text of each
     revision lives in NotebookEntryVersion, which is append-only."""
 
@@ -186,6 +189,15 @@ class NotebookEntryVersion(Base):
         sa.ForeignKey("notebook_entry.id", ondelete="CASCADE"), primary_key=True
     )
     version_no: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    # The snapshot. See the table comment in docs/eln-schema.sql: a signature
+    # is only worth what the snapshot covers.
+    title: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="")
+    hypothesis: Mapped[str | None] = mapped_column(sa.Text)
+    methods: Mapped[str | None] = mapped_column(sa.Text)
+    results: Mapped[str | None] = mapped_column(sa.Text)
+    conclusions: Mapped[str | None] = mapped_column(sa.Text)
+    next_steps: Mapped[str | None] = mapped_column(sa.Text)
+    performed_on: Mapped[date | None] = mapped_column(sa.Date)
     body: Mapped[dict] = mapped_column(pg.JSONB, nullable=False)
     body_text: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="")
     change_note: Mapped[str | None] = mapped_column(sa.Text)
@@ -234,7 +246,10 @@ class EntrySignature(Base, PrimaryKeyMixin):
 # ===========================================================================
 # 3 · Plasmid vectors
 # ===========================================================================
-class Plasmid(Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, TimestampMixin, SoftDeleteMixin):
+class Plasmid(
+    Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
+    TimestampMixin, SoftDeleteMixin,
+):
     """The construct as a design. The tube in the freezer is PlasmidSample — one
     design routinely has several aliquots in different boxes."""
 
@@ -429,7 +444,10 @@ class StorageBox(Base, PrimaryKeyMixin, LabScopedMixin):
 # ===========================================================================
 # 4 · Primers
 # ===========================================================================
-class Primer(Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, TimestampMixin, SoftDeleteMixin):
+class Primer(
+    Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
+    TimestampMixin, SoftDeleteMixin,
+):
     __tablename__ = "primer"
 
     name: Mapped[str] = mapped_column(sa.Text, nullable=False)
@@ -477,7 +495,10 @@ class PrimerBinding(Base, PrimaryKeyMixin):
 # ===========================================================================
 # 5 · CRISPR designs
 # ===========================================================================
-class GuideRNA(Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, TimestampMixin, SoftDeleteMixin):
+class GuideRNA(
+    Base, PrimaryKeyMixin, LabScopedMixin, OwnedMixin, ShareableMixin,
+    TimestampMixin, SoftDeleteMixin,
+):
     """An sgRNA, pegRNA or nicking guide. A guide targets a plasmid we hold, a
     genomic locus, or both — the database refuses one with neither."""
 

@@ -153,6 +153,23 @@ class LabScopedMixin:
         return relationship("Lab", lazy="raise")
 
 
+class ShareableMixin:
+    """Whether colleagues in the lab may read this record.
+
+    Default True, which is what keeps the notebook a shared lab record rather
+    than a pile of private diaries; an owner opts a draft out. The column is
+    NOT NULL so there is no third state for a policy to mishandle, and the
+    policies in docs/eln-rls-ownership.sql always AND it with the lab test, so
+    "shared" means shared with the research group and never wider.
+    """
+
+    @declared_attr
+    def is_shared(cls) -> Mapped[bool]:
+        return mapped_column(
+            sa.Boolean, nullable=False, server_default=sa.true(), default=True
+        )
+
+
 class OwnedMixin:
     """Who is responsible for this record. Nullable on purpose: people leave the
     lab, and their plasmids must not leave with them."""

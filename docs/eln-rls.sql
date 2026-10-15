@@ -11,7 +11,7 @@
 --   roles are not an option. Instead each transaction sets two settings, which
 --   app.scoping.apply_session_scope() already does:
 --
---       SELECT set_config('app.actor_id', '<uuid>', true),
+--       SELECT set_config('app.current_user_id', '<uuid>', true),
 --              set_config('app.lab_id',   '<uuid>', true);
 --
 --   The third argument is is_local: the setting dies with the transaction, so
@@ -54,9 +54,9 @@ CREATE OR REPLACE FUNCTION current_lab() RETURNS uuid
   LANGUAGE sql STABLE PARALLEL SAFE AS
 $$ SELECT nullif(current_setting('app.lab_id', true), '')::uuid $$;
 
-CREATE OR REPLACE FUNCTION current_actor() RETURNS uuid
+CREATE OR REPLACE FUNCTION current_user_id() RETURNS uuid
   LANGUAGE sql STABLE PARALLEL SAFE AS
-$$ SELECT nullif(current_setting('app.actor_id', true), '')::uuid $$;
+$$ SELECT nullif(current_setting('app.current_user_id', true), '')::uuid $$;
 
 -- The role comes from the membership table, not from the request: a token
 -- claiming 'admin' cannot grant itself anything the database does not agree to.
@@ -65,8 +65,17 @@ CREATE OR REPLACE FUNCTION current_lab_role() RETURNS lab_role
 $$
   SELECT m.role FROM lab_member m
    WHERE m.lab_id = nullif(current_setting('app.lab_id', true), '')::uuid
-     AND m.user_id = nullif(current_setting('app.actor_id', true), '')::uuid
+     AND m.user_id = nullif(current_setting('app.current_user_id', true), '')::uuid
 $$;
+
+-- Membership, not the token, decides whether you may read the lab at all.
+-- current_lab_role() returns NULL for a non-member, so this is false for
+-- anyone who names a lab they do not belong to. Reads need this as much as
+-- writes do: without it, app.lab_id is a self-service claim, and RLS is meant
+-- to hold precisely when the layer that sets app.lab_id is wrong.
+CREATE OR REPLACE FUNCTION can_read() RETURNS boolean
+  LANGUAGE sql STABLE PARALLEL SAFE AS
+$$ SELECT current_lab_role() IS NOT NULL $$;
 
 CREATE OR REPLACE FUNCTION can_write() RETURNS boolean
   LANGUAGE sql STABLE PARALLEL SAFE AS
@@ -80,6 +89,12 @@ $$ SELECT current_lab_role() IN ('owner', 'admin') $$;
 -- DEFINER lets it do so without the policy needing to consult itself.
 REVOKE EXECUTE ON FUNCTION current_lab_role() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION current_lab_role() TO eln_app;
+
+-- A note on what app.lab_id is for, now that membership is checked separately:
+-- it selects which of your labs you are working in, it does not grant access
+-- to it. Naming a lab you do not belong to now yields nothing rather than its
+-- shared rows. The two settings answer different questions — who you are, and
+-- which of your labs you are looking at — and only the first is trusted.
 
 -- With nothing set, current_lab() is NULL and every comparison is NULL, which
 -- is not true, so an unscoped connection sees nothing. Fail closed by default.
@@ -139,7 +154,7 @@ BEGIN
   ] LOOP
     EXECUTE format($f$
       CREATE POLICY %1$I_select ON %1$I FOR SELECT
-        USING (lab_id = (SELECT current_lab()));
+        USING (lab_id = (SELECT current_lab()) AND (SELECT can_read()));
       CREATE POLICY %1$I_insert ON %1$I FOR INSERT
         WITH CHECK (lab_id = (SELECT current_lab()) AND (SELECT can_write()));
       CREATE POLICY %1$I_update ON %1$I FOR UPDATE
@@ -157,7 +172,7 @@ $$;
 -- -----------------------------------------------------------------------------
 -- You see the lab you are working in.
 CREATE POLICY lab_select ON lab FOR SELECT
-  USING (id = (SELECT current_lab()));
+  USING (id = (SELECT current_lab()) AND (SELECT can_read()));
 CREATE POLICY lab_update ON lab FOR UPDATE
   USING (id = (SELECT current_lab()) AND (SELECT can_administer()))
   WITH CHECK (id = (SELECT current_lab()));
@@ -166,8 +181,8 @@ CREATE POLICY lab_update ON lab FOR UPDATE
 -- directory: an ELN hosting two groups should not leak one group's roster.
 CREATE POLICY app_user_select ON app_user FOR SELECT
   USING (
-    id = (SELECT current_actor())
-    OR EXISTS (
+    id = (SELECT current_user_id())
+    OR (SELECT can_read()) AND EXISTS (
       SELECT 1 FROM lab_member m
        WHERE m.user_id = app_user.id
          AND m.lab_id = (SELECT current_lab())
@@ -176,7 +191,7 @@ CREATE POLICY app_user_select ON app_user FOR SELECT
 -- You may edit your own profile; an administrator may edit anyone in the lab.
 CREATE POLICY app_user_update ON app_user FOR UPDATE
   USING (
-    id = (SELECT current_actor())
+    id = (SELECT current_user_id())
     OR ((SELECT can_administer()) AND EXISTS (
       SELECT 1 FROM lab_member m
        WHERE m.user_id = app_user.id AND m.lab_id = (SELECT current_lab())))
@@ -184,7 +199,7 @@ CREATE POLICY app_user_update ON app_user FOR UPDATE
   WITH CHECK (true);
 
 CREATE POLICY lab_member_select ON lab_member FOR SELECT
-  USING (lab_id = (SELECT current_lab()));
+  USING (lab_id = (SELECT current_lab()) AND (SELECT can_read()));
 CREATE POLICY lab_member_write ON lab_member FOR ALL
   USING (lab_id = (SELECT current_lab()) AND (SELECT can_administer()))
   WITH CHECK (lab_id = (SELECT current_lab()) AND (SELECT can_administer()));
@@ -291,14 +306,14 @@ CREATE POLICY entry_signature_select ON entry_signature FOR SELECT
 -- whole point of a signature.
 CREATE POLICY entry_signature_insert ON entry_signature FOR INSERT
   WITH CHECK (
-    signer_id = (SELECT current_actor())
+    signer_id = (SELECT current_user_id())
     AND EXISTS (SELECT 1 FROM notebook_entry e
                  WHERE e.id = entry_signature.entry_id
                    AND e.lab_id = (SELECT current_lab()))
   );
 
 CREATE POLICY attachment_select ON attachment FOR SELECT
-  USING (lab_id = (SELECT current_lab()));
+  USING (lab_id = (SELECT current_lab()) AND (SELECT can_read()));
 CREATE POLICY attachment_insert ON attachment FOR INSERT
   WITH CHECK (lab_id = (SELECT current_lab()) AND (SELECT can_write()));
 CREATE POLICY attachment_delete ON attachment FOR DELETE
@@ -313,7 +328,7 @@ CREATE POLICY feature_type_select ON feature_type FOR SELECT USING (true);
 -- A library entry with no lab is a built-in every lab can match against; one
 -- with a lab belongs to it alone.
 CREATE POLICY feature_library_select ON feature_library_entry FOR SELECT
-  USING (lab_id IS NULL OR lab_id = (SELECT current_lab()));
+  USING (lab_id IS NULL OR (lab_id = (SELECT current_lab()) AND (SELECT can_read())));
 CREATE POLICY feature_library_write ON feature_library_entry FOR ALL
   USING (lab_id = (SELECT current_lab()) AND (SELECT can_write()))
   WITH CHECK (lab_id = (SELECT current_lab()) AND (SELECT can_write()));

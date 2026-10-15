@@ -65,8 +65,19 @@ CREATE TABLE app_user (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email         text NOT NULL,
   full_name     text NOT NULL,
+  -- Argon2id, written only by auth_register_user and by the rehash-on-login
+  -- path. No read schema in app/schemas.py exposes this column, and the
+  -- SECURITY DEFINER lookup in docs/eln-auth.sql returns it to exactly one
+  -- caller: the login route, which needs it to verify a password.
+  hashed_password text NOT NULL,
   orcid         text,
   is_active     boolean NOT NULL DEFAULT true,
+  -- An application-level flag, not a PostgreSQL role. Nothing in the policies
+  -- or the API reads it today; authorisation comes from lab_member.role. It is
+  -- here for an operator account later, and because adding a column to a table
+  -- people have rows in is more disruptive than carrying an unused one.
+  is_superuser  boolean NOT NULL DEFAULT false,
+  last_login_at timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT app_user_orcid_format CHECK (orcid IS NULL OR orcid ~ '^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$')
@@ -150,6 +161,18 @@ CREATE TRIGGER notebook_entry_touch BEFORE UPDATE ON notebook_entry
 CREATE TABLE notebook_entry_version (
   entry_id       uuid    NOT NULL REFERENCES notebook_entry(id) ON DELETE CASCADE,
   version_no     integer NOT NULL,
+  -- A snapshot of everything a reader sees, not just the free-form page. A
+  -- signature commits to content_sha256, so anything left out of the snapshot
+  -- is something that can be changed after signing while the signature still
+  -- verifies. That is the difference between a witnessed record and a
+  -- witnessed fragment of one.
+  title          text    NOT NULL DEFAULT '',
+  hypothesis     text,
+  methods        text,
+  results        text,
+  conclusions    text,
+  next_steps     text,
+  performed_on   date,
   body           jsonb   NOT NULL,
   body_text      text    NOT NULL DEFAULT '',
   change_note    text,
@@ -409,6 +432,9 @@ CREATE UNIQUE INDEX primer_pair_name_key ON primer_pair (lab_id, lower(name));
 CREATE TABLE guide_rna (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lab_id            uuid NOT NULL REFERENCES lab(id) ON DELETE RESTRICT,
+  -- Nullable and SET NULL for the same reason as plasmid.owner_id: a departing
+  -- student must not take the lab's guide designs with them.
+  owner_id          uuid REFERENCES app_user(id) ON DELETE SET NULL,
   name              text NOT NULL,
   kind              guide_kind NOT NULL DEFAULT 'sgRNA',
   spacer            dna_sequence NOT NULL,
@@ -566,10 +592,10 @@ CREATE INDEX audit_event_row_idx  ON audit_event (table_name, row_id, occurred_a
 CREATE INDEX audit_event_lab_idx  ON audit_event (lab_id, occurred_at DESC);
 
 -- The actor comes from a per-request setting the FastAPI dependency sets:
---   SET LOCAL app.actor_id = '<uuid>';
+--   SET LOCAL app.current_user_id = '<uuid>';
 CREATE FUNCTION record_audit_event() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-  actor uuid := nullif(current_setting('app.actor_id', true), '')::uuid;
+  actor uuid := nullif(current_setting('app.current_user_id', true), '')::uuid;
 BEGIN
   INSERT INTO audit_event (lab_id, table_name, row_id, action, actor_id, before_data, after_data)
   VALUES (

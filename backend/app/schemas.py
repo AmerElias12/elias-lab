@@ -129,6 +129,27 @@ class MembershipRead(ReadModel):
     joined_at: datetime
 
 
+class MemberAdd(ApiModel):
+    """Add somebody who has already registered. There is no password field on
+    purpose: an administrator who sets a colleague's password knows it, and an
+    entry signed by that account stops meaning anything."""
+
+    email: EmailStr
+    role: LabRole = LabRole.member
+
+
+class MemberRoleUpdate(ApiModel):
+    role: LabRole
+
+
+class MemberRead(ReadModel):
+    user_id: uuid.UUID
+    full_name: str
+    email: EmailStr
+    role: LabRole
+    joined_at: datetime
+
+
 class LoginRequest(ApiModel):
     email: EmailStr
     password: str
@@ -152,11 +173,48 @@ class TokenPayload(BaseModel):
     jti: str
 
 
+class LabCreate(ApiModel):
+    """Starting a lab. The slug is in URLs and in the storage paths for
+    attachments, so it is constrained to the characters that are safe in both
+    rather than slugified silently from the name."""
+
+    name: str = Field(min_length=1, max_length=200)
+    slug: str = Field(min_length=2, max_length=60, pattern=r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+
+
+class LabSwitch(ApiModel):
+    lab_id: uuid.UUID
+
+
+class LabMembershipRead(ReadModel):
+    """One row of the lab switcher: the lab, and what you are in it."""
+
+    lab_id: uuid.UUID
+    name: str
+    slug: str
+    role: LabRole
+
+
+class MeRead(ReadModel):
+    """Everything the frontend needs to draw its shell: who you are, which
+    labs you can work in, and which one this token is for. `current_lab_id` is
+    None for an account nobody has added to a lab yet, which the UI shows as a
+    waiting-for-approval state rather than an error."""
+
+    user: UserRead
+    labs: list[LabMembershipRead]
+    current_lab_id: uuid.UUID | None = None
+    current_role: LabRole | None = None
+
+
 # ---------------------------------------------------------------------------
 # 2 · Notebook entries
 # ---------------------------------------------------------------------------
 class NotebookEntryCreate(ApiModel):
     title: str = Field(min_length=1, max_length=300)
+    # The owner may keep a draft to themselves; the default is the shared
+    # lab record. Enforced in the database, not here.
+    is_shared: bool = True
     project_id: uuid.UUID | None = None
     hypothesis: str | None = None
     methods: str | None = None
@@ -170,6 +228,7 @@ class NotebookEntryCreate(ApiModel):
 
 class NotebookEntryUpdate(ApiModel):
     title: str | None = Field(default=None, min_length=1, max_length=300)
+    is_shared: bool | None = None
     project_id: uuid.UUID | None = None
     hypothesis: str | None = None
     methods: str | None = None
@@ -185,6 +244,7 @@ class NotebookEntryUpdate(ApiModel):
 class NotebookEntryRead(ReadModel):
     id: uuid.UUID
     lab_id: uuid.UUID
+    is_shared: bool
     project_id: uuid.UUID | None = None
     author_id: uuid.UUID
     title: str
@@ -194,6 +254,9 @@ class NotebookEntryRead(ReadModel):
     conclusions: str | None = None
     next_steps: str | None = None
     body: dict
+    # The free-form page. Without this the notes are stored and never returned,
+    # so the editor reopens blank and the main content of an entry is invisible.
+    body_text: str
     status: EntryStatus
     current_version: int
     performed_on: date | None = None
@@ -208,6 +271,7 @@ class NotebookEntrySummary(ReadModel):
     id: uuid.UUID
     title: str
     author_id: uuid.UUID
+    is_shared: bool
     status: EntryStatus
     performed_on: date | None = None
     updated_at: datetime
@@ -281,6 +345,10 @@ class SequenceFeatureRead(ReadModel):
 class PlasmidCreate(ApiModel):
     name: str = Field(min_length=1, max_length=200)
     sequence: DnaStr
+    # Readable by the lab unless the owner says otherwise. owner_id is NOT here
+    # on purpose: it comes from the authenticated scope, never from the body,
+    # or a request could attribute a record to a colleague.
+    is_shared: bool = True
     topology: Topology = Topology.circular
     alias: str | None = None
     backbone: str | None = None
@@ -311,6 +379,7 @@ class PlasmidCreate(ApiModel):
 
 class PlasmidUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
     sequence: str | None = None
     topology: Topology | None = None
     alias: str | None = None
@@ -339,6 +408,7 @@ class PlasmidSummary(ReadModel):
     lab_id: uuid.UUID
     owner_id: uuid.UUID | None = None
     name: str
+    is_shared: bool
     alias: str | None = None
     topology: Topology
     length_bp: int
@@ -421,6 +491,9 @@ class PegRNADetailRead(ReadModel):
 
 class GuideRNACreate(ApiModel):
     name: str = Field(min_length=1, max_length=200)
+    # The owner may keep a draft to themselves; the default is the shared
+    # lab record. Enforced in the database, not here.
+    is_shared: bool = True
     kind: GuideKind = GuideKind.sgRNA
     spacer: str = Field(min_length=16, max_length=30)
     pam_sequence: DnaStr
@@ -458,6 +531,7 @@ class GuideRNACreate(ApiModel):
 
 class GuideRNAUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
     owner_id: uuid.UUID | None = None
     notes: str | None = None
     on_target_score: Decimal | None = None
@@ -475,6 +549,7 @@ class GuideOffTargetRead(ReadModel):
 class GuideRNASummary(ReadModel):
     id: uuid.UUID
     lab_id: uuid.UUID
+    is_shared: bool
     owner_id: uuid.UUID | None = None
     name: str
     kind: GuideKind

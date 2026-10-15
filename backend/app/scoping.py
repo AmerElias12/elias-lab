@@ -55,6 +55,31 @@ class LabScope:
             stmt = stmt.where(model.deleted_at.is_(None))
         return stmt
 
+    def visible(self, model: type[M], **kw: Any) -> Select[tuple[M]]:
+        """What this person may actually read: their own records, plus the ones
+        their lab shares, plus everything if they administer the lab.
+
+        This mirrors the SELECT policy in docs/eln-rls-ownership.sql. The
+        database would apply that predicate regardless, so this is not what
+        makes the query safe — it is here so that a list endpoint returns a
+        correct count and a correct page. Without it the query asks for fifty
+        rows, RLS silently removes the ones you may not see, and the page comes
+        back short with no explanation. Keep the two in step: if the policy
+        changes, this changes with it.
+        """
+        stmt = self.select(model, **kw)
+        if not hasattr(model, "is_shared") or self.may_administer():
+            return stmt
+        # Written out rather than `a or b`: these are column objects, and a
+        # SQLAlchemy column raises on truth-testing rather than answering.
+        if hasattr(model, "owner_id"):
+            owner = model.owner_id
+        elif hasattr(model, "author_id"):
+            owner = model.author_id
+        else:
+            return stmt.where(model.is_shared.is_(True))
+        return stmt.where(sa.or_(owner == self.user_id, model.is_shared.is_(True)))
+
     def mine(self, model: type[M], **kw: Any) -> Select[tuple[M]]:
         """Narrowed further to rows this person owns. Entries use author_id, so
         both spellings are accepted."""
@@ -91,16 +116,39 @@ class LabScope:
         return self.may_administer() or (self.may_write() and self.owns(row))
 
 
-async def apply_session_scope(session: AsyncSession, scope: LabScope) -> None:
-    """Hand the scope to PostgreSQL for the life of the transaction.
+async def apply_identity(
+    session: AsyncSession, *, user_id: uuid.UUID, lab_id: uuid.UUID | None = None
+) -> None:
+    """Hand the caller's identity to PostgreSQL for the life of the transaction.
 
-    `app.actor_id` is what the audit trigger records, so the trail names a
-    person rather than the connection pool. `app.lab_id` is what the row-level
-    security policies compare against. SET LOCAL ends with the transaction,
-    which is what makes this safe with a pooled connection.
+    `app.current_user_id` is what the audit trigger records, so the trail names
+    a person rather than the connection pool, and it is what current_user_id()
+    returns in every policy. `app.lab_id` is which of that person's labs the
+    request is working in.
+
+    The third argument to set_config is is_local: the setting dies with the
+    transaction, which is what makes this safe on a pooled connection. Without
+    it, one request's identity would still be set when the next request
+    borrowed the same connection.
+
+    lab_id may be None, for the window after logging in and before choosing a
+    lab. It is written as the empty string rather than left unset, because an
+    unset GUC makes current_setting raise instead of returning NULL, and the
+    policies are written to treat empty as "nobody, nothing".
+
+    These two names are the entire contract between this application and the
+    policies in docs/eln-rls.sql. They are spelled out in exactly one place,
+    here, so that renaming one cannot half-happen.
     """
     await session.execute(
-        sa.text("SELECT set_config('app.actor_id', :actor, true), "
-                "       set_config('app.lab_id',  :lab,   true)"),
-        {"actor": str(scope.user_id), "lab": str(scope.lab_id)},
+        sa.text(
+            "SELECT set_config('app.current_user_id', :actor, true), "
+            "       set_config('app.lab_id',          :lab,   true)"
+        ),
+        {"actor": str(user_id), "lab": str(lab_id) if lab_id else ""},
     )
+
+
+async def apply_session_scope(session: AsyncSession, scope: LabScope) -> None:
+    """Hand a full lab scope to PostgreSQL. See apply_identity."""
+    await apply_identity(session, user_id=scope.user_id, lab_id=scope.lab_id)

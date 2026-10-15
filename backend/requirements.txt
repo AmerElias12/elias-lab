@@ -1,0 +1,11 @@
+# Pinned to the versions this was verified against. See README.md.
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32
+sqlalchemy>=2.0.34,<2.1
+asyncpg>=0.30          # the driver must be asyncpg: the URL says postgresql+asyncpg
+pydantic>=2.8,<3
+pydantic-settings>=2.4
+PyJWT>=2.8             # not python-jose, which is unmaintained
+argon2-cffi>=21.3      # check_needs_rehash is used on login
+email-validator>=2.2   # pydantic's EmailStr needs it at import, not at call
+python-multipart>=0.0.12
