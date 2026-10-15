@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import DBAPIError
 
 from app.config import get_settings
-from app.routers import auth, dashboard, entries, members, plasmids
+from app.routers import auth, dashboard, entries, guides, members, plasmids, primers
 from app.session import check_rls_is_effective, dispose_engine
 
 log = logging.getLogger("eln")
@@ -118,6 +118,30 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_403_FORBIDDEN,
                 content={"detail": "the database refused this write"},
             )
+
+        # The constraints are part of the contract, not an internal detail: a
+        # guide with nothing to target and a primer filed against a plasmid
+        # that does not exist are both bad requests, and answering 500 sends
+        # whoever reads the logs hunting for a server fault that is not there.
+        #
+        # The constraint's name goes back, because "guide_rna_has_target" tells
+        # the caller what rule they broke. The driver's DETAIL does not: it
+        # quotes the offending row, which is the lab's data.
+        constraint = getattr(orig, "constraint_name", None) or ""
+        client_errors = {
+            "23505": (status.HTTP_409_CONFLICT, "that already exists"),
+            "23503": (status.HTTP_400_BAD_REQUEST, "it refers to something that does not exist"),
+            "23514": (status.HTTP_400_BAD_REQUEST, "that combination of values is not allowed"),
+            "22P02": (status.HTTP_400_BAD_REQUEST, "a value is not of the expected type"),
+        }
+        if sqlstate in client_errors:
+            code, detail = client_errors[sqlstate]
+            log.info("rejected on %s: %s %s", request.url.path, sqlstate, constraint)
+            return JSONResponse(
+                status_code=code,
+                content={"detail": f"{detail}{f' ({constraint})' if constraint else ''}"},
+            )
+
         log.exception("database error on %s", request.url.path)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -139,6 +163,8 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(members.router)
     app.include_router(plasmids.router)
+    app.include_router(primers.router)
+    app.include_router(guides.router)
 
     # Mounted last and at the root, so it only sees paths no API route claimed.
     # html=True serves index.html for unknown paths, which is what makes the

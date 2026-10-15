@@ -6,7 +6,7 @@
 <title>Elias Lab — Notebook</title>
 <meta name="description" content="Electronic lab notebook: entries, plasmids, primers and guides.">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="/css/app.css?v=6">
+<link rel="stylesheet" href="/css/app.css?v=7">
 </head>
 <body>
 
@@ -243,7 +243,16 @@
 
       <div class="vector">
         <aside class="vector__list">
+          <div class="tabs tabs--sm" role="tablist">
+            <button class="tab is-active" role="tab" data-libtab="plasmids">Plasmids</button>
+            <button class="tab" role="tab" data-libtab="primers">Primers</button>
+            <button class="tab" role="tab" data-libtab="guides">Guides</button>
+          </div>
+          <input type="search" id="lib-search" class="lib-search" hidden
+                 placeholder="Search the library…" aria-label="Search the library">
           <ul class="list" id="plasmid-list"></ul>
+          <ul class="list" id="primer-list" hidden></ul>
+          <ul class="list" id="guide-list" hidden></ul>
         </aside>
 
         <div class="vector__main">
@@ -355,7 +364,7 @@
         crossorigin="anonymous"></script>
 <script src="/js/plasmid.js?v=1"></script>
 <script src="/js/plasmid-import.js?v=1"></script>
-<script src="/js/vector-viewer.js?v=1"></script>
-<script src="/js/app.js?v=6"></script>
+<script src="/js/vector-viewer.js?v=2"></script>
+<script src="/js/app.js?v=7"></script>
 </body>
 </html>

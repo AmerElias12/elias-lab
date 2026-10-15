@@ -451,6 +451,183 @@ async def exercise() -> int:
                   _list_omits_the_sequence())
 
         # ---------------------------------------------------------------
+        # the oligo library, and finding it again
+        # ---------------------------------------------------------------
+        primer: dict = {}
+
+        async def _create_primers():
+            for name, seq, purpose in (
+                ("pTEST-F", "ATGAGCAAAGGCGAAGAACTG", "colony PCR of the GFP insert"),
+                ("pTEST-R", "GGTCGCATCGCCTTCGCCTTC", "colony PCR of the GFP insert"),
+                ("gRNA-site1-top", "CACCGACGTTGCAACGTTGCAAGG", "gRNA cloning oligo, BsmBI"),
+            ):
+                r = await c.post("/api/primers", headers=auth(pi_token),
+                                 json={"name": name, "sequence": seq, "purpose": purpose})
+                assert r.status_code == 201, r.text
+                if name == "pTEST-F":
+                    primer.update(r.json())
+            assert primer["length_nt"] == 21, primer
+        await run("primers are created, and the database computes their length",
+                  _create_primers())
+
+        async def _search_the_library():
+            # The search people use: what was this oligo for.
+            hits = (await c.get("/api/primers?q=colony", headers=auth(pi_token))).json()
+            assert hits["total"] == 2, hits
+            # The one the molecular tool needs: gRNA-cloning oligos.
+            grna = (await c.get("/api/primers?q=gRNA%20cloning", headers=auth(pi_token))).json()
+            assert grna["total"] == 1, grna
+            assert grna["items"][0]["name"] == "gRNA-site1-top"
+        await run("the library is searchable by what a primer was for", _search_the_library())
+
+        async def _have_we_made_this_already():
+            """Ordering a duplicate of an oligo already in the freezer is the
+            waste this answers."""
+            dup = (await c.get(
+                "/api/primers?sequence=ATGAGCAAAGGCGAAGAACTG", headers=auth(pi_token)
+            )).json()
+            assert dup["total"] == 1, dup
+            assert dup["items"][0]["name"] == "pTEST-F"
+            none = (await c.get(
+                "/api/primers?sequence=TTTTTTTTTTTTTTTTTTTT", headers=auth(pi_token)
+            )).json()
+            assert none["total"] == 0, none
+        await run("an exact sequence search says whether we already have it",
+                  _have_we_made_this_already())
+
+        async def _sequence_cannot_be_edited():
+            """An ordered oligo is a tube in a freezer. Editing its sequence
+            would leave every experiment citing it describing something else."""
+            r = await c.patch(f"/api/primers/{primer['id']}", headers=auth(pi_token),
+                              json={"sequence": "ACGTACGTACGTACGTACGT"})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            still = (await c.get(f"/api/primers/{primer['id']}", headers=auth(pi_token))).json()
+            assert still["sequence"] == "ATGAGCAAAGGCGAAGAACTG"
+        await run("a primer's sequence is not editable", _sequence_cannot_be_edited())
+
+        async def _attach_to_a_plasmid():
+            r = await c.post(
+                f"/api/primers/{primer['id']}/bindings",
+                headers=auth(pi_token),
+                json={"plasmid_id": plasmid["id"], "start_pos": 0, "end_pos": 21,
+                      "strand": 1, "annealed_nt": 21, "tail_sequence": ""},
+            )
+            assert r.status_code == 201, r.text
+
+            listed = (await c.get(
+                f"/api/primers/bindings?plasmid_id={plasmid['id']}", headers=auth(pi_token)
+            )).json()
+            assert len(listed) == 1, listed
+            # The map needs the sequence to draw it; a request per primer would
+            # be a round trip per arrow.
+            assert listed[0]["primer_name"] == "pTEST-F", listed[0]
+            assert listed[0]["primer_sequence"] == "ATGAGCAAAGGCGAAGAACTG", listed[0]
+        await run("a primer is attached to a plasmid and comes back with it",
+                  _attach_to_a_plasmid())
+
+        async def _cannot_attach_across_labs():
+            import uuid as _uuid
+            r = await c.post(
+                f"/api/primers/{primer['id']}/bindings",
+                headers=auth(pi_token),
+                json={"plasmid_id": str(_uuid.uuid4()), "start_pos": 0, "end_pos": 21,
+                      "strand": 1, "annealed_nt": 21},
+            )
+            assert r.status_code == 404, f"{r.status_code} {r.text}"
+        await run("a primer cannot be filed against a plasmid you cannot see",
+                  _cannot_attach_across_labs())
+
+        # ---------------------------------------------------------------
+        # guides
+        # ---------------------------------------------------------------
+        guide: dict = {}
+
+        async def _create_guide_with_pegrna():
+            r = await c.post(
+                "/api/guides",
+                headers=auth(pi_token),
+                json={
+                    "name": "g-GFP-1", "kind": "pegRNA",
+                    "spacer": "ACGTTGCAACGTTGCAAGGT",
+                    "pam_sequence": "AGG", "pam_pattern": "NGG",
+                    "target_plasmid_id": plasmid["id"],
+                    "target_strand": 1, "target_start": 40, "cut_position": 57,
+                    "pegrna": {
+                        "pbs": "GCAACGTTGC", "rt_template": "ATGCATGCAT",
+                        "extension": "ATGCATGCATGCAACGTTGC",
+                        "edit_type": "substitution", "edit_position": 60,
+                        "edit_size_bp": 1, "nick_position": 57,
+                    },
+                },
+            )
+            assert r.status_code == 201, r.text
+            guide.update(r.json())
+            assert guide["pegrna"] is not None, guide
+            assert guide["pegrna"]["pbs"] == "GCAACGTTGC", guide["pegrna"]
+        await run("a pegRNA is stored with its extension", _create_guide_with_pegrna())
+
+        async def _read_guide_back():
+            """GuideRNARead names pegrna and off_targets, both lazy="raise" —
+            the same trap the plasmid routes fell into."""
+            r = await c.get(f"/api/guides/{guide['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert got["spacer"] == "ACGTTGCAACGTTGCAAGGT"
+            assert got["pegrna"]["extension"] == "ATGCATGCATGCAACGTTGC"
+            assert got["off_targets"] == []
+        await run("and read back with its extension, without a lazy-load", _read_guide_back())
+
+        async def _guides_for_the_open_plasmid():
+            """What the molecular tool asks: with this plasmid open, which
+            guides has the lab already designed against it?"""
+            hits = (await c.get(
+                f"/api/guides?target_plasmid_id={plasmid['id']}", headers=auth(pi_token)
+            )).json()
+            assert hits["total"] == 1, hits
+            got = hits["items"][0]
+            assert got["name"] == "g-GFP-1"
+            # The list view has to carry the position, or the map can say a
+            # guide targets this plasmid and still not be able to draw it.
+            assert got["target_start"] == 40, got
+            assert got["target_strand"] == 1, got
+            assert got["cut_position"] == 57, got
+            dup = (await c.get(
+                "/api/guides?spacer=ACGTTGCAACGTTGCAAGGT", headers=auth(pi_token)
+            )).json()
+            assert dup["total"] == 1, dup
+        await run("guides can be found by the plasmid they target, or by spacer",
+                  _guides_for_the_open_plasmid())
+
+        async def _a_guide_must_target_something():
+            """Refused by the schema before it reaches the database, with a
+            message naming the rule. The CHECK is still there as the backstop
+            for anything that does not come through this API."""
+            r = await c.post("/api/guides", headers=auth(pi_token),
+                             json={"name": "g-nowhere", "spacer": "ACGTTGCAACGTTGCAAGGA",
+                                   "pam_sequence": "AGG", "pam_pattern": "NGG"})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "needs a target" in r.text, r.text
+        await run("a guide with nothing to target is refused, with the reason",
+                  _a_guide_must_target_something())
+
+        async def _a_broken_reference_is_a_bad_request():
+            """A foreign key the schema cannot check: the entry id is a valid
+            UUID and simply does not exist. Postgres raises 23503, and the
+            caller should hear 400 rather than "database error" — answering
+            500 sends whoever reads the logs hunting a fault that is not
+            there."""
+            import uuid as _uuid
+            r = await c.post(
+                "/api/plasmids", headers=auth(pi_token),
+                json={"name": "pGhost", "sequence": "ATGC" * 30,
+                      "created_in_entry_id": str(_uuid.uuid4())},
+            )
+            assert r.status_code == 400, f"{r.status_code} {r.text}"
+            assert "does not exist" in r.text, r.text
+        await run("a reference to something that is not there reads as a bad request",
+                  _a_broken_reference_is_a_bad_request())
+
+        # ---------------------------------------------------------------
         # sharing, between real people
         # ---------------------------------------------------------------
         await register("student@braude.ac.il", "A Student")

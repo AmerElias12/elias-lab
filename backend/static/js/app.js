@@ -606,6 +606,12 @@ function showPlasmid(payload) {
 
   renderFacts(VectorViewer.describeSelection(seq, null));
   $('#vector-bases').value = '';
+
+  // Overlays belong to the plasmid that was open, not to this one.
+  overlays = [];
+  showAttachedPrimers();
+  if (libTab === 'primers') loadPrimers().catch(() => {});
+  if (libTab === 'guides') loadGuides().catch(() => {});
 }
 
 async function loadPlasmids() {
@@ -651,6 +657,275 @@ $$('[data-mapview]').forEach((btn) => btn.addEventListener('click', () => {
 }));
 
 $('#plasmid-demo').addEventListener('click', () => showPlasmid(EXAMPLE_PLASMID));
+
+/* --- the lab library: primers and guides on the open map ----------------
+
+   The molecular tool's half of the notebook. Primers and guides the lab has
+   already designed are searchable here and can be put straight onto the map,
+   so nobody retypes a 20-mer out of a spreadsheet.
+
+   Which primers bind is worked out here, in the browser, by the same
+   js/plasmid.js that the old notebook used: it matches both strands, grows
+   the anneal back from the 3' end and reports the 5' tail separately. The API
+   hands over the library; it does not try to answer "does this bind", because
+   a second implementation of that in Python would be a second answer.
+   ----------------------------------------------------------------------- */
+
+let libTab = 'plasmids';
+let overlays = [];            // features added on top of the plasmid's own
+
+function basePlasmidFeatures() {
+  if (!currentPlasmid) return [];
+  return currentPlasmid.features || currentPlasmid.annotations || [];
+}
+
+function redrawWithOverlays() {
+  if (!vector || !currentPlasmid) return;
+  vector.update({
+    name: currentPlasmid.name,
+    sequence: currentPlasmid.sequence || currentPlasmid.seq,
+    topology: currentPlasmid.topology,
+    features: basePlasmidFeatures().concat(overlays),
+  });
+}
+
+function addOverlay(feature) {
+  // Same name twice is the same thing twice; replace rather than stack.
+  overlays = overlays.filter((o) => o.name !== feature.name);
+  overlays.push(feature);
+  redrawWithOverlays();
+}
+
+function openSequence() {
+  if (!currentPlasmid) return '';
+  return (currentPlasmid.sequence || currentPlasmid.seq || '').replace(/[\s\d]/g, '').toUpperCase();
+}
+
+/** Where a primer anneals on the plasmid that is open, if anywhere. */
+function bindingsFor(sequence) {
+  const seq = openSequence();
+  if (!seq || !sequence) return [];
+  return Plasmid.bindPrimers(
+    { seq, topology: currentPlasmid.topology || 'circular' },
+    sequence,
+  );
+}
+
+function libRow(title, subtitle, monoText, actions, badges) {
+  const li = document.createElement('li');
+  const row = document.createElement('div');
+  row.className = 'row lib-row';
+
+  const t = document.createElement('div');
+  t.className = 'row__title';
+  t.textContent = title;
+  row.append(t);
+
+  if (subtitle) {
+    const sub = document.createElement('div');
+    sub.className = 'row__sub';
+    sub.textContent = subtitle;
+    row.append(sub);
+  }
+  if (monoText) {
+    const m = document.createElement('div');
+    m.className = 'mono-sm';
+    m.textContent = monoText;
+    row.append(m);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'row__meta';
+  for (const b of badges || []) {
+    const el = document.createElement('span');
+    el.className = 'badge' + (b.good ? ' badge--binds' : '');
+    el.textContent = b.text;
+    meta.append(el);
+  }
+  for (const a of actions || []) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = a.label;
+    btn.addEventListener('click', a.onClick);
+    meta.append(btn);
+  }
+  row.append(meta);
+  li.append(row);
+  return li;
+}
+
+async function loadPrimers() {
+  // The whole library, not a page of it: binding is computed over all of them.
+  const params = new URLSearchParams({ limit: '500' });
+  const q = $('#lib-search').value.trim();
+  if (q) params.set('q', q);
+  const page = await api(`/api/primers?${params}`);
+
+  const list = $('#primer-list');
+  list.textContent = '';
+  if (!page.items.length) {
+    list.append(emptyRow(q ? `No primer matches “${q}”.` : 'No primers recorded yet.'));
+    return;
+  }
+
+  for (const p of page.items) {
+    const sites = bindingsFor(p.sequence);
+    const badges = [];
+    if (!currentPlasmid) badges.push({ text: 'open a plasmid' });
+    else if (!sites.length) badges.push({ text: 'no site here' });
+    else {
+      const b = sites[0];
+      badges.push({
+        good: true,
+        text: `binds ${b.start + 1} ${b.strand === 1 ? '+' : '−'}${b.perfect ? '' : ' (5′ tail)'}`,
+      });
+    }
+
+    const actions = [];
+    if (sites.length) {
+      const b = sites[0];
+      actions.push({
+        label: 'Show',
+        onClick: () => {
+          addOverlay({
+            name: p.name,
+            type: 'primer_bind',
+            start: b.start,
+            end: b.end,
+            strand: b.strand,
+          });
+          toast(`${p.name} marked at ${b.start + 1}.`);
+        },
+      });
+      actions.push({
+        label: 'Attach',
+        onClick: async () => {
+          try {
+            await api(`/api/primers/${p.id}/bindings`, {
+              method: 'POST',
+              body: {
+                plasmid_id: currentPlasmid.id,
+                start_pos: b.start,
+                end_pos: b.end,
+                strand: b.strand,
+                annealed_nt: b.anneal.length,
+                tail_sequence: b.tail || '',
+                tm_annealed_c: Number.isFinite(b.tm) ? Math.round(b.tm * 100) / 100 : null,
+              },
+            });
+            toast(`${p.name} recorded against ${currentPlasmid.name}.`);
+            await showAttachedPrimers();
+          } catch (err) {
+            toast(err.message, 'error');
+          }
+        },
+      });
+    }
+
+    const bits = [`${p.length_nt} nt`];
+    if (p.tm_c != null) bits.push(`Tm ${p.tm_c} °C`);
+    if (p.purpose) bits.push(p.purpose);
+    list.append(libRow(p.name, bits.join(' · '), p.sequence, actions, badges));
+  }
+}
+
+/** Primers already recorded against this plasmid, drawn when it opens. */
+async function showAttachedPrimers() {
+  if (!currentPlasmid || !currentPlasmid.id) return;
+  let bindings;
+  try {
+    bindings = await api(`/api/primers/bindings?plasmid_id=${currentPlasmid.id}`);
+  } catch {
+    return;                      // a map without its primers is still a map
+  }
+  for (const b of bindings) {
+    addOverlay({
+      name: b.primer_name,
+      type: 'primer_bind',
+      start: b.start_pos,
+      end: b.end_pos,
+      strand: b.strand,
+    });
+  }
+}
+
+async function loadGuides() {
+  const params = new URLSearchParams({ limit: '500' });
+  const q = $('#lib-search').value.trim();
+  if (q) params.set('q', q);
+  // With a plasmid open, the question is which guides target *this* one.
+  if (currentPlasmid && currentPlasmid.id && !q) {
+    params.set('target_plasmid_id', currentPlasmid.id);
+  }
+  const page = await api(`/api/guides?${params}`);
+
+  const list = $('#guide-list');
+  list.textContent = '';
+  if (!page.items.length) {
+    list.append(emptyRow(
+      q ? `No guide matches “${q}”.`
+        : currentPlasmid ? 'No guides designed against this plasmid.' : 'No guides recorded yet.'
+    ));
+    return;
+  }
+
+  for (const g of page.items) {
+    const onThis = currentPlasmid && g.target_plasmid_id === currentPlasmid.id;
+    const badges = [{ text: g.kind }];
+    if (g.gc_percent != null) badges.push({ text: `${g.gc_percent}% GC` });
+
+    const actions = [];
+    if (onThis && g.target_start != null) {
+      actions.push({
+        label: 'Show',
+        onClick: () => {
+          const start = g.target_start;
+          addOverlay({
+            name: g.name,
+            type: g.kind === 'pegRNA' ? 'pegRNA' : 'gRNA',
+            start,
+            end: start + g.spacer.length,
+            strand: g.target_strand === -1 ? -1 : 1,
+          });
+          toast(`${g.name} marked at ${start + 1}.`);
+        },
+      });
+    }
+    const where = onThis ? `targets this plasmid` : (g.target_locus || g.target_genome || 'no target here');
+    list.append(libRow(g.name, `${where} · ${g.nuclease}`, g.spacer + ' ' + g.pam_sequence,
+                       actions, badges));
+  }
+}
+
+async function showLibTab(tab) {
+  libTab = tab;
+  $$('[data-libtab]').forEach((b) => b.classList.toggle('is-active', b.dataset.libtab === tab));
+  $('#plasmid-list').hidden = tab !== 'plasmids';
+  $('#primer-list').hidden = tab !== 'primers';
+  $('#guide-list').hidden = tab !== 'guides';
+  $('#lib-search').hidden = tab === 'plasmids';
+  $('#lib-search').value = '';
+  try {
+    if (tab === 'plasmids') await loadPlasmids();
+    if (tab === 'primers') await loadPrimers();
+    if (tab === 'guides') await loadGuides();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+$$('[data-libtab]').forEach((b) => b.addEventListener('click', () => showLibTab(b.dataset.libtab)));
+
+let libSearchTimer;
+$('#lib-search').addEventListener('input', () => {
+  clearTimeout(libSearchTimer);
+  // Typing a primer name should not be one request per keystroke.
+  libSearchTimer = setTimeout(() => {
+    if (libTab === 'primers') loadPrimers().catch((e) => toast(e.message, 'error'));
+    if (libTab === 'guides') loadGuides().catch((e) => toast(e.message, 'error'));
+  }, 250);
+});
 
 /* --- importing a file --------------------------------------------------- */
 

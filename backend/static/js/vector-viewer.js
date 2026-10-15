@@ -53,6 +53,8 @@
     rep_origin:      '#0c8599',
     primer:          '#868e96',
     primer_bind:     '#868e96',
+    grna:            '#ff922b',
+    pegrna:          '#f76707',
     rbs:             '#66a80f',
     misc_feature:    '#5c7cfa',
     source:          '#adb5bd',
@@ -70,6 +72,8 @@
     [/ori\b|origin|rep_origin/i,      'origin'],
     [/primer/i,                       'primer'],
     [/\brbs\b|ribosome/i,             'rbs'],
+    [/pegrna|prime.?edit/i,           'pegrna'],
+    [/grna|sgrna|guide|crispr|spacer|protospacer/i, 'grna'],
     [/\bcds\b|\bgene\b|\borf\b/i,     'cds'],
   ];
 

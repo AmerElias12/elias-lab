@@ -32,7 +32,7 @@ uvicorn app.main:app
 ```bash
 python scripts/check_migrations.py      # 10 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
-python scripts/check_api.py             # 40 checks: end to end, against real PostgreSQL
+python scripts/check_api.py             # 51 checks: end to end, against real PostgreSQL
 node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 node    ../scripts/test-plasmid.js       # 73 checks: the parser itself
@@ -184,6 +184,38 @@ Two details that bite:
   keeps a colour only when it differs from what `plasmid.js` would have
   invented.
 
+## The oligo and guide library
+
+`/api/primers` and `/api/guides` are the lab's library, and the Plasmids page
+searches them beside the map: open a plasmid, switch to **Primers**, and each
+one says whether it anneals and where.
+
+**Which primers bind is worked out in the browser.** `js/plasmid.js` already
+matches both strands, grows the anneal back from the 3′ end and reports the 5′
+tail separately, with tests behind it. The API hands over the library and the
+client matches — which is why `limit` goes to 500 on these two endpoints and
+100 elsewhere: binding needs the whole library, not a page of it. A few hundred
+oligos of 25 bases is tens of kilobytes. Past a few thousand, add a server-side
+prefilter on the 3′ end rather than a second matcher.
+
+What the server stores is the *result*: a `primer_binding` row saying this
+oligo was used with that construct, at those coordinates. Those are redrawn
+whenever the plasmid is opened, and they do not move if the plasmid is later
+edited, because what happened at the bench did not change.
+
+Searching:
+
+| query | question it answers |
+|---|---|
+| `?q=` | what was this oligo for — covers name, purpose and notes, so "gRNA cloning" finds the cloning oligos |
+| `?sequence=` | have we already made this one (exact match, indexed) |
+| `?target_plasmid_id=` | which guides has the lab designed against the plasmid that is open |
+| `?spacer=` | the same duplicate question, for guides |
+
+A primer's **sequence cannot be edited**. An ordered oligo is a tube in a
+freezer; if the sequence is wrong the answer is a new primer, not an edit that
+leaves every experiment citing this one describing something else.
+
 ## Known gaps
 
 - **No second migration yet.** The pattern is in place and tested both ways,
@@ -203,5 +235,5 @@ Two details that bite:
   update their own row without restricting *which* columns — the API never
   exposes `is_superuser`, so nothing can reach it today, but a column-level
   restriction would make that structural rather than incidental.
-- **Plasmids, primers and guides have models and policies but no routes yet.**
-  The dashboard counts them; the sidebar entries are disabled.
+- **No primer-pair or PCR-product routes.** `js/plasmid.js` computes products,
+  Gibson assemblies and digests; none of that is stored yet.

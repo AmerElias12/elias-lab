@@ -448,6 +448,123 @@ class PlasmidHistoryRow(ReadModel):
 
 
 # ---------------------------------------------------------------------------
+# Primers
+# ---------------------------------------------------------------------------
+class PrimerCreate(ApiModel):
+    """An oligo as ordered.
+
+    tm_c and gc_percent are supplied rather than computed here. The arithmetic
+    lives in js/plasmid.js, where it is tested, and a second implementation in
+    Python would be a second answer to the same question — so what is stored is
+    what the designer saw when they chose the primer, which is also the number
+    they would defend in a meeting.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    sequence: DnaStr
+    is_shared: bool = True
+    # Free text on purpose. "gRNA cloning oligo", "colony PCR", "sequencing" —
+    # labs name these things their own way, and an enum would be wrong within
+    # a month. It is searchable, which is what matters.
+    purpose: str | None = Field(default=None, max_length=300)
+    tm_c: Decimal | None = Field(default=None, ge=0, le=120)
+    gc_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+    _clean = field_validator("sequence")(classmethod(lambda cls, v: _clean_dna(v)))
+
+    @field_validator("sequence")
+    @classmethod
+    def long_enough_to_anneal(cls, v: str) -> str:
+        # Shorter than this is not a primer; it is usually a paste that lost
+        # its first line.
+        if len(v) < 8:
+            raise ValueError("a primer needs at least 8 bases")
+        if len(v) > 200:
+            raise ValueError("longer than 200 bases is an oligo nobody ordered")
+        return v
+
+
+class PrimerUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    purpose: str | None = Field(default=None, max_length=300)
+    tm_c: Decimal | None = Field(default=None, ge=0, le=120)
+    gc_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    owner_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    # No `sequence`. An ordered oligo is a physical thing in a freezer box; if
+    # the sequence is wrong the answer is a new primer, not a quiet edit that
+    # leaves every experiment citing this one describing something else.
+
+
+class PrimerSummary(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    sequence: str
+    length_nt: int
+    is_shared: bool
+    purpose: str | None = None
+    tm_c: Decimal | None = None
+    gc_percent: Decimal | None = None
+    updated_at: datetime
+
+
+class PrimerRead(PrimerSummary):
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+
+
+class PrimerBindingCreate(ApiModel):
+    """Where a primer anneals on a plasmid, as the designer found it.
+
+    Recorded rather than recomputed. The binding is the documented fact — this
+    oligo was used with that construct — and a later edit to the plasmid should
+    not silently move or erase it.
+    """
+
+    plasmid_id: uuid.UUID
+    start_pos: int = Field(ge=0)
+    end_pos: int = Field(ge=0)
+    strand: int = Field(ge=-1, le=1)
+    annealed_nt: int = Field(gt=0)
+    # The 5' overhang that does not anneal: a restriction site, a Gibson arm,
+    # a barcode. Empty for a plain primer.
+    tail_sequence: str = ""
+    tm_annealed_c: Decimal | None = Field(default=None, ge=0, le=120)
+
+    @field_validator("tail_sequence")
+    @classmethod
+    def tail_is_dna_or_empty(cls, v: str) -> str:
+        return _clean_dna(v) if v else ""
+
+
+class PrimerBindingRead(ReadModel):
+    id: uuid.UUID
+    primer_id: uuid.UUID
+    plasmid_id: uuid.UUID
+    start_pos: int
+    end_pos: int
+    strand: int
+    annealed_nt: int
+    tail_sequence: str
+    tm_annealed_c: Decimal | None = None
+
+
+class PrimerBindingDetail(PrimerBindingRead):
+    """A binding with enough of the primer to draw it, so the map does not need
+    a second request per primer."""
+
+    primer_name: str
+    primer_sequence: str
+
+
+# ---------------------------------------------------------------------------
 # 4 · CRISPR designs
 # ---------------------------------------------------------------------------
 class PegRNADetailCreate(ApiModel):
@@ -557,6 +674,12 @@ class GuideRNASummary(ReadModel):
     pam_sequence: str
     nuclease: str
     target_plasmid_id: uuid.UUID | None = None
+    # Where it sits, in the list view. Without these the molecular tool can
+    # tell you a guide targets the open plasmid but cannot draw it, which is
+    # the one thing the list is there for.
+    target_start: int | None = None
+    target_strand: int | None = None
+    cut_position: int | None = None
     gc_percent: Decimal | None = None
     updated_at: datetime
 

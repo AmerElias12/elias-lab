@@ -348,6 +348,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 }
 .seg.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
+.tabs--sm { margin-bottom: .6rem; }
+.tabs--sm .tab { padding: .3rem .4rem; font-size: .82rem; }
+.lib-search { margin-bottom: .6rem; }
+/* A library row carries two actions, so it is not one big button. */
+.lib-row { display: block; cursor: default; }
+.lib-row .row__meta { margin-top: .4rem; gap: .4rem; flex-wrap: wrap; }
+.lib-row .btn { padding: .3rem .6rem; font-size: .8rem; }
+.mono-sm { font-family: var(--mono); font-size: .78rem; color: var(--text-dim); word-break: break-all; }
+.badge--binds { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
+
 .facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; font-size: .88rem; }
 .facts dt { color: var(--text-dim); }
 .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
