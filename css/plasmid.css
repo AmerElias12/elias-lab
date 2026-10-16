@@ -155,6 +155,30 @@
 .pl-frag span{color:#7a877f;font-family:var(--mono);font-size:11px;}
 .pl-frag em{font-style:normal;color:#0c4a44;font-size:11px;}
 
+/* A piece that names what it carries needs a line of its own, so the list of
+   pieces stops being a row of pills and becomes a column of choices. */
+.pl-frag-list.stacked{flex-direction:column;flex-wrap:nowrap;gap:.35rem;}
+.pl-frag-list.stacked .pl-frag{display:flex;align-items:flex-start;border-radius:10px;width:100%;padding:.5rem .7rem;}
+.pl-frag-body{display:flex;flex-direction:column;gap:.3rem;min-width:0;flex:1;}
+.pl-frag-line{display:flex;align-items:baseline;gap:.4rem;}
+.pl-frag-line strong{font-size:13px;}
+.pl-frag-body .hint{font-size:11px;}
+
+/* What a piece carries. The colour is the feature's own, so a piece reads the
+   same way here as it does on the map above. */
+.pl-chips{display:flex;flex-wrap:wrap;gap:.25rem;}
+.pl-chip{font-size:11px;line-height:1.5;padding:.1rem .45rem;border-radius:100px;color:#16241f;
+  border:1px solid rgba(22,36,31,.14);max-width:18rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pl-chip.cut{border-style:dashed;border-color:rgba(22,36,31,.45);}
+
+/* The ring, cut up: one little linear map per piece. */
+.pl-split-wrap{margin-top:.8rem;}
+.pl-split{display:flex;flex-direction:column;gap:.6rem;max-height:40vh;overflow:auto;}
+.pl-split-frag{border:1px solid rgba(22,36,31,.12);border-radius:12px;padding:.5rem .7rem;background:#fbfaf5;}
+.pl-split-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.2rem;}
+.pl-split-where,.pl-split-ends{color:#7a877f;font-family:var(--mono);font-size:11px;}
+.pl-split-frag svg{display:block;}
+
 /* ---- primers and PCR ---- */
 .pl-pcr-wrap{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:12px;padding:.5rem;margin-bottom:.6rem;overflow-x:auto;}
 .pcr-primer{stroke:rgba(22,36,31,.4);stroke-width:.75;}

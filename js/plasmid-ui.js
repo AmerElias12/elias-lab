@@ -47,25 +47,112 @@
     var id = decodeURIComponent(m[1]);
     if (id === 'new') { lnShow('inv-plasmids'); return; }   // a typed address, not a real plasmid
     if (lnCurrentSection === 'plasmid' && plId === id) return;
-    if (!leavePlasmidOk()) { history.replaceState(null, '', plId ? '#plasmid/' + plId : '#'); return; }
-    plId = id; plSel = null; plDirty = false;
-    plCaret = 0; plAnchor = 0; plNote = ''; plUndo = []; plRedo = [];
-    startDraft();
-    recomputeSites();
+    // Noted before the state is touched, so the tab being left gets a chance
+    // to pick up what is still on the page.
+    if (window.LabTabs) LabTabs.noteShow('plasmid', id);
+    var held = window.LabTabs && LabTabs.takeState('plasmid/' + id);
+    plId = id;
+    if (held) {
+      plRestore(held);
+    } else {
+      plSel = null; plDirty = false;
+      plCaret = 0; plAnchor = 0; plNote = ''; plUndo = []; plRedo = [];
+      startDraft();
+      recomputeSites();
+    }
     renderPlasmid();
     lnShow('plasmid');
+    // The strip was drawn by noteShow above, while the flags still belonged to
+    // the page being left — so an incoming clean tab would wear the outgoing
+    // one's unsaved dot. Draw it again now that this page is the live one.
+    if (window.LabTabs) LabTabs.refresh();
+    if (held && held.scroll) {
+      var main = document.querySelector('.ln-main');
+      if (main) setTimeout(function () { main.scrollTop = held.scroll; }, 0);
+    }
   }
-  function leavePlasmidOk() {
-    if (lnCurrentSection !== 'plasmid' || !plDirty) return true;
-    if (!confirm('This plasmid has unsaved changes. Leave without saving them?')) return false;
-    plDirty = false;
-    return true;
+  /* Everything that makes this plasmid's page *this* plasmid's page, so a tab
+     comes back exactly as it was left: the working copy with its unsaved
+     edits, what was selected, where the caret was, and the undo history —
+     losing the undo stack on a tab switch would make the tabs a trap rather
+     than a convenience. The viewers are not kept; they are redrawn, which is
+     quick and avoids holding two SeqViz instances per open plasmid. */
+  /* The metadata boxes — name, backbone, where it is kept — only reach the
+     draft when Save is pressed, so they have to be read off the page or a
+     half-typed name would vanish on the way to another tab. Read by prefix
+     rather than from a list, so a field added to the form later is carried
+     without anybody having to remember this function exists. */
+  function plFields() {
+    var out = {}, body = document.getElementById('ln-plasmid-body');
+    if (!body) return out;
+    body.querySelectorAll('input[id^="pl-"],select[id^="pl-"],textarea[id^="pl-"]').forEach(function (el) {
+      if (el.type === 'file' || el.type === 'checkbox' || el.type === 'radio') return;
+      out[el.id] = el.value;
+    });
+    return out;
   }
+  function plCapture() {
+    if (lnCurrentSection !== 'plasmid' || !plDraft) return null;
+    var main = document.querySelector('.ln-main');
+    return { draft: plDraft, dirty: plDirty, sel: plSel, caret: plCaret, anchor: plAnchor,
+      note: plNote, undo: plUndo, redo: plRedo, opts: JSON.parse(JSON.stringify(plOpts)),
+      fields: plFields(), scroll: main ? main.scrollTop : 0 };
+  }
+  function plRestore(st) {
+    plDraft = st.draft; plDirty = st.dirty; plSel = st.sel;
+    plCaret = st.caret; plAnchor = st.anchor; plNote = st.note;
+    plUndo = st.undo || []; plRedo = st.redo || [];
+    if (st.opts) plOpts = st.opts;
+    plPendingFields = st.fields || null;
+    recomputeSites();
+  }
+  // Put back after renderPlasmid has drawn the boxes to put them back into.
+  var plPendingFields = null;
+  function plApplyFields() {
+    if (!plPendingFields) return;
+    var vals = plPendingFields;
+    plPendingFields = null;
+    Object.keys(vals).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.value = vals[id];
+    });
+  }
+  /* Moving between pages no longer loses an edit — the tab holds it, and the
+     question is asked when the tab is closed. */
+  function leavePlasmidOk() { return true; }
   function markPlDirty() {
     if (plDirty) return;
     plDirty = true;
     var st = document.getElementById('ln-pl-status');
     if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+    if (window.LabTabs) LabTabs.refresh();   // the tab gets its unsaved dot
+  }
+
+  if (window.LabTabs) {
+    LabTabs.register('plasmid', {
+      title: function (id, held) {
+        // The name as typed, so renaming a plasmid renames its tab straight
+        // away — from the live box for the tab on screen, and from what was
+        // put aside for the ones that are not.
+        if (id === plId) {
+          var live = document.getElementById('pl-name');
+          if (live && live.value.trim()) return live.value.trim();
+          if (plDraft) return plDraft.name || 'Untitled plasmid';
+        } else if (held && held.fields && (held.fields['pl-name'] || '').trim()) {
+          return held.fields['pl-name'].trim();
+        }
+        var it = (getInventory().plasmids || []).filter(function (x) { return x.id === id; })[0];
+        return it ? (it.name || 'Untitled plasmid') : 'Plasmid';
+      },
+      capture: plCapture,
+      restore: plRestore,
+      dirty: function () { return lnCurrentSection === 'plasmid' && plDirty; },
+      // Closing the tab of the plasmid on screen drops the working copy, so a
+      // later reopen reads the saved record rather than the discarded edits.
+      discard: function (id, wasCurrent) {
+        if (wasCurrent && id === plId) { plDirty = false; plDraft = null; plId = null; }
+      }
+    });
   }
 
   // ---------- the page ----------
@@ -84,7 +171,7 @@
         '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-plasmids\');return false;">← Plasmids</a>' +
         '<span id="ln-pl-status" class="ln-entry-status">' + (plDirty ? 'Unsaved changes' : 'Saved') + '</span>' +
         '<div class="ln-header-actions">' +
-          '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in new tab ↗</a>' +
+          '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in a browser window ↗</a>' +
           '<button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button>' +
           '<button class="ln-add-btn ghost" onclick="plExportMenu(this)">↓ Export</button>' +
           '<button class="ln-add-btn" id="ln-pl-save" onclick="savePlasmid()">Save</button>' +
@@ -106,6 +193,7 @@
       // map and the sequence, so it sits below both rather than between them.
       featuresHtml(p);
     wire();
+    plApplyFields();
     mountMap(p);
   }
 
@@ -844,7 +932,7 @@
         P.gc(sub).toFixed(1) + '% · Tm ' + P.tm(sub).toFixed(1) + ' °C' +
         '<button class="ln-icon-btn" onclick="plFeatureModal(-1)">+ Make a feature</button>' +
         '<button class="ln-icon-btn" onclick="plCopySelection()">Copy</button>' +
-        '<button class="ln-icon-btn" onclick="plCopySelection(true)">Copy reverse complement</button>';
+        '<button class="ln-icon-btn" onclick="plCopyMenu(this)">Copy as ▾</button>';
     }
     var where = p.seq.length ? 'Position <strong>' + (plCaret + 1) + '</strong>' : 'Empty';
     var enz = plOpts.enzymes === 'none' ? '' : ' · ' + shown.length + ' site' + (shown.length === 1 ? '' : 's') +
@@ -938,14 +1026,45 @@
     var at = plSel ? plSel.start : plCaret, del = plSel ? plSel.end - plSel.start : 0;
     edEdit(at, del, bases);
   }
-  function plCopySelection(rc) {
+  /* Copy the selection as bases, as transcript, or as protein — either strand.
+     P.copyForm does the conversion and says what it produced; this only has to
+     put it on the clipboard and say so.
+
+     `true` is still accepted for the reverse complement, because Ctrl+C and
+     the cut handler call this with no argument and an older call site passed
+     a boolean. */
+  function plCopySelection(kind) {
     var it = rec(); if (!it || !plSel) return;
+    var menu = document.getElementById('pl-copy-menu'); if (menu) menu.remove();
+    if (kind === true) kind = 'dna-rc';
     var sub = P.clean(it.seq).slice(plSel.start, plSel.end);
-    if (rc) sub = P.revcomp(sub);
-    navigator.clipboard.writeText(sub).then(function () {
-      plNote = (rc ? 'Reverse complement' : 'Selection') + ' copied (' + sub.length + ' bp).';
+    var out = P.copyForm(sub, kind);
+    var note = out.label + ' copied (' + out.text.length.toLocaleString() + ' ' + out.unit + ')';
+    if (out.remainder) {
+      note += ', ' + out.remainder + ' base' + (out.remainder === 1 ? '' : 's') + ' left over';
+    }
+    navigator.clipboard.writeText(out.text).then(function () {
+      plNote = note + '.';
       paintSelection();
-    }, function () { alert(sub); });
+    }, function () { alert(out.text); });
+  }
+  function plCopyMenu(btn) {
+    var old = document.getElementById('pl-copy-menu');
+    if (old) { old.remove(); return; }
+    var menu = document.createElement('div');
+    menu.id = 'pl-copy-menu';
+    menu.className = 'ln-pl-menu';
+    menu.innerHTML = Object.keys(P.COPY_FORMS).map(function (k) {
+      return '<button type="button" onclick="plCopySelection(\'' + k + '\')">' +
+        esc(P.COPY_FORMS[k].label) + '</button>';
+    }).join('');
+    btn.parentNode.appendChild(menu);
+    setTimeout(function () {
+      document.addEventListener('click', function close(e) {
+        if (menu.contains(e.target) || e.target === btn) return;
+        menu.remove(); document.removeEventListener('click', close);
+      });
+    }, 0);
   }
 
   /* Redraw the sequence alone, keeping where the page was scrolled and which
@@ -1249,6 +1368,67 @@
     navigator.clipboard.writeText(t).then(function () { }, function () { alert(t); });
   }
 
+  // ---------- the map, cut up ----------
+  /* Choosing enzymes is really a question about what ends up on which piece —
+     does the insert keep its promoter, does the backbone keep its origin —
+     and a count of features does not answer it. So the ring is redrawn as one
+     little linear map per piece, in the order they sit on the plasmid, with
+     what each one carries named underneath.
+
+     A feature the cut ran through is marked, because "AmpR" on two different
+     pieces means something very different from AmpR on one. */
+  /* One chip per feature, not per interval.
+
+     A feature can land on a piece as two separate stretches — when the piece
+     runs across the origin and the feature sits over the join — and listing
+     it twice reads as two copies of the gene, which is alarming and wrong.
+     The parts are added up instead, and the chip says how much of the feature
+     the piece actually holds. */
+  function featureChips(feats) {
+    if (!feats || !feats.length) return '<div class="hint">Nothing annotated on this piece.</div>';
+    var order = [], by = {};
+    feats.forEach(function (f) {
+      var key = (f.name || 'unnamed') + '\u0000' + (f.type || '');
+      if (!by[key]) { by[key] = { name: f.name || 'unnamed', type: f.type, color: f.color, bp: 0, cut: false, parts: 0 }; order.push(key); }
+      by[key].bp += Math.max(0, f.end - f.start);
+      by[key].parts++;
+      if (/Shortened|partly inside/i.test(f.note || '')) by[key].cut = true;
+    });
+    return '<div class="pl-chips">' + order.map(function (key) {
+      var c = by[key];
+      var title = c.bp.toLocaleString() + ' bp on this piece' +
+        (c.parts > 1 ? ', in ' + c.parts + ' stretches across the origin' : '') +
+        (c.cut ? ' — the cut runs through it' : '');
+      return '<span class="pl-chip' + (c.cut ? ' cut' : '') + '" style="background:' +
+        esc(c.color || P.colorFor(c.type)) + '" title="' + esc(title) + '">' +
+        esc(c.name) + (c.cut ? ' ✂' : '') + '</span>';
+    }).join('') + '</div>';
+  }
+  function fragmentSplitHtml(p, names) {
+    var picked = (names || []).filter(Boolean);
+    if (!p || !P.clean(p.seq || '').length) return '';
+    if (!picked.length) return '<div class="hint">Tick an enzyme to see how the map splits.</div>';
+    var d = P.digest(p, picked);
+    if (!d.fragments.length) {
+      return '<div class="ln-bulk-note">None of the ticked enzymes cuts this sequence, so there is nothing to split.</div>';
+    }
+    var cutters = {};
+    d.sites.forEach(function (s) { cutters[s.name] = true; });
+    return '<div class="ln-form-section">' + d.fragments.length + ' piece' +
+        (d.fragments.length === 1 ? '' : 's') + ' from ' + Object.keys(cutters).sort().join(' + ') + '</div>' +
+      '<div class="pl-split">' + d.fragments.map(function (f, i) {
+        return '<div class="pl-split-frag">' +
+          '<div class="pl-split-head">' +
+            '<strong>' + f.len.toLocaleString() + ' bp</strong>' +
+            '<span class="pl-split-where">' + (f.start + 1) + '–' + f.end + '</span>' +
+            '<span class="pl-split-ends">' + esc(P.describeEnd(f.left)) + ' → ' + esc(P.describeEnd(f.right)) + '</span>' +
+          '</div>' +
+          P.linearMapSvg({ name: 'piece ' + (i + 1), seq: f.seq, topology: 'linear', features: f.features },
+            { width: 720 }) +
+          featureChips(f.features) +
+        '</div>';
+      }).join('') + '</div>';
+  }
   // ---------- choosing enzymes ----------
   /* What is ticked lives here rather than in the checkboxes themselves. The
      table is redrawn whenever the filter or the search changes, which would
@@ -1268,6 +1448,15 @@
     if (on && at < 0) plEnzPicked.push(name);
     else if (!on && at >= 0) plEnzPicked.splice(at, 1);
     plEnzHead();
+    plEnzSplit();
+  }
+  /* Redraw the split alone. The table is left where it is — redrawing it
+     would scroll the row that was just ticked out from under the pointer. */
+  function plEnzSplit() {
+    var host = document.getElementById('pl-enz-split');
+    var it = rec();
+    if (!host || !it) return;
+    host.innerHTML = fragmentSplitHtml(asPlasmid(it), plEnzPicked);
   }
   /* Tick or untick everything the filter and the search are currently
      showing. Enzymes that cut nothing cannot be marked, so they are left
@@ -1337,10 +1526,12 @@
           '<td>' + (e.blunt ? 'blunt' : 'sticky') + '</td></tr>';
       }).join('') : '<tr><td colspan="6" class="ln-empty">Nothing matches.</td></tr>') +
       '</tbody></table></div>' +
+      '<div id="pl-enz-split" class="pl-split-wrap"></div>' +
       '<div class="ln-modal-actions"><span class="hint" id="pl-enz-count" style="margin-right:auto;"></span>' +
       '<button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
       '<button class="ln-modal-save" onclick="plEnzApply()">Mark the ticked ones</button></div>';
     plEnzHead();
+    plEnzSplit();
   }
   function plEnzSet(k) { plEnzFilter = k; plEnzHtml(); }
   function plEnzSearchSet(v) {
@@ -1366,11 +1557,77 @@
     var it = rec(); if (!it) return;
     if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
     var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
-    clone = { vecEnz: [], vecPick: 0, inserts: [{ id: others.length ? others[0].id : '', enz: [], pick: 0, flip: false }] };
+    clone = {
+      vec: { kind: 'this', id: it.id, tplId: it.id, fwd: '', rev: '', enz: [], pick: 0 },
+      inserts: [{ kind: 'plasmid', id: others.length ? others[0].id : '', tplId: it.id,
+        fwd: '', rev: '', enz: [], pick: 0, flip: false }]
+    };
     plCloneHtml();
     document.getElementById('ln-modal-bg').classList.add('open');
   }
+  function plasmidById(id) {
+    return (getInventory().plasmids || []).filter(function (x) { return x.id === id; })[0] || null;
+  }
+  function slotOf(which) { return which < 0 ? clone.vec : clone.inserts[which]; }
+
+  /* The best place a primer sits on a template, on the strand asked for.
+     bindPrimers sorts by how much of the primer annealed, so the first hit on
+     that strand is the one a PCR would actually use. A 5' tail that does not
+     match is expected — that is where the restriction site is. */
+  function bestHit(p, primerSeq, strand) {
+    var seq = P.clean(primerSeq || '');
+    if (seq.length < 14) return null;
+    return P.bindPrimers(p, seq, { minAnneal: 14 }).filter(function (h) { return h.strand === strand; })[0] || null;
+  }
+
+  /* What a slot is actually cutting.
+
+     Either a plasmid from the inventory, or the product of a PCR off one.
+     The PCR case is the point of this: a template with no useful site can be
+     amplified with primers carrying one on their 5' tails, and the product —
+     linear, with the sites now at its ends — digests into a fragment with
+     sticky ends like any other. P.pcrProduct already builds tail + body +
+     tail and annotates both, so nothing new has to be worked out here.
+
+     Returns either { p } ready to digest, or { error } saying what is still
+     missing, in a sentence that names the thing to fix. */
+  function slotMolecule(slot) {
+    // 'this' is the plasmid open on the page, taken from the draft rather than
+    // from the inventory: it may hold edits that have not been saved, and
+    // cloning with the version on disk would quietly use the wrong sequence.
+    if (slot.kind === 'this') {
+      var cur = rec();
+      if (!cur) return { error: 'Choose a plasmid.' };
+      return { p: asPlasmid(cur), name: cur.name || 'this plasmid' };
+    }
+    if (slot.kind !== 'pcr') {
+      var it = plasmidById(slot.id);
+      if (!it) return { error: 'Choose a plasmid.' };
+      return { p: asPlasmid(it), name: it.name || 'Untitled' };
+    }
+    // Same reason as above: amplifying the open plasmid uses what is on the
+    // page, not what was last saved.
+    var cur2 = rec();
+    var tpl = (cur2 && slot.tplId === cur2.id) ? cur2 : plasmidById(slot.tplId);
+    if (!tpl) return { error: 'Choose a template to amplify.' };
+    var tp = asPlasmid(tpl), tplName = tpl.name || 'the template';
+    if (!P.clean(slot.fwd).length || !P.clean(slot.rev).length) {
+      return { error: 'Paste both primers, 5′ tail and all.' };
+    }
+    var f = bestHit(tp, slot.fwd, 1), r = bestHit(tp, slot.rev, -1);
+    if (!f) return { error: 'The forward primer does not anneal to ' + tplName + ' — check its 3′ end.' };
+    if (!r) return { error: 'The reverse primer does not anneal to ' + tplName + ' — check its 3′ end.' };
+    var prod = P.pcrProduct(tp, f, r);
+    if (prod.error) return { error: prod.error };
+    return {
+      p: { name: 'PCR from ' + tplName, seq: prod.seq, topology: 'linear', features: prod.features },
+      name: 'PCR from ' + tplName, product: prod, fwd: f, rev: r
+    };
+  }
   function cutterOptions(p, chosen, i) {
+    // The slot may not name a molecule yet — no template chosen, or a primer
+    // that does not anneal. Nothing cuts nothing, so offer nothing.
+    if (!p || !P.clean(p.seq || '').length) return '<option value="">—</option>';
     var sum = P.enzymeSummary(p).filter(function (e) { return e.count > 0; })
       .sort(function (a, b) { return a.count - b.count || a.name.localeCompare(b.name); });
     return '<option value="">—</option>' + sum.map(function (e) {
@@ -1378,57 +1635,133 @@
         esc(e.name) + ' (' + e.count + ' cut' + (e.count === 1 ? '' : 's') + ')</option>';
     }).join('');
   }
+  /* The pieces, to choose between. Each one names what it carries rather than
+     counting it: which piece has the gene on it is the entire question being
+     asked here, and "2 features" does not answer it. */
   function fragChoice(frags, picked, onChange) {
     if (!frags.length) return '<div class="hint">Choose enzymes above to cut it.</div>';
-    return '<div class="pl-frag-list">' + frags.map(function (f, i) {
+    return '<div class="pl-frag-list stacked">' + frags.map(function (f, i) {
       return '<label class="pl-frag' + (picked === i ? ' on' : '') + '"><input type="radio" name="' + onChange.name + '" ' +
         (picked === i ? 'checked ' : '') + 'onchange="' + onChange.call + '(' + i + ')">' +
-        '<strong>' + f.len.toLocaleString() + ' bp</strong> ' +
-        '<span>' + esc((f.left.enzyme || 'end')) + ' → ' + esc((f.right.enzyme || 'end')) + '</span>' +
-        (f.features.length ? '<em>' + f.features.length + ' feature' + (f.features.length === 1 ? '' : 's') + '</em>' : '') +
-        '</label>';
+        '<span class="pl-frag-body">' +
+          '<span class="pl-frag-line"><strong>' + f.len.toLocaleString() + ' bp</strong> ' +
+          '<span>' + esc((f.left.enzyme || 'end')) + ' → ' + esc((f.right.enzyme || 'end')) + '</span></span>' +
+          featureChips(f.features) +
+        '</span></label>';
     }).join('') + '</div>';
   }
+  function slotDigest(slot) {
+    var mol = slotMolecule(slot);
+    var d = mol.p ? P.digest(mol.p, slot.enz.filter(Boolean)) : { fragments: [], sites: [] };
+    d.mol = mol;
+    return d;
+  }
   function cloneDigests() {
-    var it = rec();
-    var vec = asPlasmid(it);
-    var vd = P.digest(vec, clone.vecEnz.filter(Boolean));
-    var ins = clone.inserts.map(function (slot) {
-      var src = (getInventory().plasmids || []).filter(function (x) { return x.id === slot.id; })[0];
-      if (!src) return { fragments: [], src: null };
-      var d = P.digest(asPlasmid(src), slot.enz.filter(Boolean));
-      d.src = src;
-      return d;
+    return { vec: slotDigest(clone.vec), ins: clone.inserts.map(slotDigest) };
+  }
+  /* Every primer the lab knows, offered as a datalist so the same box both
+     accepts a pasted oligo and completes one already on file. A cloning
+     primer is usually newly designed — the restriction site on its 5' tail is
+     the whole point — so typing has to be the first-class case, not an
+     afterthought behind a picker. */
+  function clonePrimerList() {
+    var seen = {}, out = [];
+    primerList().concat(labPrimers()).forEach(function (pr) {
+      var s = P.clean(pr.seq || '');
+      if (!s || seen[s]) return;
+      seen[s] = true;
+      out.push({ name: pr.name || 'primer', seq: s });
     });
-    return { vec: vd, ins: ins };
+    return out;
+  }
+  function clonePrimerDatalist() {
+    return '<datalist id="pl-clone-primers">' + clonePrimerList().map(function (pr) {
+      return '<option value="' + esc(pr.seq) + '">' + esc(pr.name) + '</option>';
+    }).join('') + '</datalist>';
+  }
+  function templateOptions(chosen) {
+    var all = (getInventory().plasmids || []).filter(function (x) { return P.clean(x.seq || '').length; });
+    var cur = rec();
+    if (cur && !all.some(function (x) { return x.id === cur.id; })) all = [cur].concat(all);
+    if (!all.length) return '<option value="">No plasmid has a sequence yet</option>';
+    return all.map(function (o) {
+      return '<option value="' + esc(o.id) + '"' + (o.id === chosen ? ' selected' : '') + '>' +
+        esc(o.name || 'Untitled') + '</option>';
+    }).join('');
+  }
+  /* The source half of a slot: which molecule, and for a PCR the template and
+     the two primers. `which` is -1 for the vector, or the insert's index. */
+  function sourceFields(which, slot, others) {
+    var kindRow = '<div class="ln-form-row"><label>Source</label><select onchange="plCloneKind(' + which + ',this.value)">' +
+      (which < 0
+        ? '<option value="this"' + (slot.kind === 'this' ? ' selected' : '') + '>This plasmid</option>'
+        : '<option value="plasmid"' + (slot.kind === 'plasmid' ? ' selected' : '') + '>A plasmid</option>') +
+      '<option value="pcr"' + (slot.kind === 'pcr' ? ' selected' : '') + '>A PCR product</option>' +
+      '</select></div>';
+
+    if (slot.kind === 'pcr') {
+      var mol = slotMolecule(slot);
+      return '<div class="ln-form-grid">' + kindRow +
+          '<div class="ln-form-row"><label>Template</label><select onchange="plClonePcr(' + which + ',\'tplId\',this.value)">' +
+            templateOptions(slot.tplId) + '</select></div>' +
+        '</div><div class="ln-form-grid">' +
+          '<div class="ln-form-row"><label>Forward primer (5′ → 3′)</label>' +
+            '<input list="pl-clone-primers" placeholder="site + overhang + annealing 3′ end" value="' + esc(slot.fwd) + '" ' +
+            'onchange="plClonePcr(' + which + ',\'fwd\',this.value)"></div>' +
+          '<div class="ln-form-row"><label>Reverse primer (5′ → 3′)</label>' +
+            '<input list="pl-clone-primers" placeholder="site + overhang + annealing 3′ end" value="' + esc(slot.rev) + '" ' +
+            'onchange="plClonePcr(' + which + ',\'rev\',this.value)"></div>' +
+        '</div>' + pcrSummary(mol);
+    }
+
+    var pick = which < 0 ? '' :
+      '<div class="ln-form-row"><label>Plasmid</label><select onchange="plCloneSrc(' + which + ',this.value)">' +
+        (others.length ? others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === slot.id ? ' selected' : '') + '>' + esc(o.name || 'Untitled') + '</option>'; }).join('')
+          : '<option value="">No other plasmid has a sequence yet</option>') + '</select></div>';
+    return '<div class="ln-form-grid">' + kindRow + pick + '</div>';
+  }
+  /* What the PCR came out as, before anything is cut. Worth stating: if the
+     product is not the length that was expected, every fragment below it is
+     answering the wrong question. */
+  function pcrSummary(mol) {
+    if (mol.error) return '<div class="ln-bulk-note error">' + esc(mol.error) + '</div>';
+    var prod = mol.product;
+    return '<div class="ln-bulk-note ok"><strong>' + prod.len.toLocaleString() + ' bp</strong> product · ' +
+      prod.templateLen.toLocaleString() + ' bp from the template' +
+      (prod.tails ? ' plus ' + prod.tails + ' bp of primer tail' : ' and no tails') +
+      (prod.wraps ? ' · runs across the origin' : '') +
+      ' · anneals at ' + mol.fwd.tm.toFixed(0) + ' and ' + mol.rev.tm.toFixed(0) + ' °C</div>';
   }
   function plCloneHtml() {
     var it = rec(); if (!it) return;
     var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
     var d = cloneDigests();
+    var vecName = d.vec.mol.name || esc(it.name || 'this plasmid');
     var html = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Restriction cloning</h3>' +
-      '<p class="ln-bulk-intro">Cut this plasmid and the inserts, pick the piece to keep from each, and join them. ' +
-      'Every join is checked, so an end that cannot ligate is caught before you order anything.</p>' +
-      '<div class="pl-clone-box"><div class="ln-form-section">Vector — ' + esc(it.name || 'this plasmid') + '</div>' +
+      '<p class="ln-bulk-intro">Cut the vector and the inserts, pick the piece to keep from each, and join them. ' +
+      'Either side can be a plasmid or a PCR product — amplifying with primers that carry a restriction site on ' +
+      'their 5′ tail is how a fragment gets an end its template never had. Every join is checked, so an end that ' +
+      'cannot ligate is caught before you order anything.</p>' + clonePrimerDatalist() +
+      '<div class="pl-clone-box"><div class="ln-form-section">Vector — ' + esc(vecName) + '</div>' +
+      sourceFields(-1, clone.vec, others) +
       '<div class="ln-form-grid">' +
-        '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(-1,0,this.value)">' + cutterOptions(asPlasmid(it), clone.vecEnz, 0) + '</select></div>' +
-        '<div class="ln-form-row"><label>Second enzyme (optional)</label><select onchange="plCloneEnz(-1,1,this.value)">' + cutterOptions(asPlasmid(it), clone.vecEnz, 1) + '</select></div>' +
-      '</div>' + fragChoice(d.vec.fragments, clone.vecPick, { name: 'vecfrag', call: 'plCloneVecPick' }) + '</div>';
+        '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(-1,0,this.value)">' + cutterOptions(d.vec.mol.p, clone.vec.enz, 0) + '</select></div>' +
+        '<div class="ln-form-row"><label>Second enzyme (optional)</label><select onchange="plCloneEnz(-1,1,this.value)">' + cutterOptions(d.vec.mol.p, clone.vec.enz, 1) + '</select></div>' +
+      '</div>' + fragChoice(d.vec.fragments, clone.vec.pick, { name: 'vecfrag', call: 'plCloneVecPick' }) + '</div>';
 
     clone.inserts.forEach(function (slot, n) {
-      var src = (getInventory().plasmids || []).filter(function (x) { return x.id === slot.id; })[0];
+      var mol = d.ins[n].mol;
       html += '<div class="pl-clone-box"><div class="ln-form-section">Insert ' + (n + 1) +
+        (mol.name ? ' — ' + esc(mol.name) : '') +
         (clone.inserts.length > 1 ? ' <button class="ln-icon-btn danger" onclick="plCloneDropInsert(' + n + ')">✕</button>' : '') + '</div>' +
+        sourceFields(n, slot, others) +
         '<div class="ln-form-grid">' +
-          '<div class="ln-form-row"><label>From</label><select onchange="plCloneSrc(' + n + ',this.value)">' +
-            (others.length ? others.map(function (o) { return '<option value="' + esc(o.id) + '"' + (o.id === slot.id ? ' selected' : '') + '>' + esc(o.name || 'Untitled') + '</option>'; }).join('')
-              : '<option value="">No other plasmid has a sequence yet</option>') + '</select></div>' +
           '<div class="ln-form-row"><label>Orientation</label><select onchange="plCloneFlip(' + n + ',this.value)">' +
             '<option value="0"' + (slot.flip ? '' : ' selected') + '>As it is</option>' +
             '<option value="1"' + (slot.flip ? ' selected' : '') + '>Turned round</option></select></div>' +
         '</div><div class="ln-form-grid">' +
-          '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(' + n + ',0,this.value)">' + (src ? cutterOptions(asPlasmid(src), slot.enz, 0) : '') + '</select></div>' +
-          '<div class="ln-form-row"><label>Second enzyme</label><select onchange="plCloneEnz(' + n + ',1,this.value)">' + (src ? cutterOptions(asPlasmid(src), slot.enz, 1) : '') + '</select></div>' +
+          '<div class="ln-form-row"><label>First enzyme</label><select onchange="plCloneEnz(' + n + ',0,this.value)">' + cutterOptions(mol.p, slot.enz, 0) + '</select></div>' +
+          '<div class="ln-form-row"><label>Second enzyme</label><select onchange="plCloneEnz(' + n + ',1,this.value)">' + cutterOptions(mol.p, slot.enz, 1) + '</select></div>' +
         '</div>' + fragChoice(d.ins[n].fragments, slot.pick, { name: 'insfrag' + n, call: 'plCloneInsPick.bind(null,' + n + ')' }) + '</div>';
     });
     if (clone.inserts.length < 2) html += '<button class="ln-add-btn ghost" onclick="plCloneAddInsert()">+ Add a second insert (three-piece assembly)</button>';
@@ -1438,25 +1771,42 @@
     document.getElementById('ln-modal-content').innerHTML = html;
     plCloneCheck(true);
   }
+  function plCloneKind(which, kind) {
+    var slot = slotOf(which);
+    slot.kind = kind;
+    // The enzymes that cut a plasmid rarely cut its PCR product the same
+    // number of times, and a stale choice would silently pick a different
+    // fragment, so both go back to unset.
+    slot.enz = []; slot.pick = 0;
+    if (which >= 0) slot.touched = true;
+    plCloneHtml();
+  }
+  function plClonePcr(which, field, value) {
+    var slot = slotOf(which);
+    slot[field] = field === 'tplId' ? value : P.clean(value);
+    slot.pick = 0;
+    plCloneHtml();
+  }
   function plCloneEnz(which, slot, val) {
-    var target = which < 0 ? clone.vecEnz : clone.inserts[which].enz;
+    var target = slotOf(which).enz;
     target[slot] = val;
-    if (which < 0) clone.vecPick = 0;
+    if (which < 0) clone.vec.pick = 0;
     else { clone.inserts[which].pick = 0; clone.inserts[which].touched = true; }
     // An insert is cut with the vector's enzymes until someone says otherwise,
     // which is what a plain two-enzyme clone needs.
     if (which < 0) clone.inserts.forEach(function (ins) {
-      if (!ins.touched) { ins.enz = clone.vecEnz.slice(); ins.pick = 0; }
+      if (!ins.touched) { ins.enz = clone.vec.enz.slice(); ins.pick = 0; }
     });
     plCloneHtml();
   }
   function plCloneSrc(n, id) { clone.inserts[n].id = id; clone.inserts[n].pick = 0; plCloneHtml(); }
   function plCloneFlip(n, v) { clone.inserts[n].flip = v === '1'; plCloneCheck(); }
-  function plCloneVecPick(i) { clone.vecPick = i; plCloneCheck(); }
+  function plCloneVecPick(i) { clone.vec.pick = i; plCloneCheck(); }
   function plCloneInsPick(n, i) { clone.inserts[n].pick = i; plCloneCheck(); }
   function plCloneAddInsert() {
     var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== rec().id; });
-    clone.inserts.push({ id: others.length ? others[0].id : '', enz: [], pick: 0, flip: false });
+    clone.inserts.push({ kind: 'plasmid', id: others.length ? others[0].id : '',
+      tplId: rec().id, fwd: '', rev: '', enz: [], pick: 0, flip: false });
     plCloneHtml();
   }
   function plCloneDropInsert(n) { clone.inserts.splice(n, 1); plCloneHtml(); }
@@ -1464,14 +1814,14 @@
   function cloneParts() {
     var d = cloneDigests();
     var parts = [], names = [];
-    var v = d.vec.fragments[clone.vecPick];
+    var v = d.vec.fragments[clone.vec.pick];
     if (!v) return null;
-    parts.push({ frag: v, flip: false }); names.push('vector');
+    parts.push({ frag: v, flip: false }); names.push(d.vec.mol.name || 'vector');
     for (var i = 0; i < clone.inserts.length; i++) {
       var f = d.ins[i].fragments[clone.inserts[i].pick];
       if (!f) return null;
       parts.push({ frag: f, flip: clone.inserts[i].flip });
-      names.push((d.ins[i].src && d.ins[i].src.name) || ('insert ' + (i + 1)));
+      names.push(d.ins[i].mol.name || ('insert ' + (i + 1)));
     }
     return { parts: parts, names: names };
   }
@@ -1906,6 +2256,7 @@
       st.className = 'ln-entry-status saved';
       btn.disabled = false; btn.textContent = 'Save';
       renderInventory('plasmids');
+      if (window.LabTabs) LabTabs.refresh();   // drop the dot, pick up a rename
     }, function (e) {
       st.textContent = 'Not saved'; st.className = 'ln-entry-status dirty';
       btn.disabled = false; btn.textContent = 'Save';
@@ -2206,6 +2557,8 @@
   window.plEnzAll = plEnzAll;
   window.openClone = openClone;
   window.plCloneEnz = plCloneEnz;
+  window.plCloneKind = plCloneKind;
+  window.plClonePcr = plClonePcr;
   window.plCloneSrc = plCloneSrc;
   window.plCloneFlip = plCloneFlip;
   window.plCloneVecPick = plCloneVecPick;
@@ -2250,6 +2603,7 @@
   window.plExport = plExport;
   window.exportPlasmidsCSV = exportPlasmidsCSV;
   window.plCopySelection = plCopySelection;
+  window.plCopyMenu = plCopyMenu;
   window.plEditApprove = plEditApprove;
   window.plEditCancel = plEditCancel;
   window.plFeatureFixMode = plFeatureFixMode;

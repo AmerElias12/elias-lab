@@ -78,6 +78,40 @@
     for (var i = 0; i + 2 < s.length; i += 3) out += CODONS[s.substr(i, 3)] || 'X';
     return out;
   }
+  /* The transcript, which is the same strand with U for T. Not a biological
+     step — no promoter is consulted and nothing is spliced — just the way the
+     same bases are written when somebody is ordering an oligo or reading a
+     paper that quotes RNA. */
+  function toRna(seq) { return clean(seq).replace(/T/g, 'U'); }
+
+  /* The forms a stretch of sequence gets copied in.
+
+     Translation starts at the first base given, in frame, rather than at
+     whichever reading frame the page happens to be displaying: the selection
+     is what was asked about, and starting anywhere else would quietly answer
+     a different question. A trailing partial codon is dropped — `remainder`
+     reports it, because a selection whose length is not a multiple of three
+     is usually a selection that is off by a base or two.
+
+     Reverse-complement first, then transcribe or translate: the other strand
+     read 5'→3' is what "reverse complement" means to somebody reading a map,
+     and translating the forward strand backwards would be nonsense. */
+  var COPY_FORMS = {
+    dna:      { label: 'DNA',                         unit: 'bp' },
+    'dna-rc': { label: 'DNA, reverse complement',     unit: 'bp', rc: true },
+    rna:      { label: 'RNA',                         unit: 'nt', rna: true },
+    'rna-rc': { label: 'RNA, reverse complement',     unit: 'nt', rna: true, rc: true },
+    aa:       { label: 'Protein',                     unit: 'aa', aa: true },
+    'aa-rc':  { label: 'Protein, reverse complement', unit: 'aa', aa: true, rc: true }
+  };
+  function copyForm(seq, kind) {
+    var spec = COPY_FORMS[kind] || COPY_FORMS.dna;
+    var s = clean(seq);
+    if (spec.rc) s = revcomp(s);
+    var text = spec.aa ? translate(s) : spec.rna ? toRna(s) : s;
+    return { text: text, label: spec.label, unit: spec.unit,
+      remainder: spec.aa ? s.length % 3 : 0 };
+  }
 
   // ---------- features ----------
   /* Colours by feature type, close to what SnapGene and Benchling show, so a
@@ -901,20 +935,40 @@
   }
   /* The part of a feature that falls inside a fragment, in the fragment's own
      numbering. Anything cut through is marked, so the product says so. */
-  function carryFeatures(p, from, to, fragLen) {
+  /* The features a window [from, from+fragLen) carries, in its own numbering.
+
+     Used both for the pieces of a digest and for the body of a PCR product,
+     which is why the note is a parameter: the same clipping means "cut" in
+     one case and "the primer landed inside it" in the other.
+
+     A feature can land in the window as *two* intervals even after wraps()
+     has split it at the origin, because the window itself may start partway
+     through the feature. Reading one interval only is what used to make a
+     gene straddling a cut site disappear from the downstream piece instead of
+     appearing on it, shortened — and a feature that vanishes is far worse
+     than one that is visibly truncated, because nothing on screen says it was
+     ever there. */
+  function carryFeatures(p, from, to, fragLen, clipNote) {
     var len = p.seq.length, out = [];
+    var note = clipNote || 'Shortened when the plasmid was cut';
     (p.features || []).forEach(function (f) {
       var pieces = wraps(f) ? [[f.start, len], [0, f.end]] : [[f.start, f.end]];
       pieces.forEach(function (sp) {
-        // Put the piece in the fragment's numbering, going round the origin if needed.
-        var a = sp[0], b = sp[1];
-        var rel = function (x) { return ((x - from) % len + len) % len; };
-        var ra = rel(a), rb = rel(b) || (b === a ? 0 : fragLen);
-        if (ra >= fragLen && rb > fragLen) return;
-        var s0 = Math.max(0, Math.min(ra, fragLen)), e0 = Math.min(fragLen, rb < ra ? fragLen : rb);
-        if (e0 <= s0) return;
-        out.push({ name: f.name, type: f.type, start: s0, end: e0, strand: f.strand, color: f.color,
-          note: (e0 - s0) < (sp[1] - sp[0]) ? 'Shortened when the plasmid was cut' : f.note });
+        var pieceLen = sp[1] - sp[0];
+        if (pieceLen <= 0) return;
+        // Where the piece starts, counted from the window's first base.
+        var ra = ((sp[0] - from) % len + len) % len;
+        // If it runs off the end of the sequence it comes back round, and the
+        // part that comes back may be the part inside the window.
+        var spans = ra + pieceLen > len
+          ? [[ra, len], [0, ra + pieceLen - len]]
+          : [[ra, ra + pieceLen]];
+        spans.forEach(function (sv) {
+          var s0 = Math.max(0, sv[0]), e0 = Math.min(fragLen, sv[1]);
+          if (e0 <= s0) return;
+          out.push({ name: f.name, type: f.type, start: s0, end: e0, strand: f.strand, color: f.color,
+            note: (e0 - s0) < pieceLen ? note : f.note });
+        });
       });
     });
     return out;
@@ -1082,11 +1136,33 @@
     var body = circular && rev.end < fwd.end ? seq.slice(fwd.start) + seq.slice(0, rev.end)
       : seq.slice(fwd.start, rev.end);
     var product = fwd.tail + body + revcomp(rev.tail);
+
+    /* The product's own annotation. The body is a window onto the template,
+       so the features come from the same function the digest uses, shifted
+       right by the forward tail. The tails themselves are marked because
+       that is where a cloning primer puts its restriction site: without them
+       the added site is invisible until something is cut, which is exactly
+       when a mistake becomes expensive. */
+    var tailLen = fwd.tail.length;
+    var features = carryFeatures({ seq: seq, features: p.features || [] },
+      fwd.start, rev.end, body.length, 'Only partly inside the product');
+    features.forEach(function (f) { f.start += tailLen; f.end += tailLen; });
+    if (fwd.tail) {
+      features.unshift({ name: "5' tail, forward primer", type: 'misc_feature',
+        start: 0, end: tailLen, strand: 1, note: 'Added by the primer, not present on the template' });
+    }
+    if (rev.tail) {
+      features.push({ name: "5' tail, reverse primer", type: 'misc_feature',
+        start: product.length - rev.tail.length, end: product.length, strand: -1,
+        note: 'Added by the primer, not present on the template' });
+    }
+
     return {
       seq: product, len: product.length,
       start: fwd.start, end: rev.end,
       templateLen: body.length,
       tails: fwd.tail.length + rev.tail.length,
+      features: features,
       wraps: circular && rev.end < fwd.end
     };
   }
@@ -1392,6 +1468,7 @@
   return {
     IUPAC: IUPAC, CODONS: CODONS, AA3: AA3, TYPE_COLORS: TYPE_COLORS,
     clean: clean, isDna: isDna, revcomp: revcomp, gc: gc, tm: tm, molWeight: molWeight, translate: translate,
+    toRna: toRna, copyForm: copyForm, COPY_FORMS: COPY_FORMS,
     colorFor: colorFor, normFeature: normFeature, wraps: wraps, featureLen: featureLen, featureSeq: featureSeq,
     sortFeatures: sortFeatures, drawable: drawable, assignLanes: assignLanes,
     parseGenBank: parseGenBank, parseSnapGene: parseSnapGene, parseFasta: parseFasta, parseRaw: parseRaw,

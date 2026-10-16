@@ -11,8 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=20">
-    <link rel="stylesheet" href="css/plasmid.css?v=26">
+    <link rel="stylesheet" href="css/notebook.css?v=21">
+    <link rel="stylesheet" href="css/plasmid.css?v=27">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -81,6 +81,9 @@
       </div>
       <div class="ln-main">
         <div class="ln-print-head" id="ln-print-head"></div>
+        <!-- Open pages, inside the notebook. Filled by js/tabs.js; hidden
+             until something is open, and never printed. -->
+        <div id="ln-tabstrip" class="ln-tabstrip" role="tablist" hidden></div>
         <!-- DASHBOARD -->
         <div id="ln-dashboard" class="ln-section active">
           <div class="ln-section-header"><div><h2 id="ln-welcome-msg">Welcome!</h2><p>Elias Lab · Molecular Biology &amp; Gene Therapy</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button></div></div>
@@ -177,13 +180,14 @@
 
   <script src="vendor/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx"></script>
   <script src="vendor/seqviz.min.js" integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"></script>
-  <script src="js/plasmid.js?v=21"></script>
+  <script src="js/plasmid.js?v=22"></script>
   <script src="js/vector-viewer.js?v=26"></script>
   <script src="js/plasmid-import.js?v=21"></script>
   <script src="js/primer-store.js?v=1"></script>
-  <script src="js/plasmid-ui.js?v=26"></script>
+  <script src="js/tabs.js?v=1"></script>
+  <script src="js/plasmid-ui.js?v=27"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=20"></script>
-  <script src="js/notebook.js?v=20"></script>
+  <script src="js/notebook.js?v=21"></script>
 </body>
 </html>

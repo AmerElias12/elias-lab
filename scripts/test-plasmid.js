@@ -173,6 +173,44 @@ check('reverse complement, GC and translation', function () {
   assert.equal(P.translate('ATGGC'), 'M');            // a trailing part-codon is ignored
   assert.equal(P.clean('atg-cat n'), 'ATGCATN');
 });
+check('the clipboard forms: DNA, RNA and protein, either strand', function () {
+  // ATG GCG TAA on the forward strand; the other strand reads TTA CGC CAT,
+  // which is Leu-Arg-His and not the same protein backwards.
+  var orf = 'ATGGCGTAA';
+  assert.equal(P.copyForm(orf, 'dna').text, orf);
+  assert.equal(P.copyForm(orf, 'dna-rc').text, 'TTACGCCAT');
+  assert.equal(P.copyForm(orf, 'rna').text, 'AUGGCGUAA');
+  assert.equal(P.copyForm(orf, 'rna-rc').text, 'UUACGCCAU');
+  assert.equal(P.copyForm(orf, 'aa').text, 'MA*');
+  assert.equal(P.copyForm(orf, 'aa-rc').text, 'LRH');
+  // The reverse complement is taken first and then read, which is the only
+  // order that gives the protein the other strand actually encodes.
+  assert.equal(P.copyForm(orf, 'aa-rc').text, P.translate(P.revcomp(orf)));
+  assert.notEqual(P.copyForm(orf, 'aa-rc').text,
+    P.copyForm(orf, 'aa').text.split('').reverse().join(''));
+});
+check('a copy says what it produced, and what it had to leave out', function () {
+  var dna = P.copyForm('ATGGC', 'dna');
+  assert.equal(dna.unit, 'bp');
+  assert.equal(dna.remainder, 0, 'bases are never left over when copying bases');
+  // 5 bases is one codon and two bases over: the two are dropped, and saying
+  // so is what tells somebody their selection is off by a base.
+  var aa = P.copyForm('ATGGC', 'aa');
+  assert.equal(aa.text, 'M');
+  assert.equal(aa.unit, 'aa');
+  assert.equal(aa.remainder, 2);
+  assert.equal(P.copyForm('ATGGCG', 'aa').remainder, 0);
+  assert.equal(P.copyForm('ATGGC', 'rna').unit, 'nt');
+  // An unknown kind copies the bases rather than nothing at all.
+  assert.equal(P.copyForm('ATGGCGTAA', 'nonsense').text, 'ATGGCGTAA');
+  assert.equal(P.copyForm('ATGGCGTAA').text, 'ATGGCGTAA');
+});
+check('transcription only rewrites T, on whichever strand it is given', function () {
+  assert.equal(P.toRna('ATGCATGC'), 'AUGCAUGC');
+  assert.equal(P.toRna('atg cat'), 'AUGCAU');            // cleaned first
+  assert.equal(P.toRna(SEQ).indexOf('T'), -1);
+  assert.equal(P.toRna(SEQ).length, SEQ.length);
+});
 check('melting temperature and mass', function () {
   assert.equal(P.tm('ATGCATGCAT'), 28);                 // short: 2(A+T) + 4(G+C) = 12 + 16
   assert.ok(Math.abs(P.tm('ATGCATGCATGCATGCATGC') - 51.8) < 0.2);   // 20-mer, 50% GC
@@ -548,6 +586,91 @@ check('a feature cut through is marked as shortened', function () {
   d.fragments.forEach(function (f) { f.features.forEach(function (g) { if (/Shortened/.test(g.note || '')) marked.push(g); }); });
   assert.ok(marked.length >= 1, 'the shortened piece says so');
 });
+check('a gene cut in two survives on both pieces, not just the later one', function () {
+  // VEC is 37 bp and EcoRI cuts at 6. This CDS runs 2..14, so the cut falls
+  // inside it: 4 bases sit on one piece and 8 on the other. Reading only the
+  // interval that starts inside the window used to drop the 8-base part, and
+  // a gene that vanishes from a piece is worse than one shown truncated —
+  // nothing on screen says it was ever there.
+  var p = { seq: VEC, topology: 'circular',
+    features: [P.normFeature({ name: 'across the cut', type: 'CDS', start: 2, end: 14, strand: 1 }, VEC.length)] };
+  var d = P.digest(p, ['EcoRI', 'BamHI']);
+  var seen = d.fragments.map(function (f) {
+    return f.features.filter(function (g) { return g.name === 'across the cut'; })
+      .map(function (g) { return g.end - g.start; });
+  });
+  var lengths = [].concat.apply([], seen).sort(function (a, b) { return a - b; });
+  assert.deepEqual(lengths, [4, 8], 'both halves of the gene are carried');
+  assert.equal(lengths[0] + lengths[1], 12, 'and together they are the whole gene');
+  d.fragments.forEach(function (f) {
+    f.features.forEach(function (g) {
+      assert.ok(g.start >= 0 && g.end <= f.len, 'a carried feature stays inside its piece');
+    });
+  });
+});
+
+check('a PCR product with sites on its primer tails clones into a cut vector', function () {
+  /* The case the cloning dialog added: the template carries no useful site,
+     so the sites arrive on the 5' tails of the primers. The product is linear
+     with a site at each end, and once cut it is an ordinary sticky-ended
+     fragment. This is the whole path — amplify, digest, ligate — because the
+     parts being right individually is not the claim worth testing. */
+  var F = 'ACGTTGCAAGCTACCATTGA', R = 'TTCAGGCATTACGCGATTCA';
+  var tpl = { seq: 'TTTTT' + F + 'ACACACACACACACACACAC' + R + 'AAAAA', topology: 'circular', features: [] };
+  assert.equal(tpl.seq.indexOf('GAATTC'), -1, 'the template has no EcoRI site of its own');
+  assert.equal(tpl.seq.indexOf('GGATCC'), -1, 'nor a BamHI one');
+
+  // Two extra bases outside each site, as you would order them: an enzyme
+  // needs something to hold on to beyond its recognition sequence.
+  var prod = P.pcrProduct(tpl, P.bindPrimers(tpl, 'AAGAATTC' + F)[0],
+    P.bindPrimers(tpl, 'AAGGATCC' + P.revcomp(R))[0]);
+  assert.ok(!prod.error, prod.error);
+
+  var cutProduct = P.digest({ seq: prod.seq, topology: 'linear', features: prod.features },
+    ['EcoRI', 'BamHI']);
+  var insert = cutProduct.fragments.filter(function (f) {
+    return f.left.enzyme === 'EcoRI' && f.right.enzyme === 'BamHI';
+  })[0];
+  assert.ok(insert, 'the middle piece has a sticky end from each enzyme');
+  assert.equal(insert.left.ohang, 'AATT');
+  assert.equal(insert.right.ohang, 'GATC');
+  // The ends of the product are the two short offcuts, which is what tells
+  // you the sites really were at the ends rather than somewhere inside.
+  assert.equal(cutProduct.fragments.length, 3);
+
+  var backbone = P.digest({ seq: VEC, topology: 'circular', features: [] }, ['EcoRI', 'BamHI'])
+    .fragments.filter(function (f) { return f.left.enzyme === 'BamHI' && f.right.enzyme === 'EcoRI'; })[0];
+  assert.ok(backbone, 'the vector opens with one end from each enzyme');
+
+  var joined = P.ligate([{ frag: backbone, flip: false }, { frag: insert, flip: false }], true);
+  assert.ok(joined.ok, joined.error);
+  assert.equal(joined.seq.length, backbone.len + insert.len);
+  assert.equal(joined.topology, 'circular');
+  // The site each primer added survives the join, which is what makes the
+  // insert cuttable back out again. One of the two lands across the origin of
+  // the new circle, so it is only there to be found when the sequence is read
+  // round — which is exactly how the plasmid will be read from now on.
+  assert.ok(joined.seq.indexOf('GAATTC') >= 0, 'the EcoRI join rebuilt its site');
+  assert.equal(joined.seq.indexOf('GGATCC'), -1, 'the BamHI join fell across the origin');
+  assert.ok((joined.seq + joined.seq).indexOf('GGATCC') >= 0, 'and reading round finds it');
+  // Which the digest agrees with, since it is the thing that reads round.
+  var recut = P.digest({ seq: joined.seq, topology: 'circular', features: [] }, ['EcoRI', 'BamHI']);
+  assert.equal(recut.fragments.length, 2, 'the construct cuts back into vector and insert');
+});
+check('a PCR product keeps its tail annotation through the digest', function () {
+  var F = 'ACGTTGCAAGCTACCATTGA', R = 'TTCAGGCATTACGCGATTCA';
+  var tpl = { seq: 'TTTTT' + F + 'ACACACACACACACACACAC' + R + 'AAAAA', topology: 'circular',
+    features: [P.normFeature({ name: 'payload', type: 'CDS', start: 25, end: 45, strand: 1 }, 70)] };
+  var prod = P.pcrProduct(tpl, P.bindPrimers(tpl, 'AAGAATTC' + F)[0],
+    P.bindPrimers(tpl, 'AAGGATCC' + P.revcomp(R))[0]);
+  var insert = P.digest({ seq: prod.seq, topology: 'linear', features: prod.features }, ['EcoRI', 'BamHI'])
+    .fragments.filter(function (f) { return f.left.enzyme === 'EcoRI' && f.right.enzyme === 'BamHI'; })[0];
+  var names = insert.features.map(function (f) { return f.name; });
+  assert.ok(names.indexOf('payload') >= 0, 'what was amplified is still labelled on the fragment');
+  insert.features.forEach(function (f) {
+    assert.ok(f.start >= 0 && f.end <= insert.len, f.name + ' stays inside the fragment');
+  });
+});
 
 console.log('Choosing an enzyme');
 check('every enzyme is reported with how often it cuts, including never', function () {
@@ -608,6 +731,43 @@ check('the product carries both primers whole, tails included', function () {
   assert.ok(prod.seq.indexOf('GGATCC') === 0, 'starts with the forward tail');
   assert.ok(prod.seq.slice(-6) === P.revcomp('AAGCTT'), 'ends with the reverse tail');
   assert.equal(prod.seq.slice(6, 26), F20);
+});
+check('the product is annotated: the template\'s features, and the added tails', function () {
+  // TPL is 70 bp; the forward primer anneals at 5 and the reverse ends at 65,
+  // so the body is 5..65 and everything shifts right by the 6-base tail.
+  var annotated = { seq: TPL, topology: 'circular', features: [
+    P.normFeature({ name: 'inside', type: 'CDS', start: 10, end: 30, strand: 1 }, TPL.length),
+    P.normFeature({ name: 'straddles the primer', type: 'CDS', start: 0, end: 10, strand: 1 }, TPL.length),
+    P.normFeature({ name: 'outside', type: 'CDS', start: 66, end: 70, strand: 1 }, TPL.length)
+  ] };
+  var f = P.bindPrimers(annotated, 'GGATCC' + F20)[0];
+  var r = P.bindPrimers(annotated, 'AAGCTT' + P.revcomp(R20))[0];
+  var prod = P.pcrProduct(annotated, f, r);
+  var by = {};
+  prod.features.forEach(function (g) { by[g.name] = g; });
+
+  assert.deepEqual([by.inside.start, by.inside.end], [11, 31], 'shifted by the tail, not by the primer');
+  assert.equal(prod.seq.slice(by.inside.start, by.inside.end), TPL.slice(10, 30),
+    'and the bases under the feature are the ones it annotated');
+
+  // Only 5..10 of it is amplified, so it comes back shortened rather than gone.
+  assert.deepEqual([by['straddles the primer'].start, by['straddles the primer'].end], [6, 11]);
+  assert.match(by['straddles the primer'].note, /partly inside the product/);
+
+  assert.ok(!by.outside, 'a feature the primers did not reach is not on the product');
+
+  var fwdTail = by["5' tail, forward primer"], revTail = by["5' tail, reverse primer"];
+  assert.deepEqual([fwdTail.start, fwdTail.end], [0, 6]);
+  assert.deepEqual([revTail.start, revTail.end], [66, 72]);
+  assert.equal(prod.seq.slice(fwdTail.start, fwdTail.end), 'GGATCC', 'the site the primer added');
+  assert.equal(revTail.strand, -1, 'the reverse tail is annotated on the strand it came in on');
+});
+check('a template with no features gives a product with just its tails', function () {
+  var f = P.bindPrimers(TP, 'GGATCC' + F20)[0];
+  var r = P.bindPrimers(TP, P.revcomp(R20))[0];              // no tail on the reverse
+  var prod = P.pcrProduct(TP, f, r);
+  assert.equal(prod.features.length, 1, 'only the forward tail is marked');
+  assert.equal(prod.features[0].name, "5' tail, forward primer");
 });
 check('two primers facing the wrong way make nothing', function () {
   var f = P.bindPrimers(TP, F20)[0];
