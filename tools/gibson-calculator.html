@@ -457,6 +457,212 @@
     color: var(--accent3);
   }
 
+
+  /* ============================================================
+     RESTRICTION CLONING (server) — the one panel on this page
+     that is not arithmetic. It needs pydna and REBASE, so it
+     talks to the Python service; see js/science-api.js.
+     ============================================================ */
+  .svc-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .svc-state .svc-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .svc-state.off { border-color: var(--border); }
+  .svc-state.warn { border-color: rgba(240, 136, 62, 0.4); background: rgba(240, 136, 62, 0.07); }
+  .svc-state.bad { border-color: rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.07); }
+  .svc-state.ready { border-color: rgba(57, 211, 83, 0.35); background: rgba(57, 211, 83, 0.05); }
+  .svc-state a { color: var(--accent2); }
+  .svc-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    margin-top: 5px;
+    flex: none;
+  }
+  .svc-state.ready .svc-dot { background: var(--accent); }
+  .svc-state.warn .svc-dot { background: var(--accent3); }
+  .svc-state.bad .svc-dot { background: #f85149; }
+
+  .svc-body { margin-top: 16px; }
+  .svc-body[hidden] { display: none; }
+
+  .seq-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .seq-field label,
+  .enz-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+  }
+  .seq-field input[type="text"],
+  .enz-field input[type="text"],
+  .seq-field textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .seq-field textarea {
+    min-height: 110px;
+    resize: vertical;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+  }
+  .seq-field input:focus,
+  .seq-field textarea:focus,
+  .enz-field input:focus { border-color: var(--accent); }
+  .seq-field textarea::placeholder,
+  .enz-field input::placeholder { color: var(--text-dim); }
+  .seq-hint {
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .enz-row { display: flex; gap: 8px; align-items: flex-end; margin-top: 16px; }
+  .enz-field { flex: 1; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-height: 26px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .chip:hover { border-color: var(--accent3); color: var(--accent3); }
+  .chip.preset { color: var(--text-muted); }
+  .chip.preset:hover { border-color: var(--accent); color: var(--accent); }
+  .chip-empty { font-size: 11px; color: var(--text-dim); align-self: center; }
+
+  .svc-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  .svc-btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    padding: 9px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: rgba(57, 211, 83, 0.12);
+    color: var(--accent);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .svc-btn:hover:not(:disabled) { background: rgba(57, 211, 83, 0.22); }
+  .svc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .svc-check {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted);
+  }
+  .svc-note { font-size: 12px; color: var(--text-muted); }
+
+  .svc-result { margin-top: 20px; }
+  .svc-result[hidden] { display: none; }
+  .svc-notes {
+    list-style: none;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .svc-notes li {
+    font-size: 12px;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border);
+    padding-left: 10px;
+    line-height: 1.5;
+  }
+  .construct-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .construct-tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .construct-tab.active { border-color: var(--accent2); color: var(--accent2); background: rgba(88, 166, 255, 0.1); }
+
+  /* SeqViz draws SVG and sizes itself to its container, so the container
+     needs a real height or the map collapses to nothing. */
+  .map-box {
+    height: 460px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
+  }
+  .construct-facts {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .construct-facts div {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .construct-facts div.good { color: var(--accent); }
+  .construct-facts div.flag { color: var(--accent3); }
+  .seq-out {
+    margin-top: 12px;
+    width: 100%;
+    min-height: 70px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 10px 12px;
+    resize: vertical;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  @media (max-width: 700px) {
+    .seq-grid { grid-template-columns: 1fr; }
+    .map-box { height: 620px; }
+  }
+
   @media (max-width: 600px) {
     .kit-selector { grid-template-columns: 1fr; }
     .fragment-row { grid-template-columns: 1fr; }
@@ -594,7 +800,78 @@
     </div>
   </div>
 
+
+  <!-- STEP 6: RESTRICTION CLONING, ON THE SERVER -->
+  <div class="step" id="cloning-step">
+    <div class="step-header">
+      <span class="step-num">06</span>
+      <span class="step-title">Restriction Cloning — in silico</span>
+      <div class="step-line"></div>
+    </div>
+
+    <div class="svc-state off" id="svc-state">
+      <span class="svc-dot"></span>
+      <div>
+        <span class="svc-title" id="svc-state-title">Checking…</span>
+        <span id="svc-state-msg">Looking for the molecular tools service.</span>
+      </div>
+    </div>
+
+    <div class="svc-body" id="svc-body" hidden>
+      <div class="seq-grid">
+        <div class="seq-field">
+          <label for="seq-a-name">Molecule A — name</label>
+          <input type="text" id="seq-a-name" value="vector" maxlength="40" spellcheck="false">
+          <label for="seq-a" style="margin-top:10px">Sequence A</label>
+          <textarea id="seq-a" spellcheck="false" placeholder="GenBank, FASTA, or bare bases — a vendor's map pastes in whole"></textarea>
+          <div class="seq-hint">Features in a GenBank record are carried onto the construct.</div>
+        </div>
+        <div class="seq-field">
+          <label for="seq-b-name">Molecule B — name</label>
+          <input type="text" id="seq-b-name" value="insert" maxlength="40" spellcheck="false">
+          <label for="seq-b" style="margin-top:10px">Sequence B</label>
+          <textarea id="seq-b" spellcheck="false" placeholder="The insert, or the second backbone"></textarea>
+          <div class="seq-hint">Nothing is stored. The service holds no data and keeps no copy.</div>
+        </div>
+      </div>
+
+      <div class="enz-row">
+        <div class="enz-field">
+          <label for="enz-input">Enzymes — REBASE spelling, so EcoRI and not ECORI</label>
+          <input type="text" id="enz-input" list="enz-list" autocomplete="off" spellcheck="false"
+                 placeholder="type three letters, then Enter">
+          <datalist id="enz-list"></datalist>
+        </div>
+        <button class="svc-btn" id="enz-add" type="button">add</button>
+      </div>
+      <div class="chips" id="enz-chips"><span class="chip-empty">No enzymes chosen yet.</span></div>
+      <div class="chips" id="enz-presets"></div>
+
+      <div class="svc-actions">
+        <button class="svc-btn" id="svc-run" type="button">digest &amp; ligate</button>
+        <label class="svc-check">
+          <input type="checkbox" id="svc-linear"> show linear products too
+        </label>
+        <span class="svc-note" id="svc-run-note"></span>
+      </div>
+
+      <div class="svc-result" id="svc-result" hidden>
+        <ul class="svc-notes" id="svc-result-notes"></ul>
+        <div class="construct-tabs" id="construct-tabs"></div>
+        <div class="map-box" id="construct-map"></div>
+        <div class="construct-facts" id="construct-facts"></div>
+        <textarea class="seq-out" id="construct-seq" readonly spellcheck="false"></textarea>
+      </div>
+    </div>
+  </div>
 </div>
+
+<!-- The restriction-cloning panel only. The volume calculator below needs
+     none of this and runs with every one of these files absent. -->
+<script src="../vendor/seqviz.min.js" integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"></script>
+<script src="../js/vector-viewer.js?v=22"></script>
+<script src="../js/config.js?v=22"></script>
+<script src="../js/science-api.js?v=22"></script>
 
 <script>
   // STATE
@@ -808,6 +1085,299 @@
     document.querySelectorAll('.inputs-section input').forEach(el => el.value = '');
     calculate();
   }
+</script>
+<script>
+/* ---------------------------------------------------------------------------
+   The restriction-cloning panel.
+
+   Everything above this script is arithmetic — pmol from ng/µL, volumes to
+   pipette — and runs in the browser as it always has. This panel is the one
+   part of the page that cannot: a real digest needs REBASE's ~1,090 enzymes
+   and pydna's sticky-end model to decide which cut ends will actually join.
+   That is Python, so it is a request to the service in js/science-api.js.
+
+   With no service configured the panel says so once and shows nothing else.
+   It never disables the calculator above it.
+   ------------------------------------------------------------------------ */
+(function () {
+  'use strict';
+
+  var API = window.ScienceAPI;
+  var el = function (id) { return document.getElementById(id); };
+
+  var state = {
+    enzymes: [],
+    constructs: [],
+    selected: 0,
+    viewer: null,          // one SeqViz instance; two on a page collide
+    running: false,
+  };
+
+  // Common double digests, so the usual case is two clicks and no typing.
+  var PRESETS = ['EcoRI', 'BamHI', 'HindIII', 'XhoI', 'NotI', 'SalI', 'XbaI', 'KpnI'];
+
+  /* --- the state line --------------------------------------------------- */
+
+  function showState(cls, title, message, withSignIn) {
+    var box = el('svc-state');
+    box.className = 'svc-state ' + cls;
+    el('svc-state-title').textContent = title;
+    el('svc-state-msg').innerHTML = message + (withSignIn
+      ? ' <a href="../notebook.html">Open the notebook to sign in →</a>'
+      : '');
+  }
+
+  function showFailure(err) {
+    var d = API.explain(err);
+    showState(d.kind === 'bad-request' || d.kind === 'input' ? 'warn' : 'bad',
+      d.title, d.message, d.signIn);
+  }
+
+  /* --- enzymes ---------------------------------------------------------- */
+
+  function renderChips() {
+    var box = el('enz-chips');
+    box.innerHTML = '';
+    if (!state.enzymes.length) {
+      var empty = document.createElement('span');
+      empty.className = 'chip-empty';
+      empty.textContent = 'No enzymes chosen yet.';
+      box.appendChild(empty);
+      return;
+    }
+    state.enzymes.forEach(function (name) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = name + ' ✕';
+      chip.title = 'Remove ' + name;
+      chip.onclick = function () {
+        state.enzymes = state.enzymes.filter(function (n) { return n !== name; });
+        renderChips();
+      };
+      box.appendChild(chip);
+    });
+  }
+
+  function addEnzyme(name) {
+    var clean = String(name || '').trim();
+    if (!clean) return;
+    if (state.enzymes.indexOf(clean) < 0) {
+      if (state.enzymes.length >= API.LIMITS.MAX_ENZYMES) {
+        el('svc-run-note').textContent =
+          'That is the ' + API.LIMITS.MAX_ENZYMES + '-enzyme limit; remove one first.';
+        return;
+      }
+      state.enzymes.push(clean);
+    }
+    el('enz-input').value = '';
+    el('svc-run-note').textContent = '';
+    renderChips();
+  }
+
+  function renderPresets() {
+    var box = el('enz-presets');
+    box.innerHTML = '';
+    PRESETS.forEach(function (name) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip preset';
+      chip.textContent = '+ ' + name;
+      chip.onclick = function () { addEnzyme(name); };
+      box.appendChild(chip);
+    });
+  }
+
+  /* The picker is fed from the service rather than from a list in here: a
+     hard-coded list goes stale, and the service already has REBASE. The
+     names come back alphabetically, where "Eco105I" sorts before "EcoRI",
+     so ScienceAPI.searchEnzymes reorders them by what was typed. */
+  var searchTimer = null;
+  function suggest() {
+    var q = el('enz-input').value.trim();
+    if (searchTimer) clearTimeout(searchTimer);
+    if (q.length < 2) { el('enz-list').innerHTML = ''; return; }
+    searchTimer = setTimeout(function () {
+      API.searchEnzymes(q).then(function (names) {
+        var list = el('enz-list');
+        list.innerHTML = '';
+        names.slice(0, 25).forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name;
+          list.appendChild(opt);
+        });
+      }).catch(function (err) {
+        // A failed lookup must not block typing a name by hand — the
+        // simulation itself will say whether the name exists.
+        el('enz-list').innerHTML = '';
+        if (err && err.kind !== 'network') showFailure(err);
+      });
+    }, 250);
+  }
+
+  /* --- results ---------------------------------------------------------- */
+
+  function renderConstruct(index) {
+    state.selected = index;
+    var construct = state.constructs[index];
+    if (!construct) return;
+
+    Array.prototype.forEach.call(el('construct-tabs').children, function (tab, i) {
+      tab.className = 'construct-tab' + (i === index ? ' active' : '');
+    });
+
+    var payload = API.constructPayload(construct);
+    try {
+      if (!state.viewer) {
+        state.viewer = window.VectorViewer.createViewer('construct-map', payload, {
+          enzymes: state.enzymes,
+          log: false,
+        });
+      } else {
+        state.viewer.update(payload);
+      }
+    } catch (err) {
+      // A construct the viewer cannot draw is still a construct worth
+      // reading, so the sequence and the facts stay on screen.
+      el('construct-map').innerHTML =
+        '<div style="padding:16px;color:#484f58;font:12px monospace">' +
+        'The map could not be drawn: ' + err.message + '</div>';
+    }
+
+    var facts = el('construct-facts');
+    facts.innerHTML = '';
+    API.summarizeConstruct(construct).forEach(function (line) {
+      var row = document.createElement('div');
+      row.textContent = line;
+      if (/no longer cuts/.test(line)) row.className = 'flag';
+      else if (/rebuilt the site/.test(line)) row.className = 'good';
+      facts.appendChild(row);
+    });
+
+    el('construct-seq').value = construct.sequence || '';
+  }
+
+  function renderResult(result) {
+    state.constructs = result.constructs || [];
+
+    var notes = el('svc-result-notes');
+    notes.innerHTML = '';
+    (result.notes || []).forEach(function (note) {
+      var li = document.createElement('li');
+      li.textContent = note;
+      notes.appendChild(li);
+    });
+
+    var tabs = el('construct-tabs');
+    tabs.innerHTML = '';
+    state.constructs.forEach(function (construct, i) {
+      var tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'construct-tab';
+      tab.textContent = construct.name + ' · ' + construct.length_bp + ' bp';
+      tab.onclick = function () { renderConstruct(i); };
+      tabs.appendChild(tab);
+    });
+
+    el('svc-result').hidden = false;
+
+    if (!state.constructs.length) {
+      // pydna found no product that satisfies the request. The notes say
+      // why, and they are the whole answer — so do not leave a stale map
+      // from the previous run underneath them.
+      el('construct-map').innerHTML =
+        '<div style="padding:16px;color:#484f58;font:12px monospace">' +
+        'No construct formed. See the notes above.</div>';
+      state.viewer = null;
+      el('construct-facts').innerHTML = '';
+      el('construct-seq').value = '';
+      if (!(result.notes || []).length) {
+        var li = document.createElement('li');
+        li.textContent = 'Nothing circularised from these fragments.';
+        notes.appendChild(li);
+      }
+      return;
+    }
+
+    renderConstruct(0);
+  }
+
+  function run() {
+    if (state.running) return;
+    var button = el('svc-run');
+    state.running = true;
+    button.disabled = true;
+    button.textContent = 'digesting…';
+    el('svc-run-note').textContent = '';
+
+    API.digestLigation({
+      sequenceA: el('seq-a').value,
+      sequenceB: el('seq-b').value,
+      enzymes: state.enzymes,
+      nameA: el('seq-a-name').value,
+      nameB: el('seq-b-name').value,
+      circularOnly: !el('svc-linear').checked,
+    }).then(function (result) {
+      showState('ready', 'Service connected',
+        'Cutting and ligation were simulated by pydna against REBASE, on the lab\'s service.');
+      renderResult(result);
+    }).catch(function (err) {
+      showFailure(err);
+      if (err && (err.kind === 'bad-request' || err.kind === 'input')) {
+        // Bad input, not a broken page: the previous result stays visible,
+        // because comparing it with the message is how you fix the input.
+        el('svc-run-note').textContent = 'Nothing was changed.';
+      } else {
+        el('svc-result').hidden = true;
+      }
+    }).then(function () {
+      state.running = false;
+      button.disabled = false;
+      button.textContent = 'digest & ligate';
+    });
+  }
+
+  /* --- wiring ----------------------------------------------------------- */
+
+  function wire() {
+    el('enz-add').onclick = function () { addEnzyme(el('enz-input').value); };
+    el('enz-input').oninput = suggest;
+    el('enz-input').onkeydown = function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); addEnzyme(el('enz-input').value); }
+    };
+    el('svc-run').onclick = run;
+    renderChips();
+    renderPresets();
+  }
+
+  function start() {
+    if (!API || !window.VectorViewer) {
+      // Only reachable if a script tag was dropped. Say which, rather than
+      // throwing where nobody looks.
+      showState('bad', 'Panel unavailable',
+        'js/science-api.js or js/vector-viewer.js did not load, so this panel cannot run. ' +
+        'The volume calculator above is unaffected.');
+      return;
+    }
+
+    API.status().then(function (s) {
+      if (s.kind === 'ready') {
+        showState('ready', 'Service connected',
+          'Digests are simulated by pydna against the full REBASE enzyme set, on the lab\'s own service.');
+        el('svc-body').hidden = false;
+        wire();
+        return;
+      }
+      var d = API.describeError({ kind: s.kind }, {});
+      showState(s.kind === 'unconfigured' ? 'off' : 'warn', d.title, d.message, d.signIn);
+      // Deliberately leaves svc-body hidden: a form that cannot be submitted
+      // is worse than no form.
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+}());
 </script>
 </body>
 </html>

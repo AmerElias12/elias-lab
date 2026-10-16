@@ -1,0 +1,289 @@
+{
+    "enzymes": [
+        "BamHI",
+        "EcoRI"
+    ],
+    "inputs": {
+        "a": {
+            "name": "pFIX-vector",
+            "length_bp": 402,
+            "topology": "circular",
+            "fragments": [
+                {
+                    "source": "pFIX-vector",
+                    "index": 0,
+                    "length_bp": 100,
+                    "five_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "AATT"
+                    },
+                    "three_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "GATC"
+                    },
+                    "features": []
+                },
+                {
+                    "source": "pFIX-vector",
+                    "index": 1,
+                    "length_bp": 310,
+                    "five_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "GATC"
+                    },
+                    "three_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "AATT"
+                    },
+                    "features": [
+                        {
+                            "name": "AmpR",
+                            "type": "CDS",
+                            "start": 12,
+                            "end": 153,
+                            "strand": -1
+                        },
+                        {
+                            "name": "CMV promoter",
+                            "type": "promoter",
+                            "start": 184,
+                            "end": 235,
+                            "strand": 1
+                        }
+                    ]
+                }
+            ]
+        },
+        "b": {
+            "name": "pFIX-insert",
+            "length_bp": 392,
+            "topology": "circular",
+            "fragments": [
+                {
+                    "source": "pFIX-insert",
+                    "index": 0,
+                    "length_bp": 310,
+                    "five_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "AATT"
+                    },
+                    "three_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "GATC"
+                    },
+                    "features": [
+                        {
+                            "name": "EGFP",
+                            "type": "CDS",
+                            "start": 18,
+                            "end": 289,
+                            "strand": 1
+                        }
+                    ]
+                },
+                {
+                    "source": "pFIX-insert",
+                    "index": 1,
+                    "length_bp": 90,
+                    "five_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "GATC"
+                    },
+                    "three_prime": {
+                        "kind": "5' overhang",
+                        "overhang": "AATT"
+                    },
+                    "features": []
+                }
+            ]
+        }
+    },
+    "constructs": [
+        {
+            "name": "pFIX-vector \u00d7 pFIX-insert #1",
+            "sequence": "GATCCAACAAAATAATGCGAGTTGGGCGTACATACAGTTATAGTGTTTACCGATCTCAGGGATATAGAATCCTAAATCAGAAATGGAACAAAGCACCCTTGGTGTATCTCTTCTCCATTTCCGCCGCGTGCGAGTTCCGCGTCTTCTATATATCCACGCCGCCAGCCGTAATGCCTTTCCCTAACAGAGTTTTTCGAACTCGTGTTGTCGAGCGACGGAATTAGATCAGTTAAATGGCAGAAAACTGGCAGGGCTTTTAGTCGTGGGATGATCAGTGGGTAAAGGTGGCGCGGGGTAACGCGCGCGAATTCGAGATGAGCCCGTAACGTGCTTGCAACTGAGGTACATGCGGTTAGTACGAAACCTTCCTCCCCGGGATTTGGTGTACAACTCTCCCATAGCCTAAAGCATAGGGGCAAAGCACTCTGAATACCTTTATCTGATTTTCTAGGGTGTCACGGCTCCCACTCACACTTCAATTGTAACTATTACCATTCCGAGAAGGTGTCGAGGGAATAAAAAACATACGCTGTGATGTAGCTATGTCTGCGTTCTTGGCTTACCATAAGCAATTGGAACTAGGATACCACCAACGCCTGCTCAAAAACGAAG",
+            "topology": "circular",
+            "length_bp": 612,
+            "features": [
+                {
+                    "name": "AmpR",
+                    "type": "CDS",
+                    "start": 12,
+                    "end": 153,
+                    "strand": -1
+                },
+                {
+                    "name": "CMV promoter",
+                    "type": "promoter",
+                    "start": 184,
+                    "end": 235,
+                    "strand": 1
+                },
+                {
+                    "name": "EGFP",
+                    "type": "CDS",
+                    "start": 324,
+                    "end": 595,
+                    "strand": 1
+                }
+            ],
+            "parts": [
+                {
+                    "source": "pFIX-vector",
+                    "fragment": 1,
+                    "length_bp": 310,
+                    "orientation": "forward"
+                },
+                {
+                    "source": "pFIX-insert",
+                    "fragment": 0,
+                    "length_bp": 310,
+                    "orientation": "forward"
+                }
+            ],
+            "junctions": [
+                {
+                    "enzyme": "BamHI",
+                    "site": "GGATCC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                },
+                {
+                    "enzyme": "EcoRI",
+                    "site": "GAATTC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                }
+            ]
+        },
+        {
+            "name": "pFIX-vector \u00d7 pFIX-insert #2",
+            "sequence": "AATTCTAAGGCTCAGCTGCAACGCGGAGCTGGTGTGTTATCCATTCATGGCAGACAACTAATACGCATAAGCGTAGCCAACCGCATTAGCGTATGGGATCCTTCGTTTTTGAGCAGGCGTTGGTGGTATCCTAGTTCCAATTGCTTATGGTAAGCCAAGAACGCAGACATAGCTACATCACAGCGTATGTTTTTTATTCCCTCGACACCTTCTCGGAATGGTAATAGTTACAATTGAAGTGTGAGTGGGAGCCGTGACACCCTAGAAAATCAGATAAAGGTATTCAGAGTGCTTTGCCCCTATGCTTTAGGCTATGGGAGAGTTGTACACCAAATCCCGGGGAGGAAGGTTTCGTACTAACCGCATGTACCTCAGTTGCAAGCACGTTACGGGCTCATCTCG",
+            "topology": "circular",
+            "length_bp": 402,
+            "features": [
+                {
+                    "name": "EGFP",
+                    "type": "CDS",
+                    "start": 117,
+                    "end": 388,
+                    "strand": -1
+                }
+            ],
+            "parts": [
+                {
+                    "source": "pFIX-vector",
+                    "fragment": 0,
+                    "length_bp": 100,
+                    "orientation": "forward"
+                },
+                {
+                    "source": "pFIX-insert",
+                    "fragment": 0,
+                    "length_bp": 310,
+                    "orientation": "reverse"
+                }
+            ],
+            "junctions": [
+                {
+                    "enzyme": "BamHI",
+                    "site": "GGATCC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                },
+                {
+                    "enzyme": "EcoRI",
+                    "site": "GAATTC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                }
+            ]
+        },
+        {
+            "name": "pFIX-vector \u00d7 pFIX-insert #3",
+            "sequence": "GATCCAACAAAATAATGCGAGTTGGGCGTACATACAGTTATAGTGTTTACCGATCTCAGGGATATAGAATCCTAAATCAGAAATGGAACAAAGCACCCTTGGTGTATCTCTTCTCCATTTCCGCCGCGTGCGAGTTCCGCGTCTTCTATATATCCACGCCGCCAGCCGTAATGCCTTTCCCTAACAGAGTTTTTCGAACTCGTGTTGTCGAGCGACGGAATTAGATCAGTTAAATGGCAGAAAACTGGCAGGGCTTTTAGTCGTGGGATGATCAGTGGGTAAAGGTGGCGCGGGGTAACGCGCGCGAATTCCACCTCATATCTCGAAGTAAACCTTCACTCCTTTTAGCTGGGCGCTAAGCTCGGTACTAGCCTCATTGAACTAACATGAAG",
+            "topology": "circular",
+            "length_bp": 392,
+            "features": [
+                {
+                    "name": "AmpR",
+                    "type": "CDS",
+                    "start": 12,
+                    "end": 153,
+                    "strand": -1
+                },
+                {
+                    "name": "CMV promoter",
+                    "type": "promoter",
+                    "start": 184,
+                    "end": 235,
+                    "strand": 1
+                }
+            ],
+            "parts": [
+                {
+                    "source": "pFIX-vector",
+                    "fragment": 1,
+                    "length_bp": 310,
+                    "orientation": "forward"
+                },
+                {
+                    "source": "pFIX-insert",
+                    "fragment": 1,
+                    "length_bp": 90,
+                    "orientation": "reverse"
+                }
+            ],
+            "junctions": [
+                {
+                    "enzyme": "BamHI",
+                    "site": "GGATCC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                },
+                {
+                    "enzyme": "EcoRI",
+                    "site": "GAATTC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                }
+            ]
+        },
+        {
+            "name": "pFIX-vector \u00d7 pFIX-insert #4",
+            "sequence": "AATTCTAAGGCTCAGCTGCAACGCGGAGCTGGTGTGTTATCCATTCATGGCAGACAACTAATACGCATAAGCGTAGCCAACCGCATTAGCGTATGGGATCCTTCATGTTAGTTCAATGAGGCTAGTACCGAGCTTAGCGCCCAGCTAAAAGGAGTGAAGGTTTACTTCGAGATATGAGGTGG",
+            "topology": "circular",
+            "length_bp": 182,
+            "features": [],
+            "parts": [
+                {
+                    "source": "pFIX-vector",
+                    "fragment": 0,
+                    "length_bp": 100,
+                    "orientation": "forward"
+                },
+                {
+                    "source": "pFIX-insert",
+                    "fragment": 1,
+                    "length_bp": 90,
+                    "orientation": "forward"
+                }
+            ],
+            "junctions": [
+                {
+                    "enzyme": "BamHI",
+                    "site": "GGATCC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                },
+                {
+                    "enzyme": "EcoRI",
+                    "site": "GAATTC",
+                    "sites_in_product": 1,
+                    "regenerated": true
+                }
+            ]
+        }
+    ],
+    "notes": []
+}

@@ -231,6 +231,25 @@
       return { ok: true, user: prof };
     },
 
+    /* The signed-in person's Supabase access token, or null.
+
+       js/science-api.js sends this to the molecular tools service, which
+       verifies it and refuses the publishable key (see
+       backend/app/auth_light.py). Nothing else needs it: every query here
+       goes through the Supabase client, which attaches it itself.
+
+       Null in local mode — there is no session to speak of — and null when
+       nobody is signed in. Reading it refreshes an expired session, which is
+       what the client does on any other call too. */
+    accessToken: async function () {
+      if (this.mode !== 'supabase' || !sb) return null;
+      try {
+        var res = await sb.auth.getSession();
+        var session = res && res.data ? res.data.session : null;
+        return session ? session.access_token : null;
+      } catch (e) { return null; }
+    },
+
     signOut: async function () {
       if (this.mode === 'supabase') { try { await sb.auth.signOut(); } catch (e) { } }
       else ssDel('user');

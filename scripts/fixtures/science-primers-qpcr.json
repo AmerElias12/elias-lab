@@ -1,0 +1,173 @@
+{
+    "template_length": 392,
+    "target": {
+        "product_length": 150,
+        "optimal_tm": 60.0
+    },
+    "purpose": "qpcr",
+    "screen": null,
+    "guidance": {
+        "title": "Designing across an exon\u2013exon junction",
+        "summary": "This endpoint scores primers against the template it was given; it does not know where the exons are. Genomic DNA is the usual contaminant in an RNA prep, and placing the pair so that gDNA cannot be amplified is a decision about the transcript, taken before the sequence is pasted in.",
+        "sections": [
+            {
+                "heading": "Where to put the pair",
+                "rules": [
+                    "Put one primer across an exon\u2013exon junction, so the primer has no contiguous match in genomic DNA \u2014 the intron sits where the junction is.",
+                    "Leave at least 7 bases of that primer on the shorter exon. With three or four, the longer half still anneals well enough to amplify genomic DNA and the design buys nothing.",
+                    "Do not leave only one or two bases past the junction at the 3' end. A single terminal mismatch is extended often enough that it is not reliable discrimination.",
+                    "If no junction suits, fall back to flanking: put the two primers in different exons with an intron of 1 kb or more between them. The cDNA product is short, the genomic one is too long to amplify under qPCR cycling, or is obvious by size."
+                ]
+            },
+            {
+                "heading": "When a junction cannot save you",
+                "rules": [
+                    "Single-exon genes have no junction at all. Treat the RNA with DNase I and rely on the \u2212RT control.",
+                    "Processed pseudogenes are reverse-transcribed mRNA inserted back into the genome: they contain the junction, so a junction-spanning primer amplifies them perfectly well. That is the case the off-target screen on this page is for \u2014 paste the pseudogene or the paralogs into the screening box.",
+                    "Highly similar paralogs and recent gene families do the same thing. Screen against them explicitly rather than assuming the junction covers it."
+                ]
+            },
+            {
+                "heading": "The rest of the design",
+                "rules": [
+                    "Keep the product between 70 and 150 bp. Past about 250 bp the amplification efficiency drifts away from the doubling a Cq assumes, and the quantification stops being linear.",
+                    "Aim for a Tm of 58\u201362 \u00b0C with the two primers within 2 \u00b0C of each other, and 40\u201360% GC.",
+                    "Avoid four or more identical bases in a row, G runs most of all.",
+                    "Keep no more than two G or C in the last five bases: a sticky 3' end mis-primes.",
+                    "Check for common SNPs under the primer, especially within five bases of the 3' end \u2014 a variant there costs an allele."
+                ]
+            },
+            {
+                "heading": "On every plate",
+                "rules": [
+                    "Run a \u2212RT control. No primer design removes the need for it; it is the measurement that tells you whether any of the above worked.",
+                    "Confirm a single melt peak, or a single band, before trusting a Cq."
+                ]
+            }
+        ]
+    },
+    "tm_conditions": {
+        "na_mm": 50.0,
+        "mg_mm": 1.5,
+        "dntps_mm": 0.2,
+        "primer_nm": 250.0,
+        "salt_correction": "Owczarzy 2008"
+    },
+    "windows_tried": 40,
+    "pairs_found": 40,
+    "pairs": [
+        {
+            "forward": {
+                "sequence": "AGAAGGTGTCGAGGGAATAA",
+                "length": 20,
+                "tm": 60.1,
+                "gc_percent": 45.0,
+                "start": 234,
+                "end": 254,
+                "strand": 1,
+                "hairpin_dg": 2.3,
+                "self_dimer_run": 4,
+                "self_dimer_3prime_run": 1,
+                "gc_clamp": false,
+                "gc_in_last_five": 0,
+                "binding_sites": 0
+            },
+            "reverse": {
+                "sequence": "GCTCGGTACTAGCCTCA",
+                "length": 17,
+                "tm": 60.3,
+                "gc_percent": 58.8,
+                "start": 367,
+                "end": 384,
+                "strand": -1,
+                "hairpin_dg": 1.5,
+                "self_dimer_run": 4,
+                "self_dimer_3prime_run": 1,
+                "gc_clamp": false,
+                "gc_in_last_five": 3,
+                "binding_sites": 0
+            },
+            "product_start": 234,
+            "product_end": 384,
+            "product_length": 150,
+            "tm_difference": 0.2,
+            "hetero_dimer_run": 4,
+            "hetero_dimer_3prime_run": 2,
+            "hetero_dimer_severity": "none",
+            "score": 2.0,
+            "penalties": {
+                "tm": 0.4,
+                "tm_difference": 0.6,
+                "gc": 0.0,
+                "hairpin": 0.0,
+                "dimer": 0.0,
+                "product_length": 0.0,
+                "gc_clamp": 1.0,
+                "off_target": 0.0
+            },
+            "screened": false,
+            "spurious_amplicons": 0,
+            "amplicons": [],
+            "warnings": []
+        },
+        {
+            "forward": {
+                "sequence": "ATTACCATTCCGAGAAGGTG",
+                "length": 20,
+                "tm": 59.2,
+                "gc_percent": 45.0,
+                "start": 222,
+                "end": 242,
+                "strand": 1,
+                "hairpin_dg": 1.3,
+                "self_dimer_run": 3,
+                "self_dimer_3prime_run": 2,
+                "gc_clamp": true,
+                "gc_in_last_five": 3,
+                "binding_sites": 0
+            },
+            "reverse": {
+                "sequence": "CCTCATTGAACTAACATGAAGG",
+                "length": 22,
+                "tm": 58.6,
+                "gc_percent": 40.9,
+                "start": 350,
+                "end": 372,
+                "strand": -1,
+                "hairpin_dg": 2.4,
+                "self_dimer_run": 4,
+                "self_dimer_3prime_run": 3,
+                "gc_clamp": true,
+                "gc_in_last_five": 3,
+                "binding_sites": 0
+            },
+            "product_start": 222,
+            "product_end": 372,
+            "product_length": 150,
+            "tm_difference": 0.6,
+            "hetero_dimer_run": 3,
+            "hetero_dimer_3prime_run": 2,
+            "hetero_dimer_severity": "none",
+            "score": 4.0,
+            "penalties": {
+                "tm": 2.2,
+                "tm_difference": 1.8,
+                "gc": 0.0,
+                "hairpin": 0.0,
+                "dimer": 0.0,
+                "product_length": 0.0,
+                "gc_clamp": 0.0,
+                "off_target": 0.0
+            },
+            "screened": false,
+            "spurious_amplicons": 0,
+            "amplicons": [],
+            "warnings": []
+        }
+    ],
+    "notes": [
+        "40 positions were tried across the template, not every one \u2014 these are the best of those, not the best possible.",
+        "Nothing was screened against. For qRT-PCR the template is a genome or a transcriptome, where mis-priming is the usual reason a reaction fails \u2014 these pairs are thermodynamically sound and unproven for specificity. Pass the locus with its flanks, the paralogs, or the transcript panel.",
+        "Exon structure is not considered here \u2014 this endpoint does not take exon boundaries. See `guidance` for how to place the pair so that contaminating genomic DNA is not amplified alongside the cDNA."
+    ]
+}

@@ -1,0 +1,21 @@
+LOCUS       pFIX-vector             402 bp ds-DNA     circular SYN 16-OCT-2026
+DEFINITION  Fixture for scripts/check-science-api.mjs.
+ACCESSION   .
+KEYWORDS    .
+SOURCE      synthetic DNA construct
+FEATURES             Location/Qualifiers
+     source          1..402
+                     /organism="synthetic DNA construct"
+     promoter        20..70
+                     /label="CMV promoter"
+     CDS             complement(250..390)
+                     /label="AmpR"
+ORIGIN
+        1 ccgtaatgcc tttccctaac agagtttttc gaactcgtgt tgtcgagcga cggaattaga
+       61 tcagttaaat ggcagaaaac tggcagggct tttagtcgtg ggatgatcag tgggtaaagg
+      121 tggcgcgggg taacgcgcgc gaattctaag gctcagctgc aacgcggagc tggtgtgtta
+      181 tccattcatg gcagacaact aatacgcata agcgtagcca accgcattag cgtatgggat
+      241 ccaacaaaat aatgcgagtt gggcgtacat acagttatag tgtttaccga tctcagggat
+      301 atagaatcct aaatcagaaa tggaacaaag cacccttggt gtatctcttc tccatttccg
+      361 ccgcgtgcga gttccgcgtc ttctatatat ccacgccgcc ag
+//
