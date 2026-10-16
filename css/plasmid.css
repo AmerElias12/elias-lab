@@ -195,3 +195,16 @@
 .pcr-size{font-family:var(--mono);font-size:10.5px;fill:#0c4a44;text-anchor:middle;}
 .pcr-tailtext{color:#a6620c;background:rgba(166,98,12,.1);border-radius:2px;}
 .pcr-stem{stroke:rgba(22,36,31,.35);stroke-width:1;stroke-dasharray:2 2;}
+
+/* ---- the lab's primers, searched when attaching one ---- */
+.pl-primer-kind{display:inline-block;margin-left:.45rem;padding:.05rem .4rem;border-radius:999px;
+  font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+  color:#0d5c47;background:rgba(31,209,151,.16);vertical-align:middle;}
+
+/* ---- what to do with a feature the edit changed the length of ---- */
+.pl-ff{border:1px solid rgba(22,36,31,.12);border-radius:12px;padding:.7rem .85rem;margin-bottom:.6rem;background:#fbfaf5;}
+.pl-ff-head{margin-bottom:.45rem;}
+.pl-ff label{display:block;font-family:var(--sans);font-size:13px;margin:.2rem 0;cursor:pointer;}
+.pl-ff label input{margin-right:.45rem;}
+.pl-ff-name{width:100%;margin:.1rem 0 .35rem 1.3rem;max-width:calc(100% - 1.3rem);}
+.pl-ff-name:disabled{opacity:.45;}
