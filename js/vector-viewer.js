@@ -334,7 +334,7 @@
    * @returns {{ update, setView, destroy, getSelection }}
    */
   function createViewer(target, payload, options) {
-    const opts = options || {};
+    const opts = Object.assign({}, options || {});
     const lib = requireSeqViz();
 
     const el = typeof target === 'string' ? document.getElementById(target) : target;
@@ -373,6 +373,9 @@
         showComplement: opts.showComplement !== false,
         showIndex: opts.showIndex !== false,
         enzymes: opts.enzymes || [],
+        // SeqViz wants { query, mismatch }; an empty query means no search,
+        // and passing one in highlights every hit on both strands.
+        search: opts.search ? { query: opts.search, mismatch: opts.mismatch || 0 } : undefined,
         zoom: opts.zoom || { linear: 50 },
         // SeqViz decides circular-vs-linear from the chosen viewer, so a
         // linear construct must not be offered the circular view at all.
@@ -399,6 +402,14 @@
         view = next;
         viewer.setState(propsFor(view));
         return true;
+      },
+      /* Change what is marked or searched for without tearing the viewer
+         down: remounting would lose the scroll position and the selection,
+         and the enzyme list changes every time somebody picks a different
+         set from the menu above it. */
+      setOptions(next) {
+        Object.assign(opts, next || {});
+        viewer.setState(propsFor(view));
       },
       getSelection() { return last; },
       getWarnings() { return model.warnings; },
