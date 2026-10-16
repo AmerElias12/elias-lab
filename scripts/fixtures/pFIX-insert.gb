@@ -1,0 +1,19 @@
+LOCUS       pFIX-insert             392 bp ds-DNA     circular SYN 16-OCT-2026
+DEFINITION  Fixture for scripts/check-science-api.mjs.
+ACCESSION   .
+KEYWORDS    .
+SOURCE      synthetic DNA construct
+FEATURES             Location/Qualifiers
+     source          1..392
+                     /organism="synthetic DNA construct"
+     CDS             60..330
+                     /label="EGFP"
+ORIGIN
+        1 cagctaaaag gagtgaaggt ttacttcgag atatgaggtg gaattcgaga tgagcccgta
+       61 acgtgcttgc aactgaggta catgcggtta gtacgaaacc ttcctccccg ggatttggtg
+      121 tacaactctc ccatagccta aagcataggg gcaaagcact ctgaatacct ttatctgatt
+      181 ttctagggtg tcacggctcc cactcacact tcaattgtaa ctattaccat tccgagaagg
+      241 tgtcgaggga ataaaaaaca tacgctgtga tgtagctatg tctgcgttct tggcttacca
+      301 taagcaattg gaactaggat accaccaacg cctgctcaaa aacgaaggat ccttcatgtt
+      361 agttcaatga ggctagtacc gagcttagcg cc
+//
