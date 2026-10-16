@@ -373,6 +373,8 @@
         showComplement: opts.showComplement !== false,
         showIndex: opts.showIndex !== false,
         enzymes: opts.enzymes || [],
+        // reading frames, as [{ start, end, direction }]
+        translations: opts.translations || [],
         // SeqViz wants { query, mismatch }; an empty query means no search,
         // and passing one in highlights every hit on both strands.
         search: opts.search ? { query: opts.search, mismatch: opts.mismatch || 0 } : undefined,
