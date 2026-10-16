@@ -71,6 +71,23 @@ class TokenError(Exception):
     """Any reason a token is not usable: malformed, expired, wrong signature."""
 
 
+def _signing_secret() -> str:
+    """The configured signing key, or a refusal that says what to set.
+
+    ELN_JWT_SECRET is optional in the settings so that the science service can
+    run on Supabase tokens alone (see app/science.py). Everything in this
+    module needs it, and handing PyJWT a None key raises something about
+    types rather than about configuration.
+    """
+    secret = get_settings().jwt_secret
+    if not secret:
+        raise TokenError(
+            "ELN_JWT_SECRET is not set, so this service can neither issue nor "
+            "verify its own tokens"
+        )
+    return secret
+
+
 def create_access_token(
     *,
     user_id: uuid.UUID,
@@ -97,7 +114,7 @@ def create_access_token(
         "exp": int((now + lifetime).timestamp()),
         "jti": uuid.uuid4().hex,
     }
-    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    token = jwt.encode(payload, _signing_secret(), algorithm=settings.jwt_algorithm)
     return token, int(lifetime.total_seconds())
 
 
@@ -110,10 +127,11 @@ def decode_access_token(token: str) -> dict[str, Any]:
     key gets used as an HMAC secret.
     """
     settings = get_settings()
+    secret = _signing_secret()
     try:
         return jwt.decode(
             token,
-            settings.jwt_secret,
+            secret,
             algorithms=[settings.jwt_algorithm],
             options={"require": ["exp", "sub", "jti"]},
         )

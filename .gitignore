@@ -26,8 +26,11 @@ Thumbs.db
 *.key
 .env
 .env.*
-# ...but the template is documentation, and carries no values.
+# ...but the templates are documentation, and carry no values. Each one needs
+# naming: `.env.*` above swallows them otherwise, and a template that is
+# silently not committed is only noticed by whoever cannot deploy.
 !.env.example
+!.env.science.example
 # (js/config.js is intentionally NOT ignored: the Supabase anon key is designed
 #  to be public and is protected by Row-Level Security.)
 #

@@ -27,13 +27,75 @@ psql -c "ALTER ROLE eln_app WITH LOGIN PASSWORD '…'"
 uvicorn app.main:app
 ```
 
+## The science service
+
+Two endpoints here read nothing and write nothing:
+
+| endpoint | what it does |
+|---|---|
+| `POST /api/cloning/digest-ligation` | digest two molecules, ligate the ends that fit |
+| `POST /api/primers/design` | propose primer pairs, scored, with off-target screening |
+
+Sequence goes in, constructs or primer pairs come out, and nothing is stored —
+what the lab decides to keep is saved afterwards, through whichever notebook
+it is actually using. So those two can be deployed on their own:
+
+```bash
+pip install -r requirements-science.txt
+cp .env.science.example .env.science && $EDITOR .env.science
+uvicorn app.science:app              # no database, no migrations, no policies
+```
+
+That is `app/science.py`, and it exists because of where the lab's data lives.
+The published site keeps its records in **Supabase**, and Supabase cannot run
+any of this — its Edge Functions are Deno, while pydna, Biopython's REBASE
+tables and `primers` are Python. Neither can GitHub Pages, which serves static
+files. So the computation gets a process of its own, and the page calls it:
+
+```
+GitHub Pages (static)  ──fetch, with the Supabase session token──▶  app/science.py
+         │                                                                │
+         │                                                          pydna / Biopython
+         ▼                                                                │
+   Supabase (Postgres + RLS)  ◀───── what the lab chooses to keep ─────────┘
+```
+
+A separate ASGI app rather than a flag on the full one, because the full one
+refuses to start without a database and a working set of policies — both
+correct for a notebook and meaningless for a calculator.
+
+**It verifies tokens it did not issue.** `ELN_SUPABASE_JWT_SECRET` for a
+project that signs with a shared secret, `ELN_SUPABASE_URL` for one that signs
+with a published key (the JWKS endpoint is derived from it), or
+`ELN_JWT_SECRET` to go on accepting the notebook's own tokens. Any of them, or
+several. With none of them it refuses to start, because a service that would
+answer 401 to everybody looks, from outside, exactly like a bad token.
+
+**The publishable key is not a credential**, and this is the part to read
+twice. A Supabase project's anon key is itself a JWT signed with the project's
+JWT secret, and it is public — it is in this repository and in the HTML of the
+live site. Its signature verifies perfectly. What it has not got is a person:
+no `sub`, and `role` of `"anon"` rather than `"authenticated"`.
+`app/auth_light.py` requires both of those claims, and `scripts/check_science.py`
+forges the key and insists on a 401. Without those two checks, the endpoint is
+open to anybody who views source.
+
+`ELN_CORS_ORIGINS` has to name the site's origin, because the caller is a
+browser on another host. In production, starting without it is an error rather
+than a warning: the alternative is a service that answers every request and
+has every answer discarded, which presents as an outage.
+
+Deployment is a container — `Dockerfile.science`, on anything that runs one.
+There is no Python runtime on Supabase or on Pages to put it in.
+
 ## Checking it
 
 ```bash
 python scripts/check_migrations.py      # 12 checks: the migrations, up and down again
 python scripts/check_models.py          # 25 checks: models, schemas, LabScope
 python scripts/check_api.py             # 75 checks: end to end, against real PostgreSQL
-node    scripts/check-vector-viewer.mjs # 19 checks: payloads, coordinates, wrapping
+python scripts/check_science.py         # 32 checks: the science service, with no database
+node    scripts/check-vector-viewer.mjs # 22 checks: payloads, coordinates, wrapping
 node    scripts/check-plasmid-import.mjs # 17 checks: GenBank in, API payload out
 python  scripts/check_cloning.py        # 13 checks: the digest and ligation biology
 python  scripts/check_primer_design.py  # 22 checks: duplexes, scoring, off-target, refusals
@@ -65,6 +127,15 @@ does not belong to returns nothing. `check_api.py` forges exactly that token
 and asserts it reads and writes nothing. It is also why removing somebody from
 a lab takes effect on their next request rather than when their token expires.
 
+Two routes take a shorter path, because they query nothing at all:
+`/api/cloning/digest-ligation` and `/api/primers/design` stop after step 1.
+Their dependency is `app/auth_light.py` rather than `app/deps.py` — no scope,
+no `SET LOCAL`, no transaction, since there is no row for a policy to filter.
+A caller still has to be somebody, and an ELN token still has to name a lab,
+which `auth_light` reads from the claim instead of from `lab_member`. That is
+the one authorisation decision in this codebase the database does not make,
+and it is only safe because the answer does not depend on any data.
+
 ### Two things the routes must do
 
 **Check row counts on writes.** A policy's `USING` clause filters rather than
@@ -80,18 +151,22 @@ and leaves the rest of the handler seeing nothing.
 
 ```
 app/
-  config.py    settings; jwt_secret has no default on purpose
-  db.py        Base, enums, mixins
-  models.py    SQLAlchemy 2.0 models
-  schemas.py   Pydantic v2 request/response models
-  scoping.py   LabScope — the only place queries are built from
-  security.py  Argon2id, JWT, the content hash a signature commits to
-  session.py   engine, session factory, the startup RLS check
-  deps.py      the four steps above
-  routers/     auth, entries, members, dashboard
-static/        the dashboard: one HTML file, one CSS file, one JS file
-migrations/    alembic: env.py and versions/
-scripts/       dev_server.py and the check suites
+  main.py        the notebook: everything, and it needs a database
+  science.py     the two stateless tools, and they need nothing
+  config.py      settings; no signing key has a default on purpose
+  db.py          Base, enums, mixins
+  models.py      SQLAlchemy 2.0 models
+  schemas.py     Pydantic v2 request/response models
+  scoping.py     LabScope — the only place queries are built from
+  security.py    Argon2id, JWT, the content hash a signature commits to
+  session.py     engine, session factory, the startup RLS check
+  deps.py        the four steps above — identity, scope, SET LOCAL, query
+  auth_light.py  identity without a database, for the science service
+  routers/       auth, entries, members, dashboard, …, and design + cloning,
+                 which are the two that both apps include
+static/          the dashboard: one HTML file, one CSS file, one JS file
+migrations/      alembic: env.py and versions/
+scripts/         dev_server.py and the check suites
 ```
 
 ## Migrations
@@ -407,9 +482,6 @@ was planned.
 - **No second migration yet.** The pattern is in place and tested both ways,
   but every schema change from here is hand-written — there is no autogenerate
   to lean on, for the reason given above.
-- **No refresh tokens.** `ELN_ACCESS_TOKEN_HOURS` (default 12) is therefore
-  also how often people sign in again. A refresh flow needs a revocation table
-  to be worth anything.
 - **No rate limiting on login.** It belongs in front of the API, where the
   client address is known. Argon2 at these parameters costs ~50 ms a try,
   which is a speed bump, not a defence.

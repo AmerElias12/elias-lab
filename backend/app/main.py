@@ -18,8 +18,8 @@ from sqlalchemy.exc import DBAPIError
 
 from app.config import get_settings
 from app.routers import (
-    auth, cloning, constructions, dashboard, entries, guides, members, plasmids,
-    primers,
+    auth, cloning, constructions, dashboard, design, entries, guides, members,
+    plasmids, primers,
 )
 from app.session import check_rls_is_effective, dispose_engine
 
@@ -40,6 +40,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     writing a migration.
     """
     settings = get_settings()
+
+    # ELN_JWT_SECRET is optional in the settings so that app/science.py can run
+    # on Supabase tokens alone. This application issues tokens, so for it the
+    # key is required, and it is required here rather than at import so the
+    # message is a sentence instead of a pydantic traceback.
+    if not settings.jwt_secret:
+        raise RuntimeError(
+            "ELN_JWT_SECRET is not set. This application issues and verifies "
+            "its own tokens and cannot start without it. Generate one with "
+            "`openssl rand -hex 32`."
+        )
+
     try:
         check = await check_rls_is_effective()
     except Exception as exc:  # noqa: BLE001 — any failure here is fatal context
@@ -166,6 +178,12 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(members.router)
     app.include_router(plasmids.router)
+    # Before primers.router. Not strictly required today — /design is a POST
+    # and /{primer_id} has no POST, so nothing collides — but primers.router
+    # does have GET /{primer_id}, and a GET added to /design later would be
+    # read as a UUID and answered 422. Cheaper to order it correctly now than
+    # to debug that.
+    app.include_router(design.router)
     app.include_router(primers.router)
     app.include_router(guides.router)
     app.include_router(constructions.pcr_router)

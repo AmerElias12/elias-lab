@@ -1,0 +1,45 @@
+# The science service. Builds to roughly 400 MB, nearly all of it numpy and
+# biopython, which is the price of having REBASE and pydna at all.
+#
+#   docker build -f Dockerfile.science -t eliaslab-science .
+#   docker run -p 8000:8000 --env-file .env.science eliaslab-science
+#
+# Two stages so the compiler that builds argon2-cffi does not ship with it.
+FROM python:3.12-slim AS build
+
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements-science.txt .
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir -U pip \
+ && /opt/venv/bin/pip install --no-cache-dir -r requirements-science.txt
+
+
+FROM python:3.12-slim
+# A non-root user because there is no reason for this process to be root: it
+# writes nothing, reads only its own code, and listens on an unprivileged port.
+RUN useradd --create-home --uid 10001 science
+COPY --from=build /opt/venv /opt/venv
+WORKDIR /srv
+COPY app ./app
+USER science
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ELN_MODE=science \
+    ELN_ENVIRONMENT=production
+
+EXPOSE 8000
+
+# No static files to serve and no database to wait for, so there is nothing to
+# do before binding the port. One worker per container; scale by running more.
+CMD ["uvicorn", "app.science:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Fails while the process is up but cannot answer, which for this service
+# means the interpreter is wedged rather than a dependency being down — there
+# are no dependencies to be down.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
