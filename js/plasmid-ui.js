@@ -107,7 +107,6 @@
       featuresHtml(p);
     wire();
     mountMap(p);
-    fitSeqWrap();
   }
 
   // ---------- the map ----------
@@ -123,24 +122,84 @@
      search. They keep separate state, so a selection in one does not light up
      in the other; the readout under each says what that view has selected,
      and both feed the page's own selection. */
-  var plMap = null;
+  var plMap = null, plSeqMap = null;
 
   function unmountMap() {
-    if (plMap) { try { plMap.destroy(); } catch (e) {} }
-    plMap = null;
+    [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.destroy(); } catch (e) {} } });
+    plMap = null; plSeqMap = null;
   }
   function mapPayload(p) {
     return { name: p.name, seq: p.seq, topology: p.topology, features: p.features };
   }
+  // The enzymes the menu is asking for, by name, for SeqViz to mark.
+  function shownEnzymeNames() {
+    var seen = {}, out = [];
+    shownSites().forEach(function (h) {
+      if (seen[h.name]) return;
+      seen[h.name] = true; out.push(h.name);
+    });
+    return out;
+  }
+  // The Frame menu, as the reading frames SeqViz translates.
+  function shownTranslations(p) {
+    var fs = frameSpec(p);
+    return fs ? [{ start: fs.from, end: fs.to, direction: fs.strand }] : [];
+  }
+  function seqViewOpts(p) {
+    return { enzymes: shownEnzymeNames(), search: plOpts.find || '', translations: shownTranslations(p) };
+  }
   function mountMap(p) {
     unmountMap();
-    var el = document.getElementById('pl-map');
-    if (!el || !p.seq.length || !VV) return;
-    try {
-      plMap = VV.createViewer(el, mapPayload(p), { view: 'circular', log: false, onSelect: onMapSelect });
-    } catch (e) {
-      el.innerHTML = '<div class="ln-pl-maperr">' + esc('The map could not be drawn: ' + e.message) + '</div>';
+    if (!p.seq.length || !VV) return;
+    var payload = mapPayload(p);
+    function put(id, view, extra) {
+      var el = document.getElementById(id);
+      if (!el) return null;
+      try {
+        return VV.createViewer(el, payload, Object.assign(
+          { view: view, log: false, onSelect: onMapSelect }, extra || {}));
+      } catch (e) {
+        el.innerHTML = '<div class="ln-pl-maperr">' + esc('This could not be drawn: ' + e.message) + '</div>';
+        return null;
+      }
     }
+    plMap = put('pl-map', 'circular');
+    plSeqMap = put('pl-seq-map', 'linear', seqViewOpts(p));
+    paintCaret();
+  }
+  // The sequence view alone, after the panel around it was rebuilt.
+  function mountSeqMap() {
+    var it = rec(); if (!it) return;
+    if (plSeqMap) { try { plSeqMap.destroy(); } catch (e) {} plSeqMap = null; }
+    var el = document.getElementById('pl-seq-map');
+    if (!el || !VV) return;
+    var p = asPlasmid(it);
+    if (!p.seq.length) return;
+    try {
+      plSeqMap = VV.createViewer(el, mapPayload(p), Object.assign(
+        { view: 'linear', log: false, onSelect: onMapSelect }, seqViewOpts(p)));
+    } catch (e) {
+      el.innerHTML = '<div class="ln-pl-maperr">' + esc('The sequence could not be drawn: ' + e.message) + '</div>';
+    }
+    paintCaret();
+  }
+  /* After an edit: the bases have changed but the panel has not, so the
+     viewer is handed the new sequence rather than being rebuilt — a remount
+     on every keystroke would be both slow and jumpy. The caret is drawn into
+     the SVG, so it goes with the redraw and has to be put back. */
+  function refreshSeqMap() {
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it);
+    if (!plSeqMap) { mountSeqMap(); return; }
+    try { plSeqMap.update(mapPayload(p)); } catch (e) {}
+    try { plSeqMap.setOptions(seqViewOpts(p)); } catch (e) {}
+    paintCaret();
+  }
+  // Marking a different set of enzymes, searching, or changing the frame.
+  function seqMapOptions() {
+    var it = rec(); if (!it || !plSeqMap) return;
+    try { plSeqMap.setOptions(seqViewOpts(asPlasmid(it))); } catch (e) {}
+    paintSelection();
   }
   /* After an edit the sequence has changed but the page has not, so the map is
      handed the new sequence instead of being torn down and rebuilt. When there
@@ -148,8 +207,7 @@
      map at all, and gains one the next time the whole page is drawn, which is
      what it did before SeqViz as well. */
   function refreshMap(p) {
-    if (!plMap) return;
-    try { plMap.update(mapPayload(p)); } catch (e) {}
+    if (plMap) { try { plMap.update(mapPayload(p)); } catch (e) {} }
   }
   /* SeqViz reports a selection as 0-based half-open coordinates, which is the
      convention js/plasmid.js already uses, so nothing is translated on the
@@ -320,7 +378,7 @@
   var plAnchor = 0;         // where a drag or shift-select started
   var plSites = [];         // restriction sites, recomputed when typing pauses
   var plUndo = [], plRedo = [];
-  var plDragging = false, plSitesTimer = null, plPanelTimer = null, plNote = '';
+  var plSitesTimer = null, plPanelTimer = null, plNote = '';
 
   function edLen() { var it = rec(); return it ? P.clean(it.seq || '').length : 0; }
   function edSeq() { var it = rec(); return it ? P.clean(it.seq || '') : ''; }
@@ -333,7 +391,7 @@
   }
   function scheduleSites() {
     clearTimeout(plSitesTimer);
-    plSitesTimer = setTimeout(function () { recomputeSites(); renderSequenceOnly(); }, 220);
+    plSitesTimer = setTimeout(function () { recomputeSites(); seqMapOptions(); }, 220);
   }
   // The maps, figures and feature table cost more to draw, so they follow once
   // typing stops rather than on every keystroke.
@@ -381,7 +439,7 @@
     it.seq = r.seq; it.features = r.features;
     plNote = r.dropped.length ? r.dropped.length + ' feature(s) removed: ' + r.dropped.slice(0, 3).join(', ') : '';
     plCaret = pos + ins.length; plSel = null;
-    markPlDirty(); scheduleSites(); renderSequenceOnly(); schedulePanels();
+    markPlDirty(); scheduleSites(); refreshSeqMap(); paintSelection(); schedulePanels();
     scheduleEditConfirm();
   }
   function edDeleteSelection() {
@@ -571,72 +629,8 @@
   }
 
   // ---- drawing ----
-  function laneMap(p) {
-    var packed = P.assignLanes(P.drawable(p.features, p.seq.length), p.seq.length, 0);
-    var lanes = [];
-    packed.items.forEach(function (i) { (lanes[i.lane] = lanes[i.lane] || []).push(i.f); });
-    return lanes;
-  }
   // The pieces of a feature that fall on this block of bases.
-  function piecesOn(f, len, from, to) {
-    var spans = P.wraps(f) ? [[f.start, len], [0, f.end]] : [[f.start, f.end]];
-    return spans.map(function (sp) {
-      var a = Math.max(sp[0], from), b = Math.min(sp[1], to);
-      return b > a ? { a: a, b: b, isStart: a === sp[0] && sp[0] === f.start, isEnd: b === sp[1] && sp[1] === f.end } : null;
-    }).filter(Boolean);
-  }
-  function ribbonHtml(f, len, from, to) {
-    return piecesOn(f, len, from, to).map(function (pc) {
-      var cols = pc.b - pc.a, label = f.name;
-      var head = f.strand === 1 ? pc.isEnd : f.strand === -1 ? pc.isStart : false;
-      var cls = 'pl-rib' + (f.strand === -1 ? ' rev' : f.strand === 1 ? ' fwd' : '') + (head ? ' head' : '');
-      if (label.length + 1 > cols) label = cols >= 4 ? label.slice(0, cols - 1) + '…' : '';
-      /* The span carries the whole feature, not this piece of it, so clicking
-         either half of one that crosses the origin selects the feature. */
-      return '<span class="' + cls + '" style="left:' + (pc.a - from) + 'ch;width:' + cols + 'ch;background:' + esc(f.color) + '"' +
-        ' data-from="' + f.start + '" data-to="' + f.end + '" data-label="' + esc(f.name) + '"' +
-        ' title="' + esc(f.name + ' · ' + f.type + ' · ' + (f.start + 1) + '–' + f.end) + ' · click to select">' + esc(label) + '</span>';
-    }).join('');
-  }
   /* Enzyme labels are put on as few rows as will hold them without overlapping. */
-  function enzymeRows(sites, from, to) {
-    var marks = sites.filter(function (h) { return h.cutTop >= from && h.cutTop < to; })
-      .sort(function (a, b) { return a.cutTop - b.cutTop; });
-    var rows = [];
-    marks.forEach(function (h) {
-      var col = h.cutTop - from, width = h.name.length;
-      for (var i = 0; ; i++) {
-        var row = rows[i] || (rows[i] = { used: -1, items: [] });
-        if (col > row.used) { row.used = col + width; row.items.push({ h: h, col: col }); break; }
-      }
-    });
-    return rows.map(function (row) {
-      return '<div class="pl-enz">' + row.items.map(function (m) {
-        return '<span class="pl-enz-mark" style="left:' + m.col + 'ch"' +
-          ' data-from="' + m.h.start + '" data-to="' + m.h.end + '" data-label="' + esc(m.h.name) + '"' +
-          ' title="' +
-          esc(m.h.name + ' · ' + m.h.site + ' · cuts top ' + (m.h.cutTop + 1) + ', bottom ' + (m.h.cutBottom + 1) +
-            (m.h.blunt ? ' (blunt)' : ' (sticky)')) + ' · click to select the site">' + esc(m.h.name) + '</span>';
-      }).join('') + '</div>';
-    }).reverse().join('');   // the row nearest the bases holds the leftmost labels
-  }
-  function boxesHtml(ranges, from, to, cls) {
-    return ranges.map(function (r) {
-      var a = Math.max(r[0], from), b = Math.min(r[1], to);
-      return b > a ? '<span class="' + cls + '" style="left:' + (a - from) + 'ch;width:' + (b - a) + 'ch"></span>' : '';
-    }).join('');
-  }
-  function findRanges(seq, q) {
-    var out = [];
-    q = P.clean(q);
-    if (q.length < 3) return out;
-    [q, P.revcomp(q)].forEach(function (needle, i) {
-      if (i && needle === q) return;
-      var from = 0, at;
-      while ((at = seq.indexOf(needle, from)) >= 0 && out.length < 800) { out.push([at, at + needle.length]); from = at + 1; }
-    });
-    return out;
-  }
 
   /* The reading frame to show. "atg" means: start at the first ATG at or
      after the selection and stop at its stop codon, which is the frame people
@@ -658,17 +652,6 @@
     var n = parseInt(mode, 10);
     return { frame: (Math.abs(n) - 1) % 3, strand: n < 0 ? -1 : 1, from: 0, to: len, label: 'frame ' + mode };
   }
-  function frameRowHtml(p, fs, from, to) {
-    if (!fs) return '';
-    var row = P.frameString(p.seq, fs.frame, from, to, fs.strand);
-    if (fs.from > from || fs.to < to) {
-      row = row.split('').map(function (ch, i) {
-        var pos = from + i;
-        return (pos >= fs.from && pos < fs.to) ? ch : ' ';
-      }).join('');
-    }
-    return '<div class="pl-strand aa">' + esc(row) + '</div>';
-  }
   /* Which cut sites the sequence shows: by how often the enzyme cuts, or a
      list chosen by hand in the enzyme dialog. */
   function shownSites() {
@@ -679,8 +662,28 @@
     }
     return P.filterSites(plSites, plOpts.enzymes);
   }
+  /* ---- the sequence ----------------------------------------------------
+     SeqViz draws it and the editing is ours. It is a viewer, not an editor,
+     so three things had to be built on top of what it renders:
+
+       the caret   SeqViz reports a drag but says nothing at all about a
+                   plain click, so there is no insertion point to be had from
+                   it. The click is turned into a base offset with the SVG
+                   text API — getCharNumAtPosition on the row under the
+                   pointer — which is exact and does not assume a monospace
+                   font or a fixed number of bases per row.
+
+       drawing it  there is nothing to show a caret with, so one is put into
+                   the row's own <svg>, positioned with getStartPositionOfChar
+                   so it sits between two bases rather than near them.
+
+       keeping it  every redraw of the viewer throws the caret away with the
+                   rest of the SVG, so it is painted again afterwards.
+
+     A drag still selects the SeqViz way and SeqViz draws that itself; the
+     bar above the sequence says what is selected either way. */
   function seqPanelHtml(p) {
-    var len = p.seq.length, per = plOpts.wrap;
+    var len = p.seq.length;
     var counts = P.siteCounts(plSites);
     var shown = shownSites();
     var head = '<div class="ln-pl-panel" id="pl-seq-panel"><div class="ln-pl-panel-head"><h3>Sequence</h3>' +
@@ -691,7 +694,7 @@
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.enzymes === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<label class="ln-pl-check">Frame <select id="pl-frame">' +
-          [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '−1'], ['-2', '−2'], ['-3', '−3']]
+          [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '\u22121'], ['-2', '\u22122'], ['-3', '\u22123']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
@@ -699,39 +702,140 @@
         '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
-
-    var hits = findRanges(p.seq, plOpts.find);
-    var fs = frameSpec(p);
-    var lanes = laneMap(p);
-    var rows = [];
-    var total = Math.max(1, Math.ceil(len / per));
-    for (var li = 0; li < total; li++) {
-      var from = li * per, to = Math.min(len, from + per), cols = to - from;
-      var top = p.seq.slice(from, to);
-      var bottom = top.split('').map(function (c) { return P.revcomp(c); }).join('');
-      var ribbons = lanes.map(function (lane) {
-        var html = lane.map(function (f) { return ribbonHtml(f, len, from, to); }).join('');
-        return html ? '<div class="pl-lane">' + html + '</div>' : '<div class="pl-lane"></div>';
-      }).join('');
-      rows.push('<div class="pl-row"><div class="pl-gutter">' + (from + 1) + '</div>' +
-        '<div class="pl-track" data-from="' + from + '" style="width:' + Math.max(cols, 1) + 'ch">' +
-        (plOpts.enzymes === 'none' ? '' : enzymeRows(shown, from, to)) +
-        '<div class="pl-boxes">' + boxesHtml(hits, from, to, 'pl-hit') +
-          (plSel ? boxesHtml([[plSel.start, plSel.end]], from, to, 'pl-selbox') : '') + '</div>' +
-        '<div class="pl-strand top">' + esc(top) + '</div>' +
-        '<div class="pl-strand bot">' + esc(bottom) + '</div>' +
-        frameRowHtml(p, fs, from, to) +
-        ribbons +
-        (plCaret >= from && plCaret <= to && (plCaret < to || to === len) ? '<span class="pl-caret" style="left:' + (plCaret - from) + 'ch"></span>' : '') +
-        '</div></div>');
-    }
     var sum = Object.keys(counts).length;
     return head +
       '<div class="pl-edbar">' + editorNote(p, shown, sum) + '</div>' +
-      '<div class="pl-ed" id="pl-ed" tabindex="0" role="textbox" aria-label="Plasmid sequence" aria-multiline="true">' +
-      (len ? rows.join('') : '<div class="pl-empty-seq">Click here and type or paste a sequence, drop a GenBank, SnapGene or FASTA file anywhere on this page, or use <strong>Import sequence file</strong>.</div>') +
-      '</div></div>';
+      (len
+        ? '<div class="ln-pl-seqmap" id="pl-seq-map" tabindex="0" role="textbox" aria-label="Plasmid sequence"></div>'
+        : '<div class="pl-empty-seq" id="pl-seq-empty">Type or paste a sequence here, drop a GenBank, SnapGene or FASTA file ' +
+          'anywhere on this page, or use <strong>Import sequence file</strong>.</div>') +
+      '</div>';
   }
+
+  /* Which row of the drawing a base is on, and where in it.
+
+     Every row is an <svg class="la-vz-seqblock"> holding one <text> of the
+     bases on it, and the rows are in order, so the first row's length is how
+     many bases a row holds. The arithmetic is checked against the sequence
+     before it is used: if the bases drawn are not the ones it says should be
+     there, SeqViz has changed how it lays rows out, and everything below
+     gives up rather than putting an edit in the wrong place. */
+  function seqRows() {
+    var host = document.getElementById('pl-seq-map');
+    if (!host) return null;
+    var blocks = Array.prototype.slice.call(host.querySelectorAll('.la-vz-seqblock'));
+    if (!blocks.length) return null;
+    var first = blocks[0].querySelector('text.la-vz-seq');
+    if (!first || !first.textContent.length) return null;
+    return { blocks: blocks, per: first.textContent.length };
+  }
+  function rowStart(rows, i) { return i * rows.per; }
+  function rowOf(rows, pos) {
+    var i = Math.min(rows.blocks.length - 1, Math.floor(pos / rows.per));
+    return i < 0 ? null : i;
+  }
+  // Does the row really hold the bases we think it does?
+  function rowTrusted(rows, i) {
+    var text = rows.blocks[i] && rows.blocks[i].querySelector('text.la-vz-seq');
+    if (!text) return false;
+    var want = edSeq().substr(rowStart(rows, i), text.textContent.length);
+    return want === text.textContent;
+  }
+
+  /* A click, in bases. getCharNumAtPosition does the hard part: it is exact,
+     and it does not care whether the font is monospace or how many bases the
+     row happens to hold. */
+  function seqPosFromEvent(e) {
+    var rows = seqRows();
+    var block = e.target.closest && e.target.closest('.la-vz-seqblock');
+    if (!rows || !block) return null;
+    var i = rows.blocks.indexOf(block);
+    if (i < 0 || !rowTrusted(rows, i)) return null;
+    var text = block.querySelector('text.la-vz-seq');
+    var svg = block.ownerSVGElement || block;
+    if (!svg.createSVGPoint || !text.getCharNumAtPosition) return null;
+    var pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    var local = pt.matrixTransform(text.getScreenCTM().inverse());
+    var count = text.textContent.length;
+    var n = -1;
+    try { n = text.getCharNumAtPosition(local); } catch (err) { return null; }
+    if (n >= 0) {
+      // on a base: round to whichever side of it the pointer is on
+      try {
+        var mid = text.getStartPositionOfChar(n).x + text.getExtentOfChar(n).width / 2;
+        if (local.x > mid) n += 1;
+      } catch (err2) { /* keep n */ }
+    } else {
+      /* Not on a glyph — the row's own <svg> is what gets clicked most of the
+         time, since the bases are a thin line across a tall block. Fall back
+         to where the pointer is along the row rather than to its start, which
+         would quietly send every such click to base 1. */
+      try {
+        var x0 = text.getStartPositionOfChar(0).x;
+        var x1 = text.getEndPositionOfChar(count - 1).x;
+        if (!(x1 > x0)) return null;
+        n = Math.round(((local.x - x0) / (x1 - x0)) * count);
+      } catch (err3) { return null; }
+    }
+    return clampPos(rowStart(rows, i) + Math.max(0, Math.min(count, n)));
+  }
+
+  /* The caret. SeqViz draws no such thing, so one is put into the row's own
+     <svg>: that way it scrolls with the bases and needs no second coordinate
+     system. getStartPositionOfChar puts it between two bases rather than
+     roughly over one. */
+  var plCaretTries = 0;
+  function paintCaret() {
+    var host = document.getElementById('pl-seq-map');
+    if (!host) { plCaretTries = 0; return; }
+    var old = host.querySelector('.pl-seqcaret');
+    if (old) old.remove();
+    if (plSel) { plCaretTries = 0; return; }   // a selection has its own showing
+    var rows = seqRows();
+    if (!rows) {
+      /* SeqViz renders a frame or two after it is told to, so the rows are
+         not there yet when a redraw asks for the caret back. */
+      if (plCaretTries++ < 30 && typeof requestAnimationFrame === 'function') requestAnimationFrame(paintCaret);
+      return;
+    }
+    plCaretTries = 0;
+    var i = rowOf(rows, plCaret);
+    if (i == null || !rowTrusted(rows, i)) return;
+    var text = rows.blocks[i].querySelector('text.la-vz-seq');
+    var n = plCaret - rowStart(rows, i);
+    var x, y, h;
+    try {
+      var last = text.textContent.length - 1;
+      if (n > last) { var e2 = text.getEndPositionOfChar(last); x = e2.x; }
+      else x = text.getStartPositionOfChar(n).x;
+      var ext = text.getExtentOfChar(Math.min(n, last));
+      y = ext.y; h = ext.height;
+    } catch (err) { return; }
+    var NS = 'http://www.w3.org/2000/svg';
+    var bar = document.createElementNS(NS, 'rect');
+    bar.setAttribute('class', 'pl-seqcaret');
+    bar.setAttribute('x', x - 0.5);
+    bar.setAttribute('y', y);
+    bar.setAttribute('width', 1.5);
+    bar.setAttribute('height', h);
+    rows.blocks[i].appendChild(bar);
+  }
+  /* Bring the caret's row into view, the way typing past the bottom of a
+     text box scrolls it. */
+  function scrollCaretIntoView() {
+    var rows = seqRows();
+    if (!rows || plSel) return;
+    var i = rowOf(rows, plCaret);
+    if (i == null) return;
+    var scroller = document.querySelector('#pl-seq-map .la-vz-linear-scroller');
+    var block = rows.blocks[i];
+    if (!scroller || !block) return;
+    var br = block.getBoundingClientRect(), sr = scroller.getBoundingClientRect();
+    if (br.top < sr.top) scroller.scrollTop -= (sr.top - br.top) + 8;
+    else if (br.bottom > sr.bottom) scroller.scrollTop += (br.bottom - sr.bottom) + 8;
+  }
+
   function editorNote(p, shown, cutters) {
     if (plNote) return '<span class="warn">' + esc(plNote) + '</span>';
     if (plSel) {
@@ -750,21 +854,6 @@
   }
 
   // ---- caret, selection and typing ----
-  function charWidth() {
-    var el = document.querySelector('#pl-ed .pl-strand.top');
-    if (!el || !el.textContent.length) return 0;
-    return el.getBoundingClientRect().width / el.textContent.length;
-  }
-  function posFromEvent(e) {
-    var track = e.target.closest ? e.target.closest('.pl-track') : null;
-    if (!track) return null;
-    var from = +track.getAttribute('data-from');
-    var strand = track.querySelector('.pl-strand.top');
-    var box = strand.getBoundingClientRect();
-    var cw = box.width / Math.max(1, strand.textContent.length);
-    var off = cw ? Math.round((e.clientX - box.left) / cw) : 0;
-    return clampPos(from + Math.max(0, Math.min(strand.textContent.length, off)));
-  }
   function setCaret(pos, extend) {
     plCaret = clampPos(pos);
     if (extend) {
@@ -778,57 +867,43 @@
   /* The bases, ribbons and enzyme marks do not change when the caret moves, so
      only the highlight layer, the caret and the line above them are redrawn.
      That keeps dragging smooth and leaves the rest of the DOM alone. */
+  /* The bar above the sequence and the caret in it. The bases themselves are
+     SeqViz's to draw, so nothing here touches them. */
   function paintSelection() {
     var it = rec(); if (!it) return;
-    var p = asPlasmid(it), len = p.seq.length, per = plOpts.wrap;
-    var hits = findRanges(p.seq, plOpts.find);
-    Array.prototype.forEach.call(document.querySelectorAll('#pl-ed .pl-track'), function (track) {
-      var from = +track.getAttribute('data-from'), to = Math.min(len, from + per);
-      var boxes = track.querySelector('.pl-boxes');
-      if (boxes) boxes.innerHTML = boxesHtml(hits, from, to, 'pl-hit') +
-        (plSel ? boxesHtml([[plSel.start, plSel.end]], from, to, 'pl-selbox') : '');
-      var caret = track.querySelector('.pl-caret');
-      var here = plCaret >= from && plCaret <= to && (plCaret < to || to === len);
-      if (here) {
-        if (!caret) { caret = document.createElement('span'); caret.className = 'pl-caret'; track.appendChild(caret); }
-        caret.style.left = (plCaret - from) + 'ch';
-      } else if (caret) caret.remove();
-    });
     var bar = document.querySelector('.pl-edbar');
-    if (bar) bar.innerHTML = editorNote(p, shownSites(), Object.keys(P.siteCounts(plSites)).length);
+    if (bar) bar.innerHTML = editorNote(asPlasmid(it), shownSites(), Object.keys(P.siteCounts(plSites)).length);
+    paintCaret();
   }
+  /* A click puts the caret where it landed. A drag is SeqViz's own business —
+     it reports the range when the button comes up, and draws it too — so the
+     only thing done here is to notice that a drag happened and leave the
+     click alone. */
+  var plSeqDownAt = null;
   function edMouseDown(e) {
-    // A label sits over the bases; clicking it is a selection, not a caret.
-    if (e.target.closest && e.target.closest('.pl-enz-mark, .pl-rib')) return;
-    var pos = posFromEvent(e);
+    if (e.button !== undefined && e.button !== 0) return;
+    plSeqDownAt = { x: e.clientX, y: e.clientY };
+  }
+  function edMouseUp(e) {
+    var down = plSeqDownAt;
+    plSeqDownAt = null;
+    if (!down || !e) return;
+    // Anything more than a wobble is a drag, and SeqViz has already handled it.
+    if (Math.abs(e.clientX - down.x) > 3 || Math.abs(e.clientY - down.y) > 3) return;
+    var pos = seqPosFromEvent(e);
     if (pos == null) return;
     flushEditConfirm();
-    e.preventDefault();
-    document.getElementById('pl-ed').focus();
-    plDragging = true;
-    // A plain click starts a new selection here; shift-clicking extends the
-    // one already running, so its anchor has to stay put.
-    if (!e.shiftKey) plAnchor = pos;
-    setCaret(pos, e.shiftKey);
+    var host = document.getElementById('pl-seq-map');
+    if (host) host.focus({ preventScroll: true });
+    plSel = null; plAnchor = pos; plCaret = pos; plNote = '';
+    paintSelection();
   }
-  function edMouseMove(e) {
-    if (!plDragging) return;
-    var pos = posFromEvent(e);
-    if (pos == null) {
-      // The pointer has wandered off the bases: follow the nearest line so the
-      // selection keeps growing instead of freezing.
-      var under = document.elementFromPoint(e.clientX, e.clientY);
-      var track = under && under.closest ? under.closest('.pl-track') : null;
-      if (track) pos = posFromEvent({ target: track, clientX: e.clientX });
-    }
-    if (pos != null) setCaret(pos, true);
-  }
-  function edMouseUp() { plDragging = false; }
 
   var BASE_KEY = /^[acgtunrysmwkbdhvACGTUNRYSMWKBDHV]$/;
   function edKeyDown(e) {
     if (lnCurrentSection !== 'plasmid') return;
-    var len = edLen(), per = plOpts.wrap, key = e.key;
+    var rows = seqRows();
+    var len = edLen(), per = (rows && rows.per) || 60, key = e.key;
     if (e.metaKey || e.ctrlKey) {
       var k = key.toLowerCase();
       if (k === 'a') { e.preventDefault(); plAnchor = 0; plSel = len ? { start: 0, end: len } : null; plCaret = len; plNote = ''; paintSelection(); return; }
@@ -875,97 +950,30 @@
 
   /* Redraw the sequence alone, keeping where the page was scrolled and which
      element had focus, so typing never jumps. */
+  /* Rebuild the panel itself — the toolbar and the bar above the bases — and
+     put the viewer back inside it. Only needed when that markup changes; an
+     edit goes through refreshSeqMap instead. */
   function renderSequenceOnly() {
     var it = rec(); if (!it) return;
-    // By the panel, not by the editor: in the map view there is no editor.
     var wrap = document.getElementById('pl-seq-panel');
     if (!wrap) return;
-    var panel = document.getElementById('pl-ed');
-    var scroll = panel ? panel.scrollTop : 0, hadFocus = !!panel && document.activeElement === panel;
+    var hadFocus = seqHasFocus();
     var find = document.getElementById('pl-find');
     var findFocus = document.activeElement === find, caretAt = find ? find.selectionStart : 0;
     var fresh = document.createElement('div');
     fresh.innerHTML = seqPanelHtml(asPlasmid(it));
     wrap.replaceWith(fresh.firstElementChild);
-    var ed = document.getElementById('pl-ed');
-    if (ed) {
-      ed.scrollTop = scroll;
-      if (hadFocus) ed.focus();
-      fitSeqWrap();
+    mountSeqMap();
+    if (hadFocus) {
+      var host = document.getElementById('pl-seq-map');
+      if (host) host.focus({ preventScroll: true });
     }
     if (findFocus) {
       var f2 = document.getElementById('pl-find');
       if (f2) { f2.focus(); try { f2.setSelectionRange(caretAt, caretAt); } catch (err) { } }
     }
-    if (ed) scrollCaretIntoView();
+    scrollCaretIntoView();
   }
-  /* Clicking an enzyme's name selects the site it cuts; clicking a feature's
-     ribbon selects the feature. Both were decoration you could only hover
-     over for a tooltip, which is the one thing the SeqViz view did better.
-
-     A feature that crosses the origin has start > end, and the editor's
-     selection is a plain pair that cannot hold that, so it is reported
-     rather than selected. */
-  function edLabelClick(e) {
-    var mark = e.target.closest && e.target.closest('.pl-enz-mark, .pl-rib');
-    if (!mark) return;
-    var a = Number(mark.getAttribute('data-from')), b = Number(mark.getAttribute('data-to'));
-    var label = mark.getAttribute('data-label') || '';
-    if (!isFinite(a) || !isFinite(b)) return;
-    var len = edLen();
-    flushEditConfirm();
-    if (b > a && b <= len) {
-      plSel = { start: a, end: b };
-      plAnchor = a; plCaret = b; plNote = '';
-      paintSelection();
-      scrollCaretIntoView();
-    } else {
-      plSel = null;
-      plNote = label + ' crosses the origin (' + (a + 1) + '–' + b + '), so it cannot be selected in one piece.';
-      paintSelection();
-    }
-  }
-
-  /* How many bases fit on a row.
-
-     The grid is laid out in character columns, so this depends on how wide
-     the panel actually is. Sixty was a fixed guess, and on a wide screen it
-     left a third of the page empty to the right of every row. Measured from
-     what was just drawn, rounded down to a multiple of ten so the numbering
-     stays easy to count, and only redrawn when the answer really changed —
-     which is what stops it bouncing between two values for ever. */
-  var plFitting = false, plFitTries = 0;
-  function fitSeqWrap() {
-    if (plFitting) return;
-    var ed = document.getElementById('pl-ed');
-    var track = ed && ed.querySelector('.pl-track');
-    var strand = track && track.querySelector('.pl-strand.top');
-    if (!strand || !strand.textContent.length) { plFitTries = 0; return; }
-    var cw = strand.getBoundingClientRect().width / strand.textContent.length;
-    if (!(cw > 0) || !ed.clientWidth) {
-      /* Nothing has been laid out yet — the page is drawn before the section
-         it belongs to is shown. Measuring now gives zero and the rows would
-         keep whatever width they started with, so ask again next frame. */
-      if (plFitTries++ < 30 && typeof requestAnimationFrame === 'function') requestAnimationFrame(fitSeqWrap);
-      return;
-    }
-    plFitTries = 0;
-    var room = ed.clientWidth - (track.getBoundingClientRect().left - ed.getBoundingClientRect().left) - 8;
-    var fit = Math.max(30, Math.floor(room / cw / 10) * 10);
-    if (fit === plOpts.wrap) return;
-    plOpts.wrap = fit;
-    plFitting = true;
-    try { renderSequenceOnly(); } finally { plFitting = false; }
-  }
-  function scrollCaretIntoView() {
-    var caret = document.querySelector('#pl-ed .pl-caret');
-    if (!caret) return;
-    var ed = document.getElementById('pl-ed');
-    var c = caret.getBoundingClientRect(), b = ed.getBoundingClientRect();
-    if (c.top < b.top + 4) ed.scrollTop -= (b.top - c.top) + 30;
-    else if (c.bottom > b.bottom - 4) ed.scrollTop += (c.bottom - b.bottom) + 30;
-  }
-
   // ---------- annotation ----------
   /* What to look for: the built-in standard elements plus every feature the
      lab already has on its other plasmids. */
@@ -1346,7 +1354,7 @@
     // still ticked, and reading the DOM would quietly drop it.
     plOpts.enzymeNames = plEnzPicked.slice();
     plOpts.enzymes = plOpts.enzymeNames.length ? 'custom' : 'unique';
-    closeModal(); renderSequenceOnly();
+    closeModal(); seqMapOptions();
   }
 
   // ---------- restriction cloning ----------
@@ -2122,33 +2130,35 @@
   function wire() {
     var box = document.getElementById('ln-plasmid-body');
     box.addEventListener('input', function (e) {
-      if (e.target.id === 'pl-find') { plOpts.find = e.target.value; renderSequenceOnly(); return; }
+      if (e.target.id === 'pl-find') { plOpts.find = e.target.value; seqMapOptions(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('change', function (e) {
       if (e.target.id === 'pl-enzymes') {
         plOpts.enzymes = e.target.value;
         if (e.target.value === 'custom') { openEnzymePanel(); return; }
-        renderSequenceOnly(); return;
+        seqMapOptions(); return;
       }
-      if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; renderSequenceOnly(); return; }
+      if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; seqMapOptions(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
-    box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-ed')) edMouseDown(e); });
-    box.addEventListener('click', function (e) { if (e.target.closest('#pl-ed')) edLabelClick(e); });
+    box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-seq-map')) edMouseDown(e); });
+    box.addEventListener('mouseup', function (e) { if (e.target.closest('#pl-seq-map')) edMouseUp(e); });
     wirePlasmidDrop();
   }
-  document.addEventListener('mousemove', edMouseMove);
-  document.addEventListener('mouseup', edMouseUp);
+  /* The sequence view is a div SeqViz fills, so "is it focused" means the
+     focus is somewhere inside it — its own event router takes focus when you
+     click the bases. */
+  function seqHasFocus() {
+    var host = document.getElementById('pl-seq-map');
+    return !!host && (document.activeElement === host || host.contains(document.activeElement));
+  }
   document.addEventListener('keydown', function (e) {
-    var ed = document.getElementById('pl-ed');
-    if (lnCurrentSection !== 'plasmid' || !ed) return;
-    if (document.activeElement !== ed) return;      // not while a form field has focus
+    if (lnCurrentSection !== 'plasmid' || !seqHasFocus()) return;
     edKeyDown(e);
   });
   document.addEventListener('paste', function (e) {
-    var ed = document.getElementById('pl-ed');
-    if (lnCurrentSection !== 'plasmid' || !ed || document.activeElement !== ed) return;
+    if (lnCurrentSection !== 'plasmid' || !seqHasFocus()) return;
     edPaste(e);
   });
 

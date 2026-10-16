@@ -132,34 +132,6 @@
 .pl-edbar{font-size:13px;color:#4a5a52;background:#f3f8f5;border-radius:8px;padding:.45rem .7rem;margin-bottom:.5rem;min-height:1.2em;}
 .pl-edbar .warn{color:#a6620c;font-weight:600;}
 .pl-edbar .ln-icon-btn{margin-left:.3rem;}
-.pl-ed{font-family:var(--mono);font-size:13px;background:#fff;border:1px solid rgba(22,36,31,.12);border-radius:10px;
-  padding:.6rem .4rem;max-height:520px;overflow:auto;cursor:text;outline:none;}
-.pl-ed:focus{border-color:#10b07e;box-shadow:0 0 0 2px rgba(16,176,126,.18);}
-.pl-empty-seq{font-family:var(--sans);color:#8a948c;padding:1.2rem .6rem;}
-.pl-row{display:flex;gap:.7rem;align-items:flex-end;margin-bottom:.55rem;}
-.pl-gutter{flex:none;width:5.5em;text-align:right;color:#aab2ac;user-select:none;padding-bottom:1.15em;}
-.pl-track{position:relative;flex:none;white-space:pre;letter-spacing:0;}
-.pl-strand{position:relative;line-height:1.35;white-space:pre;}
-.pl-strand.top{color:#16241f;}
-.pl-strand.bot{color:#9aa49c;}
-.pl-boxes{position:absolute;left:0;right:0;top:0;height:2.7em;pointer-events:none;}
-.pl-boxes span{position:absolute;top:0;height:100%;border-radius:2px;}
-.pl-hit{background:rgba(193,58,58,.16);outline:1px solid rgba(193,58,58,.55);}
-.pl-selbox{background:rgba(16,176,126,.22);}
-.pl-caret{position:absolute;top:0;height:2.7em;width:0;border-left:2px solid #0c4a44;animation:pl-blink 1.1s steps(1) infinite;pointer-events:none;}
-@keyframes pl-blink{50%{opacity:0;}}
-.pl-ed:not(:focus) .pl-caret{animation:none;opacity:.45;}
-/* enzymes above the bases */
-.pl-enz{position:relative;height:1.25em;line-height:1.25em;}
-.pl-enz-mark{position:absolute;top:0;font-size:10.5px;color:#8f2a2a;white-space:nowrap;cursor:help;
-  border-left:1px solid #c13a3a;padding-left:2px;}
-/* one ribbon row per feature lane, under the bases */
-.pl-lane{position:relative;height:1.25em;margin-top:1px;}
-.pl-rib{position:absolute;top:0;height:1.1em;line-height:1.1em;font-size:10.5px;color:#16241f;text-align:center;
-  overflow:hidden;white-space:nowrap;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(22,36,31,.22);}
-.pl-rib.head.fwd{clip-path:polygon(0 0,calc(100% - .45em) 0,100% 50%,calc(100% - .45em) 100%,0 100%);}
-.pl-rib.head.rev{clip-path:polygon(.45em 0,100% 0,100% 100%,.45em 100%,0 50%);}
-@media(max-width:640px){.pl-ed{font-size:11px;}.pl-gutter{width:4em;}}
 @media print{
   .pl-ed{max-height:none;overflow:visible;border:none;padding:0;font-size:9px;}
   .pl-caret,.pl-edbar{display:none !important;}
@@ -215,10 +187,17 @@
 .pl-pm-dim td{opacity:.62;}
 .pl-pm-dim code{opacity:.8;}
 
-/* ---- labels in the sequence grid are clickable ----
-   An enzyme's name selects the site it cuts and a feature's ribbon selects
-   the feature, so both have to look like something you can press. */
-.pl-enz-mark,.pl-rib{cursor:pointer;}
-.pl-enz-mark:hover{text-decoration:underline;}
-.pl-rib:hover{filter:brightness(.92);}
-.pl-enz-mark:focus-visible,.pl-rib:focus-visible{outline:2px solid #0d5c47;outline-offset:1px;}
+
+/* ---- the sequence, drawn by SeqViz ----
+   It fills the width of the panel and scrolls inside a box tall enough to
+   read several rows at once. The focus ring matters here: this is what you
+   type into, so it has to be visible which thing has the keyboard. */
+.ln-pl-seqmap{height:460px;border:1px solid rgba(22,36,31,.12);border-radius:10px;background:#fff;outline:none;}
+.ln-pl-seqmap:focus,.ln-pl-seqmap:focus-within{border-color:#10b07e;box-shadow:0 0 0 2px rgba(16,176,126,.18);}
+
+/* The caret is an SVG rect put into the row it sits on, so it scrolls with
+   the bases. It stops blinking when the sequence does not have the keyboard,
+   the way a text box does. */
+.pl-seqcaret{fill:#0d5c47;}
+.ln-pl-seqmap:focus-within .pl-seqcaret{animation:pl-blink 1.1s step-end infinite;}
+@keyframes pl-blink{50%{opacity:0;}}
