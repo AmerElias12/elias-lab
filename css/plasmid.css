@@ -22,10 +22,7 @@
 .ln-pl-maps{display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:1.6rem;align-items:start;margin-bottom:1.2rem;}
 .ln-pl-meta-wrap.wide{grid-column:1/-1;}
 .ln-pl-mapbox{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:.6rem;height:460px;}
-/* The sequence view in the Sequence panel. It takes the full width of the
-   panel — the whole point of using it rather than a fixed grid of characters
-   — and scrolls inside a box tall enough to read several rows at once. */
-.ln-pl-seqmap{height:460px;margin-bottom:.6rem;}
+
 .ln-pl-map{display:block;max-width:100%;height:auto;}
 /* what the last drag or click on a map covered */
 .ln-pl-mapsel{font-family:var(--mono,ui-monospace,monospace);font-size:12px;line-height:1.5;white-space:pre-wrap;
@@ -116,7 +113,6 @@
      whatever was visible. Switch the Sequence panel to "Edit bases" first to
      print the whole sequence. */
   .ln-pl-mapbox{height:120mm;max-width:120mm;margin:0 auto;}
-  .ln-pl-seqmap{height:90mm;}
   .ln-pl-mapsel{display:none;}
   .ln-pl-meta-wrap{margin-top:10px;}
   .ln-pl-meta input,.ln-pl-meta select,.ln-pl-meta textarea{border:none !important;padding:0 !important;
@@ -213,14 +209,16 @@
 .pl-ff-name{width:100%;margin:.1rem 0 .35rem 1.3rem;max-width:calc(100% - 1.3rem);}
 .pl-ff-name:disabled{opacity:.45;}
 
-/* ---- the Map / Edit bases switch in the Sequence panel ---- */
-.ln-pl-seg{display:inline-flex;border:1px solid rgba(22,36,31,.18);border-radius:999px;overflow:hidden;}
-.ln-pl-seg .ln-icon-btn{border:none;border-radius:0;margin:0;padding:.3rem .7rem;}
-.ln-pl-seg .ln-icon-btn + .ln-icon-btn{border-left:1px solid rgba(22,36,31,.18);}
-.ln-pl-seg .ln-icon-btn.on{background:#16241f;color:#fbfaf5;}
-
 /* ---- whether a primer would prime on this plasmid ---- */
 .pl-pm-ok{color:#0d5c47;font-weight:600;}
 .pl-pm-no{color:#8a6d1f;}
 .pl-pm-dim td{opacity:.62;}
 .pl-pm-dim code{opacity:.8;}
+
+/* ---- labels in the sequence grid are clickable ----
+   An enzyme's name selects the site it cuts and a feature's ribbon selects
+   the feature, so both have to look like something you can press. */
+.pl-enz-mark,.pl-rib{cursor:pointer;}
+.pl-enz-mark:hover{text-decoration:underline;}
+.pl-rib:hover{filter:brightness(.92);}
+.pl-enz-mark:focus-visible,.pl-rib:focus-visible{outline:2px solid #0d5c47;outline-offset:1px;}

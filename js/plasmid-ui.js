@@ -123,62 +123,24 @@
      search. They keep separate state, so a selection in one does not light up
      in the other; the readout under each says what that view has selected,
      and both feed the page's own selection. */
-  var plMap = null, plSeqMap = null;
+  var plMap = null;
 
   function unmountMap() {
-    [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.destroy(); } catch (e) {} } });
-    plMap = null; plSeqMap = null;
+    if (plMap) { try { plMap.destroy(); } catch (e) {} }
+    plMap = null;
   }
   function mapPayload(p) {
     return { name: p.name, seq: p.seq, topology: p.topology, features: p.features };
   }
-  // The enzymes the menu above the sequence is asking for, by name, so SeqViz
-  // marks the same set the base view would have marked.
-  function shownEnzymeNames() {
-    var seen = {}, out = [];
-    shownSites().forEach(function (h) {
-      if (seen[h.name]) return;
-      seen[h.name] = true; out.push(h.name);
-    });
-    return out;
-  }
   function mountMap(p) {
     unmountMap();
-    if (!p.seq.length || !VV) return;
-    var payload = mapPayload(p);
-    function put(id, view, extra) {
-      var el = document.getElementById(id);
-      if (!el) return null;
-      try {
-        return VV.createViewer(el, payload, Object.assign(
-          { view: view, log: false, onSelect: onMapSelect }, extra || {}));
-      } catch (e) {
-        el.innerHTML = '<div class="ln-pl-maperr">' + esc('This map could not be drawn: ' + e.message) + '</div>';
-        return null;
-      }
-    }
-    plMap = put('pl-map', 'circular');
-    plSeqMap = put('pl-seq-map', 'linear', { enzymes: shownEnzymeNames(), search: plOpts.find || '' });
-  }
-  // The sequence view alone, after the panel around it has been redrawn.
-  function mountSeqMap() {
-    var it = rec(); if (!it) return;
-    if (plSeqMap) { try { plSeqMap.destroy(); } catch (e) {} plSeqMap = null; }
-    var el = document.getElementById('pl-seq-map');
-    if (!el || !VV) return;
-    var p = asPlasmid(it);
-    if (!p.seq.length) return;
+    var el = document.getElementById('pl-map');
+    if (!el || !p.seq.length || !VV) return;
     try {
-      plSeqMap = VV.createViewer(el, mapPayload(p), { view: 'linear', log: false,
-        onSelect: onMapSelect, enzymes: shownEnzymeNames(), search: plOpts.find || '' });
+      plMap = VV.createViewer(el, mapPayload(p), { view: 'circular', log: false, onSelect: onMapSelect });
     } catch (e) {
-      el.innerHTML = '<div class="ln-pl-maperr">' + esc('This map could not be drawn: ' + e.message) + '</div>';
+      el.innerHTML = '<div class="ln-pl-maperr">' + esc('The map could not be drawn: ' + e.message) + '</div>';
     }
-  }
-  // Marking a different set of enzymes, or searching, without a remount.
-  function seqMapOptions() {
-    if (!plSeqMap) return;
-    try { plSeqMap.setOptions({ enzymes: shownEnzymeNames(), search: plOpts.find || '' }); } catch (e) {}
   }
   /* After an edit the sequence has changed but the page has not, so the map is
      handed the new sequence instead of being torn down and rebuilt. When there
@@ -186,8 +148,8 @@
      map at all, and gains one the next time the whole page is drawn, which is
      what it did before SeqViz as well. */
   function refreshMap(p) {
-    var payload = mapPayload(p);
-    [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.update(payload); } catch (e) {} } });
+    if (!plMap) return;
+    try { plMap.update(mapPayload(p)); } catch (e) {}
   }
   /* SeqViz reports a selection as 0-based half-open coordinates, which is the
      convention js/plasmid.js already uses, so nothing is translated on the
@@ -196,11 +158,8 @@
      selection is a plain { start, end } and cannot hold one of those, so for
      a wrapping selection it is left where it was. */
   function onMapSelect(d) {
-    var text = VV.formatSelection(d);
-    ['pl-map-selection', 'pl-seq-selection'].forEach(function (id) {
-      var line = document.getElementById(id);
-      if (line) line.textContent = text;
-    });
+    var line = document.getElementById('pl-map-selection');
+    if (line) line.textContent = VV.formatSelection(d);
     if (!d.length || d.crossesOrigin) return;
     var end = d.end === 0 ? edLen() : d.end;
     if (end <= d.start) return;
@@ -632,8 +591,11 @@
       var head = f.strand === 1 ? pc.isEnd : f.strand === -1 ? pc.isStart : false;
       var cls = 'pl-rib' + (f.strand === -1 ? ' rev' : f.strand === 1 ? ' fwd' : '') + (head ? ' head' : '');
       if (label.length + 1 > cols) label = cols >= 4 ? label.slice(0, cols - 1) + '…' : '';
+      /* The span carries the whole feature, not this piece of it, so clicking
+         either half of one that crosses the origin selects the feature. */
       return '<span class="' + cls + '" style="left:' + (pc.a - from) + 'ch;width:' + cols + 'ch;background:' + esc(f.color) + '"' +
-        ' title="' + esc(f.name + ' · ' + f.type + ' · ' + (f.start + 1) + '–' + f.end) + '">' + esc(label) + '</span>';
+        ' data-from="' + f.start + '" data-to="' + f.end + '" data-label="' + esc(f.name) + '"' +
+        ' title="' + esc(f.name + ' · ' + f.type + ' · ' + (f.start + 1) + '–' + f.end) + ' · click to select">' + esc(label) + '</span>';
     }).join('');
   }
   /* Enzyme labels are put on as few rows as will hold them without overlapping. */
@@ -650,9 +612,11 @@
     });
     return rows.map(function (row) {
       return '<div class="pl-enz">' + row.items.map(function (m) {
-        return '<span class="pl-enz-mark" style="left:' + m.col + 'ch" title="' +
+        return '<span class="pl-enz-mark" style="left:' + m.col + 'ch"' +
+          ' data-from="' + m.h.start + '" data-to="' + m.h.end + '" data-label="' + esc(m.h.name) + '"' +
+          ' title="' +
           esc(m.h.name + ' · ' + m.h.site + ' · cuts top ' + (m.h.cutTop + 1) + ', bottom ' + (m.h.cutBottom + 1) +
-            (m.h.blunt ? ' (blunt)' : ' (sticky)')) + '">' + esc(m.h.name) + '</span>';
+            (m.h.blunt ? ' (blunt)' : ' (sticky)')) + ' · click to select the site">' + esc(m.h.name) + '</span>';
       }).join('') + '</div>';
     }).reverse().join('');   // the row nearest the bases holds the leftmost labels
   }
@@ -715,16 +679,6 @@
     }
     return P.filterSites(plSites, plOpts.enzymes);
   }
-  /* The sequence is shown two ways. 'map' is SeqViz: annotations and cut
-     sites are real elements, so their labels can be clicked, and it fills
-     the width of the page. 'bases' is the editable grid — the only one of
-     the two you can type into — and is a click away rather than gone. */
-  var plSeqView = 'map';
-  function plSeqViewSet(v) {
-    if (plSeqView === v) return;
-    plSeqView = v;
-    renderSequenceOnly();
-  }
   function seqPanelHtml(p) {
     var len = p.seq.length, per = plOpts.wrap;
     var counts = P.siteCounts(plSites);
@@ -740,22 +694,11 @@
           [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '−1'], ['-2', '−2'], ['-3', '−3']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
-        '<span class="ln-pl-seg">' +
-          '<button type="button" class="ln-icon-btn' + (plSeqView === 'map' ? ' on' : '') + '" onclick="plSeqViewSet(\'map\')">Map</button>' +
-          '<button type="button" class="ln-icon-btn' + (plSeqView === 'bases' ? ' on' : '') + '" onclick="plSeqViewSet(\'bases\')">Edit bases</button>' +
-        '</span>' +
         '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
         '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
         '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
-
-    if (plSeqView === 'map' && len) {
-      return head +
-        '<div class="ln-pl-seqmap" id="pl-seq-map"></div>' +
-        '<div class="ln-pl-mapsel" id="pl-seq-selection">Drag across the sequence to select bases, or click a feature or a cut site.</div>' +
-        '</div>';
-    }
 
     var hits = findRanges(p.seq, plOpts.find);
     var fs = frameSpec(p);
@@ -855,6 +798,8 @@
     if (bar) bar.innerHTML = editorNote(p, shownSites(), Object.keys(P.siteCounts(plSites)).length);
   }
   function edMouseDown(e) {
+    // A label sits over the bases; clicking it is a selection, not a caret.
+    if (e.target.closest && e.target.closest('.pl-enz-mark, .pl-rib')) return;
     var pos = posFromEvent(e);
     if (pos == null) return;
     flushEditConfirm();
@@ -947,8 +892,6 @@
       ed.scrollTop = scroll;
       if (hadFocus) ed.focus();
       fitSeqWrap();
-    } else {
-      mountSeqMap();
     }
     if (findFocus) {
       var f2 = document.getElementById('pl-find');
@@ -956,6 +899,33 @@
     }
     if (ed) scrollCaretIntoView();
   }
+  /* Clicking an enzyme's name selects the site it cuts; clicking a feature's
+     ribbon selects the feature. Both were decoration you could only hover
+     over for a tooltip, which is the one thing the SeqViz view did better.
+
+     A feature that crosses the origin has start > end, and the editor's
+     selection is a plain pair that cannot hold that, so it is reported
+     rather than selected. */
+  function edLabelClick(e) {
+    var mark = e.target.closest && e.target.closest('.pl-enz-mark, .pl-rib');
+    if (!mark) return;
+    var a = Number(mark.getAttribute('data-from')), b = Number(mark.getAttribute('data-to'));
+    var label = mark.getAttribute('data-label') || '';
+    if (!isFinite(a) || !isFinite(b)) return;
+    var len = edLen();
+    flushEditConfirm();
+    if (b > a && b <= len) {
+      plSel = { start: a, end: b };
+      plAnchor = a; plCaret = b; plNote = '';
+      paintSelection();
+      scrollCaretIntoView();
+    } else {
+      plSel = null;
+      plNote = label + ' crosses the origin (' + (a + 1) + '–' + b + '), so it cannot be selected in one piece.';
+      paintSelection();
+    }
+  }
+
   /* How many bases fit on a row.
 
      The grid is laid out in character columns, so this depends on how wide
@@ -964,15 +934,22 @@
      what was just drawn, rounded down to a multiple of ten so the numbering
      stays easy to count, and only redrawn when the answer really changed —
      which is what stops it bouncing between two values for ever. */
-  var plFitting = false;
+  var plFitting = false, plFitTries = 0;
   function fitSeqWrap() {
     if (plFitting) return;
     var ed = document.getElementById('pl-ed');
     var track = ed && ed.querySelector('.pl-track');
     var strand = track && track.querySelector('.pl-strand.top');
-    if (!strand || !strand.textContent.length) return;
+    if (!strand || !strand.textContent.length) { plFitTries = 0; return; }
     var cw = strand.getBoundingClientRect().width / strand.textContent.length;
-    if (!(cw > 0)) return;
+    if (!(cw > 0) || !ed.clientWidth) {
+      /* Nothing has been laid out yet — the page is drawn before the section
+         it belongs to is shown. Measuring now gives zero and the rows would
+         keep whatever width they started with, so ask again next frame. */
+      if (plFitTries++ < 30 && typeof requestAnimationFrame === 'function') requestAnimationFrame(fitSeqWrap);
+      return;
+    }
+    plFitTries = 0;
     var room = ed.clientWidth - (track.getBoundingClientRect().left - ed.getBoundingClientRect().left) - 8;
     var fit = Math.max(30, Math.floor(room / cw / 10) * 10);
     if (fit === plOpts.wrap) return;
@@ -1369,9 +1346,7 @@
     // still ticked, and reading the DOM would quietly drop it.
     plOpts.enzymeNames = plEnzPicked.slice();
     plOpts.enzymes = plOpts.enzymeNames.length ? 'custom' : 'unique';
-    closeModal();
-    if (plSeqView === 'map') { seqMapOptions(); return; }
-    renderSequenceOnly();
+    closeModal(); renderSequenceOnly();
   }
 
   // ---------- restriction cloning ----------
@@ -2147,24 +2122,20 @@
   function wire() {
     var box = document.getElementById('ln-plasmid-body');
     box.addEventListener('input', function (e) {
-      if (e.target.id === 'pl-find') {
-        plOpts.find = e.target.value;
-        if (plSeqView === 'map') { seqMapOptions(); return; }   // no remount needed
-        renderSequenceOnly(); return;
-      }
+      if (e.target.id === 'pl-find') { plOpts.find = e.target.value; renderSequenceOnly(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('change', function (e) {
       if (e.target.id === 'pl-enzymes') {
         plOpts.enzymes = e.target.value;
         if (e.target.value === 'custom') { openEnzymePanel(); return; }
-        if (plSeqView === 'map') { seqMapOptions(); return; }
         renderSequenceOnly(); return;
       }
       if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; renderSequenceOnly(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-ed')) edMouseDown(e); });
+    box.addEventListener('click', function (e) { if (e.target.closest('#pl-ed')) edLabelClick(e); });
     wirePlasmidDrop();
   }
   document.addEventListener('mousemove', edMouseMove);
@@ -2237,7 +2208,6 @@
   window.plPrimerSearch = plPrimerSearch;
   window.plPrimerPick = plPrimerPick;
   window.plPrimerAll = plPrimerAll;
-  window.plSeqViewSet = plSeqViewSet;
   window.plPrimerUse = plPrimerUse;
   window.plAddPrimer = plAddPrimer;
   window.plDeletePrimer = plDeletePrimer;
