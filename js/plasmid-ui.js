@@ -91,9 +91,15 @@
         '</div></div>' +
       '<h2 class="ln-pl-name">' + esc(it.name || 'Untitled plasmid') + '</h2>' +
       '<div class="ln-pl-stats">' + statsHtml(p, it) + '</div>' +
-      (len ? '<div class="ln-pl-mapbox' + (p.topology === 'circular' ? '' : ' linear') + '" id="pl-map"></div>' +
-        '<div class="ln-pl-mapsel" id="pl-map-selection">Drag across the map to select bases.</div>' : '') +
-      '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>' +
+      /* The linear view now lives in the Sequence panel, where the bases are
+         actually read, so the ring no longer needs the width of the page and
+         the details go back beside it. A linear construct has no ring to
+         draw, and its details take the whole row. */
+      (len && p.topology === 'circular'
+        ? '<div class="ln-pl-maps"><div class="ln-pl-mapbox" id="pl-map"></div>' +
+          '<div class="ln-pl-meta-wrap">' + metaHtml(it) + '</div></div>' +
+          '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring, or drag the sequence below.</div>'
+        : '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>') +
       primersHtml(p) +
       seqPanelHtml(p) +
       // The feature table is a reference list, read far less often than the
@@ -101,45 +107,78 @@
       featuresHtml(p);
     wire();
     mountMap(p);
+    fitSeqWrap();
   }
 
   // ---------- the map ----------
-  /* SeqViz draws it, through js/vector-viewer.js. It renders SVG rather than
-     a bitmap, so every base and annotation stays a DOM node and a drag can
-     report the bases it covers rather than a rectangle of pixels. That is
-     what feeds both the readout under the map and the sequence editor's own
-     selection.
+  /* SeqViz draws both of them, through js/vector-viewer.js. It renders SVG
+     rather than a bitmap, so every base, annotation and cut site stays a DOM
+     node you can click, which is the whole reason the sequence is drawn this
+     way instead of as a grid of characters.
 
-     One viewer, not two, in SeqViz's own 'both' mode: a selection then shows
-     in the circular and the linear view at once, so clicking a marker on the
-     ring also points at it in the sequence. Two separate instances do work —
-     they keep separate state, so each would highlight only itself — but then
-     the two halves disagree about what is selected, which is the one thing
-     the map is for. Showing both views side by side needs the page's width,
-     which is why the details sit below the map rather than beside it.
-
-     A linear construct gets the linear view alone: there is no circle to
-     draw, and vector-viewer refuses that view rather than drawing a
-     misleading one. */
-  var plMap = null;
+     Two viewers, in two places, because they answer two questions. The ring
+     at the top of the page is the overview: where things sit relative to one
+     another. The linear one lives in the Sequence panel, where the bases are
+     actually read, and it is the one that carries the enzyme sites and the
+     search. They keep separate state, so a selection in one does not light up
+     in the other; the readout under each says what that view has selected,
+     and both feed the page's own selection. */
+  var plMap = null, plSeqMap = null;
 
   function unmountMap() {
-    if (plMap) { try { plMap.destroy(); } catch (e) {} }
-    plMap = null;
+    [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.destroy(); } catch (e) {} } });
+    plMap = null; plSeqMap = null;
   }
   function mapPayload(p) {
     return { name: p.name, seq: p.seq, topology: p.topology, features: p.features };
   }
+  // The enzymes the menu above the sequence is asking for, by name, so SeqViz
+  // marks the same set the base view would have marked.
+  function shownEnzymeNames() {
+    var seen = {}, out = [];
+    shownSites().forEach(function (h) {
+      if (seen[h.name]) return;
+      seen[h.name] = true; out.push(h.name);
+    });
+    return out;
+  }
   function mountMap(p) {
     unmountMap();
-    var el = document.getElementById('pl-map');
-    if (!el || !p.seq.length || !VV) return;
-    try {
-      plMap = VV.createViewer(el, mapPayload(p), {
-        view: p.topology === 'circular' ? 'both' : 'linear', log: false, onSelect: onMapSelect });
-    } catch (e) {
-      el.innerHTML = '<div class="ln-pl-maperr">' + esc('The map could not be drawn: ' + e.message) + '</div>';
+    if (!p.seq.length || !VV) return;
+    var payload = mapPayload(p);
+    function put(id, view, extra) {
+      var el = document.getElementById(id);
+      if (!el) return null;
+      try {
+        return VV.createViewer(el, payload, Object.assign(
+          { view: view, log: false, onSelect: onMapSelect }, extra || {}));
+      } catch (e) {
+        el.innerHTML = '<div class="ln-pl-maperr">' + esc('This map could not be drawn: ' + e.message) + '</div>';
+        return null;
+      }
     }
+    plMap = put('pl-map', 'circular');
+    plSeqMap = put('pl-seq-map', 'linear', { enzymes: shownEnzymeNames(), search: plOpts.find || '' });
+  }
+  // The sequence view alone, after the panel around it has been redrawn.
+  function mountSeqMap() {
+    var it = rec(); if (!it) return;
+    if (plSeqMap) { try { plSeqMap.destroy(); } catch (e) {} plSeqMap = null; }
+    var el = document.getElementById('pl-seq-map');
+    if (!el || !VV) return;
+    var p = asPlasmid(it);
+    if (!p.seq.length) return;
+    try {
+      plSeqMap = VV.createViewer(el, mapPayload(p), { view: 'linear', log: false,
+        onSelect: onMapSelect, enzymes: shownEnzymeNames(), search: plOpts.find || '' });
+    } catch (e) {
+      el.innerHTML = '<div class="ln-pl-maperr">' + esc('This map could not be drawn: ' + e.message) + '</div>';
+    }
+  }
+  // Marking a different set of enzymes, or searching, without a remount.
+  function seqMapOptions() {
+    if (!plSeqMap) return;
+    try { plSeqMap.setOptions({ enzymes: shownEnzymeNames(), search: plOpts.find || '' }); } catch (e) {}
   }
   /* After an edit the sequence has changed but the page has not, so the map is
      handed the new sequence instead of being torn down and rebuilt. When there
@@ -147,8 +186,8 @@
      map at all, and gains one the next time the whole page is drawn, which is
      what it did before SeqViz as well. */
   function refreshMap(p) {
-    if (!plMap) return;
-    try { plMap.update(mapPayload(p)); } catch (e) {}
+    var payload = mapPayload(p);
+    [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.update(payload); } catch (e) {} } });
   }
   /* SeqViz reports a selection as 0-based half-open coordinates, which is the
      convention js/plasmid.js already uses, so nothing is translated on the
@@ -157,8 +196,11 @@
      selection is a plain { start, end } and cannot hold one of those, so for
      a wrapping selection it is left where it was. */
   function onMapSelect(d) {
-    var line = document.getElementById('pl-map-selection');
-    if (line) line.textContent = VV.formatSelection(d);
+    var text = VV.formatSelection(d);
+    ['pl-map-selection', 'pl-seq-selection'].forEach(function (id) {
+      var line = document.getElementById(id);
+      if (line) line.textContent = text;
+    });
     if (!d.length || d.crossesOrigin) return;
     var end = d.end === 0 ? edLen() : d.end;
     if (end <= d.start) return;
@@ -673,11 +715,21 @@
     }
     return P.filterSites(plSites, plOpts.enzymes);
   }
+  /* The sequence is shown two ways. 'map' is SeqViz: annotations and cut
+     sites are real elements, so their labels can be clicked, and it fills
+     the width of the page. 'bases' is the editable grid — the only one of
+     the two you can type into — and is a click away rather than gone. */
+  var plSeqView = 'map';
+  function plSeqViewSet(v) {
+    if (plSeqView === v) return;
+    plSeqView = v;
+    renderSequenceOnly();
+  }
   function seqPanelHtml(p) {
     var len = p.seq.length, per = plOpts.wrap;
     var counts = P.siteCounts(plSites);
     var shown = shownSites();
-    var head = '<div class="ln-pl-panel"><div class="ln-pl-panel-head"><h3>Sequence</h3>' +
+    var head = '<div class="ln-pl-panel" id="pl-seq-panel"><div class="ln-pl-panel-head"><h3>Sequence</h3>' +
       '<div class="ln-header-actions">' +
         '<input class="ln-search sm" id="pl-find" placeholder="🔍 Find bases (both strands)" value="' + esc(plOpts.find) + '">' +
         '<label class="ln-pl-check">Enzymes <select id="pl-enzymes">' +
@@ -688,11 +740,22 @@
           [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '−1'], ['-2', '−2'], ['-3', '−3']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
+        '<span class="ln-pl-seg">' +
+          '<button type="button" class="ln-icon-btn' + (plSeqView === 'map' ? ' on' : '') + '" onclick="plSeqViewSet(\'map\')">Map</button>' +
+          '<button type="button" class="ln-icon-btn' + (plSeqView === 'bases' ? ' on' : '') + '" onclick="plSeqViewSet(\'bases\')">Edit bases</button>' +
+        '</span>' +
         '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
         '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
         '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
+
+    if (plSeqView === 'map' && len) {
+      return head +
+        '<div class="ln-pl-seqmap" id="pl-seq-map"></div>' +
+        '<div class="ln-pl-mapsel" id="pl-seq-selection">Drag across the sequence to select bases, or click a feature or a cut site.</div>' +
+        '</div>';
+    }
 
     var hits = findRanges(p.seq, plOpts.find);
     var fs = frameSpec(p);
@@ -869,23 +932,53 @@
      element had focus, so typing never jumps. */
   function renderSequenceOnly() {
     var it = rec(); if (!it) return;
+    // By the panel, not by the editor: in the map view there is no editor.
+    var wrap = document.getElementById('pl-seq-panel');
+    if (!wrap) return;
     var panel = document.getElementById('pl-ed');
-    if (!panel) return;
-    var wrap = panel.closest('.ln-pl-panel');
-    var scroll = panel.scrollTop, hadFocus = document.activeElement === panel;
+    var scroll = panel ? panel.scrollTop : 0, hadFocus = !!panel && document.activeElement === panel;
     var find = document.getElementById('pl-find');
     var findFocus = document.activeElement === find, caretAt = find ? find.selectionStart : 0;
     var fresh = document.createElement('div');
     fresh.innerHTML = seqPanelHtml(asPlasmid(it));
     wrap.replaceWith(fresh.firstElementChild);
     var ed = document.getElementById('pl-ed');
-    ed.scrollTop = scroll;
-    if (hadFocus) ed.focus();
+    if (ed) {
+      ed.scrollTop = scroll;
+      if (hadFocus) ed.focus();
+      fitSeqWrap();
+    } else {
+      mountSeqMap();
+    }
     if (findFocus) {
       var f2 = document.getElementById('pl-find');
-      f2.focus(); try { f2.setSelectionRange(caretAt, caretAt); } catch (err) { }
+      if (f2) { f2.focus(); try { f2.setSelectionRange(caretAt, caretAt); } catch (err) { } }
     }
-    scrollCaretIntoView();
+    if (ed) scrollCaretIntoView();
+  }
+  /* How many bases fit on a row.
+
+     The grid is laid out in character columns, so this depends on how wide
+     the panel actually is. Sixty was a fixed guess, and on a wide screen it
+     left a third of the page empty to the right of every row. Measured from
+     what was just drawn, rounded down to a multiple of ten so the numbering
+     stays easy to count, and only redrawn when the answer really changed —
+     which is what stops it bouncing between two values for ever. */
+  var plFitting = false;
+  function fitSeqWrap() {
+    if (plFitting) return;
+    var ed = document.getElementById('pl-ed');
+    var track = ed && ed.querySelector('.pl-track');
+    var strand = track && track.querySelector('.pl-strand.top');
+    if (!strand || !strand.textContent.length) return;
+    var cw = strand.getBoundingClientRect().width / strand.textContent.length;
+    if (!(cw > 0)) return;
+    var room = ed.clientWidth - (track.getBoundingClientRect().left - ed.getBoundingClientRect().left) - 8;
+    var fit = Math.max(30, Math.floor(room / cw / 10) * 10);
+    if (fit === plOpts.wrap) return;
+    plOpts.wrap = fit;
+    plFitting = true;
+    try { renderSequenceOnly(); } finally { plFitting = false; }
   }
   function scrollCaretIntoView() {
     var caret = document.querySelector('#pl-ed .pl-caret');
@@ -1276,7 +1369,9 @@
     // still ticked, and reading the DOM would quietly drop it.
     plOpts.enzymeNames = plEnzPicked.slice();
     plOpts.enzymes = plOpts.enzymeNames.length ? 'custom' : 'unique';
-    closeModal(); renderSequenceOnly();
+    closeModal();
+    if (plSeqView === 'map') { seqMapOptions(); return; }
+    renderSequenceOnly();
   }
 
   // ---------- restriction cloning ----------
@@ -1485,7 +1580,61 @@
     });
     return out.filter(function (x) { return x.seq.length; });
   }
-  var plPrimerHits = [];
+  /* Whether a primer would actually prime on this plasmid.
+
+     bindPrimers grows the annealed stretch from the 3' end until the template
+     stops agreeing, which is the end that has to match: a 5' tail hanging
+     free is normal and is what adds a site or an overlap, but a primer whose
+     3' end does not sit on the template will not extend. Ten bases is the
+     floor the lab works to, so anything shorter is listed — you can see it is
+     there — but cannot be ticked.
+
+     Worked out once per primer when the dialog opens, not on every keystroke
+     in the search box. */
+  var PRIMER_MIN_3PRIME = 10;
+  var plPrimerBinds = {};
+  function plPrimerBind(seq) {
+    if (plPrimerBinds[seq]) return plPrimerBinds[seq];
+    var it = rec();
+    var hits = it ? P.bindPrimers(asPlasmid(it), seq, { minAnneal: PRIMER_MIN_3PRIME }) : [];
+    var best = hits[0] || null;
+    return (plPrimerBinds[seq] = {
+      ok: !!best && best.anneal.length >= PRIMER_MIN_3PRIME,
+      anneal: best ? best.anneal.length : 0,
+      start: best ? best.start : 0, end: best ? best.end : 0,
+      strand: best ? best.strand : 1, tail: best ? best.tail.length : 0,
+      tm: best ? best.tm : 0
+    });
+  }
+  var plPrimerHits = [], plPrimerPicked = [];
+  function plPrimerEligible() {
+    return plPrimerHits.filter(function (x) { return plPrimerBind(x.seq).ok; });
+  }
+  function plPrimerPick(seq, on) {
+    var at = plPrimerPicked.indexOf(seq);
+    if (on && at < 0) plPrimerPicked.push(seq);
+    else if (!on && at >= 0) plPrimerPicked.splice(at, 1);
+    plPrimerHead();
+  }
+  function plPrimerAll(on) {
+    plPrimerEligible().forEach(function (x) { plPrimerPick(x.seq, on); });
+    Array.prototype.forEach.call(document.querySelectorAll('.pl-pm-pick'), function (c) {
+      if (!c.disabled) c.checked = on;
+    });
+    plPrimerHead();
+  }
+  function plPrimerHead() {
+    var all = document.getElementById('pm-all');
+    var usable = plPrimerEligible().length;
+    var n = plPrimerPicked.length;
+    if (all) {
+      all.checked = usable > 0 && n >= usable;
+      all.indeterminate = n > 0 && n < usable;
+      all.disabled = !usable;
+    }
+    var btn = document.getElementById('pm-attach');
+    if (btn) btn.textContent = n ? 'Attach ' + n + ' selected' : 'Attach';
+  }
   function plPrimerRows(q) {
     var all = labPrimers();
     q = (q || '').trim().toLowerCase();
@@ -1497,21 +1646,34 @@
         'or type one in above.</div>';
     }
     if (!plPrimerHits.length) return '<div class="ln-empty" style="padding:.8rem 0;">Nothing matches “' + esc(q) + '”.</div>';
-    return '<div style="max-height:32vh;overflow:auto;"><table class="ln-table"><tbody>' +
+    return '<div style="max-height:32vh;overflow:auto;"><table class="ln-table"><thead><tr>' +
+      '<th><input type="checkbox" id="pm-all" title="Select every primer that binds" onchange="plPrimerAll(this.checked)"></th>' +
+      '<th>Primer</th><th>Sequence</th><th>Binds here</th><th>Kept in</th><th></th></tr></thead><tbody>' +
       plPrimerHits.slice(0, 200).map(function (x, i) {
-        return '<tr><td><strong>' + esc(x.name) + '</strong>' +
+        var b = plPrimerBind(x.seq);
+        var where = b.ok
+          ? '<span class="pl-pm-ok">' + b.anneal + ' bp 3′ match</span> · ' + (b.start + 1) + '–' + b.end + ' ' +
+            (b.strand === -1 ? '←' : '→') + (b.tail ? ' · ' + b.tail + ' nt tail' : '')
+          : '<span class="pl-pm-no">' + (b.anneal ? 'only ' + b.anneal + ' bp' : 'no') + ' 3′ match</span>';
+        return '<tr class="' + (b.ok ? '' : 'pl-pm-dim') + '">' +
+          '<td><input type="checkbox" class="pl-pm-pick"' +
+            ' onchange="plPrimerPick(this.value, this.checked)" value="' + esc(x.seq) + '"' +
+            (plPrimerPicked.indexOf(x.seq) >= 0 ? ' checked' : '') +
+            (b.ok ? '' : ' disabled title="Needs at least ' + PRIMER_MIN_3PRIME + ' bases matching at the 3′ end"') + '></td>' +
+          '<td><strong>' + esc(x.name) + '</strong>' +
           '<span class="pl-primer-kind">' + esc(x.kind) + '</span>' +
           (x.note ? '<div class="hint">' + esc(x.note) + '</div>' : '') + '</td>' +
-          '<td><code>' + esc(x.seq.length > 42 ? x.seq.slice(0, 42) + '…' : x.seq) + '</code></td>' +
-          '<td class="ln-nowrap">' + x.seq.length + ' nt</td>' +
-          '<td class="ln-nowrap">' + (x.seq.length >= 14 ? P.tm(x.seq).toFixed(1) + ' °C' : '—') + '</td>' +
+          '<td><code>' + esc(x.seq.length > 32 ? x.seq.slice(0, 32) + '…' : x.seq) + '</code>' +
+          '<div class="hint">' + x.seq.length + ' nt' + (x.seq.length >= 14 ? ' · ' + P.tm(x.seq).toFixed(1) + ' °C' : '') + '</div></td>' +
+          '<td class="ln-nowrap">' + where + '</td>' +
           '<td class="ln-nowrap hint">' + esc(x.where) + '</td>' +
-          '<td class="ln-nowrap"><button class="ln-icon-btn" onclick="plPrimerUse(' + i + ')">Use</button></td></tr>';
+          '<td class="ln-nowrap">' + (b.ok ? '<button class="ln-icon-btn" onclick="plPrimerUse(' + i + ')">Use</button>' : '') + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
       (plPrimerHits.length > 200 ? '<div class="hint">Showing the first 200 of ' + plPrimerHits.length + '.</div>' : '');
   }
   function openPrimerModal() {
+    plPrimerBinds = {}; plPrimerPicked = [];     // this plasmid, this time round
     document.getElementById('ln-modal-content').innerHTML =
       '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Attach a primer</h3>' +
       '<div class="ln-form-row"><label>Name</label><input id="pm-name" placeholder="e.g. HK022_attB_F"></div>' +
@@ -1521,15 +1683,20 @@
       '<input class="ln-search sm" id="pm-search" placeholder="🔍 Name, sequence or description" oninput="plPrimerSearch(this.value)" autocomplete="off">' +
       '<div class="hint">Ordinary primers and gRNA cloning pairs, from the Primers page — the lab\u2019s shared list, so whatever anyone has recorded is here.</div></div>' +
       '<div id="pm-results">' + plPrimerRows('') + '</div>' +
+      '<div class="hint">A primer can be ticked once at least ' + PRIMER_MIN_3PRIME +
+      ' of its bases match the template at its 3′ end. The rest are shown, greyed, because a primer that does not ' +
+      'prime here may still be the one you were looking for.</div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
-      '<button class="ln-modal-save" onclick="plAddPrimer()">Attach</button></div>';
+      '<button class="ln-modal-save" id="pm-attach" onclick="plAddPrimer()">Attach</button></div>';
     document.getElementById('ln-modal-bg').classList.add('open');
+    plPrimerHead();
   }
   /* Only the result list is redrawn, so the search box keeps its focus and
      its caret while someone is still typing into it. */
   function plPrimerSearch(v) {
     var out = document.getElementById('pm-results');
     if (out) out.innerHTML = plPrimerRows(v);
+    plPrimerHead();
   }
   function plPrimerUse(i) {
     var pick = plPrimerHits[+i];
@@ -1537,10 +1704,33 @@
     document.getElementById('pm-name').value = pick.name || '';
     document.getElementById('pm-seq').value = pick.seq;
   }
+  /* Whatever is ticked, or the one typed in by hand if nothing is. */
   function plAddPrimer() {
     var it = rec(); if (!it) return;
+    var have = {};
+    (it.primers || []).forEach(function (x) { have[P.clean(x.seq)] = true; });
+
+    if (plPrimerPicked.length) {
+      var bySeq = {};
+      labPrimers().forEach(function (x) { bySeq[x.seq] = x; });
+      var add = [], already = 0;
+      plPrimerPicked.forEach(function (sq) {
+        var clean = P.clean(sq);
+        if (have[clean]) { already++; return; }
+        have[clean] = true;
+        add.push({ name: (bySeq[sq] && bySeq[sq].name) || 'primer', seq: clean });
+      });
+      if (!add.length) { alert('Already attached to this plasmid.'); return; }
+      it.primers = (it.primers || []).concat(add);
+      plPrimerPicked = [];
+      closeModal(); markPlDirty(); renderPlasmid();
+      if (already) plNote = already + ' were already attached.';
+      return;
+    }
+
     var seq = P.clean(g('pm-seq'));
     if (seq.length < 10) { alert('That is too short to be a primer.'); return; }
+    if (have[seq]) { alert('That primer is already attached to this plasmid.'); return; }
     it.primers = (it.primers || []).concat([{ name: g('pm-name') || 'primer ' + ((it.primers || []).length + 1), seq: seq }]);
     closeModal(); markPlDirty(); renderPlasmid();
   }
@@ -1957,13 +2147,18 @@
   function wire() {
     var box = document.getElementById('ln-plasmid-body');
     box.addEventListener('input', function (e) {
-      if (e.target.id === 'pl-find') { plOpts.find = e.target.value; renderSequenceOnly(); return; }
+      if (e.target.id === 'pl-find') {
+        plOpts.find = e.target.value;
+        if (plSeqView === 'map') { seqMapOptions(); return; }   // no remount needed
+        renderSequenceOnly(); return;
+      }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('change', function (e) {
       if (e.target.id === 'pl-enzymes') {
         plOpts.enzymes = e.target.value;
         if (e.target.value === 'custom') { openEnzymePanel(); return; }
+        if (plSeqView === 'map') { seqMapOptions(); return; }
         renderSequenceOnly(); return;
       }
       if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; renderSequenceOnly(); return; }
@@ -2040,6 +2235,9 @@
   window.plCloneCreate = plCloneCreate;
   window.openPrimerModal = openPrimerModal;
   window.plPrimerSearch = plPrimerSearch;
+  window.plPrimerPick = plPrimerPick;
+  window.plPrimerAll = plPrimerAll;
+  window.plSeqViewSet = plSeqViewSet;
   window.plPrimerUse = plPrimerUse;
   window.plAddPrimer = plAddPrimer;
   window.plDeletePrimer = plDeletePrimer;
