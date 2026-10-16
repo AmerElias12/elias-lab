@@ -108,13 +108,17 @@
      what feeds both the readout under the map and the sequence editor's own
      selection.
 
-     One viewer, not two. SeqViz gives its event router a fixed element id, so
-     two Viewers on the same page collide over it and, when they mount in the
-     same tick, both end up drawing nothing. Its own 'both' mode puts the
-     circular and linear views side by side in one instance, which is also the
-     only way a selection shows up in both at once. A linear construct gets
-     the linear view alone: there is no circle to draw, and vector-viewer
-     refuses that view rather than drawing a misleading one. */
+     One viewer, not two, in SeqViz's own 'both' mode: a selection then shows
+     in the circular and the linear view at once, so clicking a marker on the
+     ring also points at it in the sequence. Two separate instances do work —
+     they keep separate state, so each would highlight only itself — but then
+     the two halves disagree about what is selected, which is the one thing
+     the map is for. Showing both views side by side needs the page's width,
+     which is why the details sit below the map rather than beside it.
+
+     A linear construct gets the linear view alone: there is no circle to
+     draw, and vector-viewer refuses that view rather than drawing a
+     misleading one. */
   var plMap = null;
 
   function unmountMap() {
