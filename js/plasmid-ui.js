@@ -108,13 +108,17 @@
      what feeds both the readout under the map and the sequence editor's own
      selection.
 
-     One viewer, not two. SeqViz gives its event router a fixed element id, so
-     two Viewers on the same page collide over it and, when they mount in the
-     same tick, both end up drawing nothing. Its own 'both' mode puts the
-     circular and linear views side by side in one instance, which is also the
-     only way a selection shows up in both at once. A linear construct gets
-     the linear view alone: there is no circle to draw, and vector-viewer
-     refuses that view rather than drawing a misleading one. */
+     One viewer, not two, in SeqViz's own 'both' mode: a selection then shows
+     in the circular and the linear view at once, so clicking a marker on the
+     ring also points at it in the sequence. Two separate instances do work —
+     they keep separate state, so each would highlight only itself — but then
+     the two halves disagree about what is selected, which is the one thing
+     the map is for. Showing both views side by side needs the page's width,
+     which is why the details sit below the map rather than beside it.
+
+     A linear construct gets the linear view alone: there is no circle to
+     draw, and vector-viewer refuses that view rather than drawing a
+     misleading one. */
   var plMap = null;
 
   function unmountMap() {
@@ -534,7 +538,7 @@
     return head +
       '<div class="pl-edbar">' + editorNote(p, shown, sum) + '</div>' +
       '<div class="pl-ed" id="pl-ed" tabindex="0" role="textbox" aria-label="Plasmid sequence" aria-multiline="true">' +
-      (len ? rows.join('') : '<div class="pl-empty-seq">Click here and type or paste a sequence, or use <strong>Import sequence file</strong>.</div>') +
+      (len ? rows.join('') : '<div class="pl-empty-seq">Click here and type or paste a sequence, drop a GenBank, SnapGene or FASTA file anywhere on this page, or use <strong>Import sequence file</strong>.</div>') +
       '</div></div>';
   }
   function editorNote(p, shown, cutters) {
@@ -1447,6 +1451,60 @@
     input.click();
   }
 
+  /* ---- dropping a sequence file onto the page ----
+     The same import as the button, with the file coming off a drag. A file
+     arrives from a mail client or a vendor's download as often as from a file
+     dialog, and dragging it onto the plasmid is the shorter way round.
+
+     The listeners go on the section, which notebook.html owns and which
+     outlives any render, rather than on the body renderPlasmid rewrites —
+     and once, because wire() runs again on every render.
+
+     Only a drag carrying files counts. Dragging selected bases out of the
+     sequence editor is a text drag, and treating that as an import would be
+     a confusing way to lose a plasmid. */
+  var plDropDepth = 0;
+  function dragHasFiles(e) {
+    var types = e.dataTransfer && e.dataTransfer.types;
+    return !!types && Array.prototype.indexOf.call(types, 'Files') >= 0;
+  }
+  function wirePlasmidDrop() {
+    var sect = document.getElementById('ln-plasmid');
+    if (!sect || sect.getAttribute('data-drop-wired')) return;
+    sect.setAttribute('data-drop-wired', '1');
+
+    function stop() { plDropDepth = 0; sect.classList.remove('ln-pl-dropping'); }
+
+    // dragenter and dragleave both fire again for every child the pointer
+    // crosses, so the highlight follows a depth count, not the last event.
+    sect.addEventListener('dragenter', function (e) {
+      if (!dragHasFiles(e) || !rec()) return;
+      e.preventDefault();
+      if (++plDropDepth === 1) sect.classList.add('ln-pl-dropping');
+    });
+    sect.addEventListener('dragover', function (e) {
+      if (!dragHasFiles(e) || !rec()) return;
+      e.preventDefault();                  // without this the drop never arrives
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    sect.addEventListener('dragleave', function (e) {
+      if (!dragHasFiles(e)) return;
+      if (--plDropDepth <= 0) stop();
+    });
+    sect.addEventListener('drop', function (e) {
+      if (!dragHasFiles(e) || !rec()) return;
+      e.preventDefault();                  // or the browser opens the file itself
+      stop();
+      var files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      if (files.length > 1) {
+        alert('Drop one file to give this plasmid its sequence. To add several plasmids at once, use “Import sequences” on the Plasmids page.');
+        return;
+      }
+      importFileIntoThis(files[0]);        // which asks before replacing a sequence
+    });
+  }
+
   /* Several sequence files at once, each becoming its own plasmid. */
   function openPlasmidImport() {
     plImport = null;
@@ -1579,6 +1637,7 @@
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-ed')) edMouseDown(e); });
+    wirePlasmidDrop();
   }
   document.addEventListener('mousemove', edMouseMove);
   document.addEventListener('mouseup', edMouseUp);
