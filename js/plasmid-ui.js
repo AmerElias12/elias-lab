@@ -47,25 +47,112 @@
     var id = decodeURIComponent(m[1]);
     if (id === 'new') { lnShow('inv-plasmids'); return; }   // a typed address, not a real plasmid
     if (lnCurrentSection === 'plasmid' && plId === id) return;
-    if (!leavePlasmidOk()) { history.replaceState(null, '', plId ? '#plasmid/' + plId : '#'); return; }
-    plId = id; plSel = null; plDirty = false;
-    plCaret = 0; plAnchor = 0; plNote = ''; plUndo = []; plRedo = [];
-    startDraft();
-    recomputeSites();
+    // Noted before the state is touched, so the tab being left gets a chance
+    // to pick up what is still on the page.
+    if (window.LabTabs) LabTabs.noteShow('plasmid', id);
+    var held = window.LabTabs && LabTabs.takeState('plasmid/' + id);
+    plId = id;
+    if (held) {
+      plRestore(held);
+    } else {
+      plSel = null; plDirty = false;
+      plCaret = 0; plAnchor = 0; plNote = ''; plUndo = []; plRedo = [];
+      startDraft();
+      recomputeSites();
+    }
     renderPlasmid();
     lnShow('plasmid');
+    // The strip was drawn by noteShow above, while the flags still belonged to
+    // the page being left — so an incoming clean tab would wear the outgoing
+    // one's unsaved dot. Draw it again now that this page is the live one.
+    if (window.LabTabs) LabTabs.refresh();
+    if (held && held.scroll) {
+      var main = document.querySelector('.ln-main');
+      if (main) setTimeout(function () { main.scrollTop = held.scroll; }, 0);
+    }
   }
-  function leavePlasmidOk() {
-    if (lnCurrentSection !== 'plasmid' || !plDirty) return true;
-    if (!confirm('This plasmid has unsaved changes. Leave without saving them?')) return false;
-    plDirty = false;
-    return true;
+  /* Everything that makes this plasmid's page *this* plasmid's page, so a tab
+     comes back exactly as it was left: the working copy with its unsaved
+     edits, what was selected, where the caret was, and the undo history —
+     losing the undo stack on a tab switch would make the tabs a trap rather
+     than a convenience. The viewers are not kept; they are redrawn, which is
+     quick and avoids holding two SeqViz instances per open plasmid. */
+  /* The metadata boxes — name, backbone, where it is kept — only reach the
+     draft when Save is pressed, so they have to be read off the page or a
+     half-typed name would vanish on the way to another tab. Read by prefix
+     rather than from a list, so a field added to the form later is carried
+     without anybody having to remember this function exists. */
+  function plFields() {
+    var out = {}, body = document.getElementById('ln-plasmid-body');
+    if (!body) return out;
+    body.querySelectorAll('input[id^="pl-"],select[id^="pl-"],textarea[id^="pl-"]').forEach(function (el) {
+      if (el.type === 'file' || el.type === 'checkbox' || el.type === 'radio') return;
+      out[el.id] = el.value;
+    });
+    return out;
   }
+  function plCapture() {
+    if (lnCurrentSection !== 'plasmid' || !plDraft) return null;
+    var main = document.querySelector('.ln-main');
+    return { draft: plDraft, dirty: plDirty, sel: plSel, caret: plCaret, anchor: plAnchor,
+      note: plNote, undo: plUndo, redo: plRedo, opts: JSON.parse(JSON.stringify(plOpts)),
+      fields: plFields(), scroll: main ? main.scrollTop : 0 };
+  }
+  function plRestore(st) {
+    plDraft = st.draft; plDirty = st.dirty; plSel = st.sel;
+    plCaret = st.caret; plAnchor = st.anchor; plNote = st.note;
+    plUndo = st.undo || []; plRedo = st.redo || [];
+    if (st.opts) plOpts = st.opts;
+    plPendingFields = st.fields || null;
+    recomputeSites();
+  }
+  // Put back after renderPlasmid has drawn the boxes to put them back into.
+  var plPendingFields = null;
+  function plApplyFields() {
+    if (!plPendingFields) return;
+    var vals = plPendingFields;
+    plPendingFields = null;
+    Object.keys(vals).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.value = vals[id];
+    });
+  }
+  /* Moving between pages no longer loses an edit — the tab holds it, and the
+     question is asked when the tab is closed. */
+  function leavePlasmidOk() { return true; }
   function markPlDirty() {
     if (plDirty) return;
     plDirty = true;
     var st = document.getElementById('ln-pl-status');
     if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+    if (window.LabTabs) LabTabs.refresh();   // the tab gets its unsaved dot
+  }
+
+  if (window.LabTabs) {
+    LabTabs.register('plasmid', {
+      title: function (id, held) {
+        // The name as typed, so renaming a plasmid renames its tab straight
+        // away — from the live box for the tab on screen, and from what was
+        // put aside for the ones that are not.
+        if (id === plId) {
+          var live = document.getElementById('pl-name');
+          if (live && live.value.trim()) return live.value.trim();
+          if (plDraft) return plDraft.name || 'Untitled plasmid';
+        } else if (held && held.fields && (held.fields['pl-name'] || '').trim()) {
+          return held.fields['pl-name'].trim();
+        }
+        var it = (getInventory().plasmids || []).filter(function (x) { return x.id === id; })[0];
+        return it ? (it.name || 'Untitled plasmid') : 'Plasmid';
+      },
+      capture: plCapture,
+      restore: plRestore,
+      dirty: function () { return lnCurrentSection === 'plasmid' && plDirty; },
+      // Closing the tab of the plasmid on screen drops the working copy, so a
+      // later reopen reads the saved record rather than the discarded edits.
+      discard: function (id, wasCurrent) {
+        if (wasCurrent && id === plId) { plDirty = false; plDraft = null; plId = null; }
+      }
+    });
   }
 
   // ---------- the page ----------
@@ -84,7 +171,7 @@
         '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-plasmids\');return false;">← Plasmids</a>' +
         '<span id="ln-pl-status" class="ln-entry-status">' + (plDirty ? 'Unsaved changes' : 'Saved') + '</span>' +
         '<div class="ln-header-actions">' +
-          '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in new tab ↗</a>' +
+          '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in a browser window ↗</a>' +
           '<button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button>' +
           '<button class="ln-add-btn ghost" onclick="plExportMenu(this)">↓ Export</button>' +
           '<button class="ln-add-btn" id="ln-pl-save" onclick="savePlasmid()">Save</button>' +
@@ -106,6 +193,7 @@
       // map and the sequence, so it sits below both rather than between them.
       featuresHtml(p);
     wire();
+    plApplyFields();
     mountMap(p);
   }
 
@@ -2168,6 +2256,7 @@
       st.className = 'ln-entry-status saved';
       btn.disabled = false; btn.textContent = 'Save';
       renderInventory('plasmids');
+      if (window.LabTabs) LabTabs.refresh();   // drop the dot, pick up a rename
     }, function (e) {
       st.textContent = 'Not saved'; st.className = 'ln-entry-status dirty';
       btn.disabled = false; btn.textContent = 'Save';

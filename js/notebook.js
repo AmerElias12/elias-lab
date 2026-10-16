@@ -119,6 +119,9 @@ function lnShowApp(user) {
   // A link to an entry (#entry/<id>, e.g. opened in a new tab) goes straight
   // to it; showing the dashboard first would clear that address.
   var target = location.hash;
+  // Reopen whatever was open last time *before* showing anything: the first
+  // lnShow saves the tab list, which would write over the list being read.
+  if (window.LabTabs) LabTabs.boot();
   lnShow('dashboard');
   if (/^#(entry|plasmid)\//.test(target)) { history.replaceState(null, '', target); routeHash(); }
 }
@@ -170,14 +173,15 @@ window.addEventListener('beforeprint', function () {
 
 // ── NAVIGATION ─────────────────────────────────────────────
 function lnShow(section) {
-  if (section !== 'entry') {
-    if (!leaveEntryOk()) return;
-    entryDirty = false;
-  }
-  if (section !== 'plasmid' && window.leavePlasmidOk && !leavePlasmidOk()) return;
+  // Leaving an edited page no longer loses it: the tab keeps what was typed,
+  // and the question is asked when the tab is closed instead. So nothing is
+  // confirmed here, and entryDirty survives the move.
   if (section !== 'entry' && section !== 'plasmid' && /^#(entry|plasmid)\//.test(location.hash)) {
     history.replaceState(null, '', location.pathname + location.search);
   }
+  // The two item pages are noted by their own render paths, which know the id;
+  // keyed on the section alone they would all share one tab.
+  if (section !== 'entry' && section !== 'plasmid' && window.LabTabs) LabTabs.noteShow(section);
   lnCurrentSection = section;
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
@@ -479,11 +483,64 @@ function routeHash() {
   document.querySelectorAll('#ln-paper textarea').forEach(autoGrow);
 }
 window.addEventListener('hashchange', routeHash);
-function leaveEntryOk() {
-  if (lnCurrentSection !== 'entry' || !entryDirty) return true;
-  if (!confirm('This entry has unsaved changes. Leave without saving them?')) return false;
-  entryDirty = false;
-  return true;
+
+if (window.LabTabs) {
+  LabTabs.register('entry', {
+    title: function (id, held) {
+      if (lnCurrentSection === 'entry' && (entryId || 'new') === id) {
+        var live = document.getElementById('e-title');
+        if (live && live.value.trim()) return live.value.trim();
+      } else if (held && held.values && (held.values['e-title'] || '').trim()) {
+        return held.values['e-title'].trim();
+      }
+      if (!id || id === 'new') return 'New entry';
+      var n = getNotebooks().filter(function (x) { return x.id === id; })[0];
+      return n ? (n.title || 'Untitled entry') : 'Entry';
+    },
+    capture: entryCapture,
+    restore: entryRestore,
+    dirty: function () { return lnCurrentSection === 'entry' && entryDirty; }
+  });
+}
+/* Kept for the paths that still ask, but moving between pages no longer
+   loses anything: the tab holds what was typed until it is closed, and that
+   is where the question is asked now. */
+function leaveEntryOk() { return true; }
+
+/* ---- what an entry tab is holding while it is not on screen ----
+   The typed values and the page body, not the saved record — the record is
+   redrawn from the data when the tab comes back, and this goes on top. A
+   file chosen but not yet uploaded cannot be carried across, so the input is
+   deliberately left out rather than half-restored. */
+function entryCapture() {
+  if (lnCurrentSection !== 'entry') return null;
+  var body = document.getElementById('e-body');
+  if (!body) return null;
+  var values = {};
+  ['e-title', 'e-researcher', 'e-date'].concat(ENTRY_FIELDS.map(function (f) { return 'e-' + f[0]; }))
+    .forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) values[id] = el.value;
+    });
+  var main = document.querySelector('.ln-main');
+  return { values: values, body: body.innerHTML, dirty: entryDirty,
+    scroll: main ? main.scrollTop : 0 };
+}
+function entryRestore(st) {
+  Object.keys(st.values || {}).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = st.values[id];
+  });
+  var body = document.getElementById('e-body');
+  if (body && typeof st.body === 'string') {
+    body.innerHTML = safeHtml(st.body);
+    calcHydrate(body);
+    hydrateEntryFiles(body);
+  }
+  document.querySelectorAll('#ln-paper textarea').forEach(autoGrow);
+  if (st.dirty) markEntryDirty();
+  var main = document.querySelector('.ln-main');
+  if (main && st.scroll) setTimeout(function () { main.scrollTop = st.scroll; }, 0);
 }
 window.addEventListener('beforeunload', function (e) {
   if (lnCurrentSection === 'entry' && entryDirty) { e.preventDefault(); e.returnValue = ''; }
@@ -496,6 +553,7 @@ function markEntryDirty() {
   entryDirty = true;
   var st = document.getElementById('ln-entry-status');
   if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+  if (window.LabTabs) LabTabs.refresh();   // the tab gets its unsaved dot
 }
 function autoGrow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
 
@@ -516,7 +574,7 @@ function renderEntry(id) {
       '<a href="#" class="ln-back-link" onclick="lnShow(\'notebooks\');return false;">\u2190 Experiment Notebooks</a>' +
       '<span id="ln-entry-status" class="ln-entry-status">' + (entryId ? 'Saved' : 'New entry \u2014 not saved yet') + '</span>' +
       '<div class="ln-header-actions">' +
-        '<a id="ln-entry-newtab" class="ln-add-btn ghost ln-add-link" href="#entry/' + (entryId || 'new') + '" target="_blank" rel="noopener"' + (entryId ? '' : ' hidden') + '>Open in new tab \u2197</a>' +
+        '<a id="ln-entry-newtab" class="ln-add-btn ghost ln-add-link" href="#entry/' + (entryId || 'new') + '" target="_blank" rel="noopener"' + (entryId ? '' : ' hidden') + '>Open in a browser window \u2197</a>' +
         '<button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button>' +
         '<button class="ln-add-btn" id="ln-entry-save" onclick="saveEntry()">Save</button>' +
       '</div></div>' +
@@ -559,6 +617,14 @@ function renderEntry(id) {
   editor.addEventListener('paste', editorPaste);
   editor.addEventListener('drop', editorDrop);
   if (!entryId) setTimeout(function () { document.getElementById('e-title').focus(); }, 50);
+  if (window.LabTabs) LabTabs.noteShow('entry', entryId || 'new');
+  // Anything this tab was holding when it was last left goes back in now,
+  // over the top of what was just drawn from the saved record.
+  var held = window.LabTabs && LabTabs.takeState('entry/' + (entryId || 'new'));
+  if (held) entryRestore(held);
+  // Same reason as in routePlasmid: the strip was drawn while the flags still
+  // belonged to the page being left.
+  if (window.LabTabs) LabTabs.refresh();
 }
 
 // Pages store images and attached files by storage path; give them fresh
