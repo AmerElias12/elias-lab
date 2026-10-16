@@ -1468,43 +1468,18 @@
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
   }
   /* ---- the primers the lab has written down ----
-     They live in three places. The Primers page is the primer generator
-     running in an iframe from this same origin, so the two lists it keeps —
-     the ordinary primers and the pairs that clone a guide — are readable
-     from here; the inventory table is the older home and may still hold
-     some. A gRNA record is one pair, so it is listed as the two primers you
-     would actually order.
+     js/primer-store.js keeps them, in the shared inventory, so this is the
+     same list everybody else sees. A gRNA record is one pair, so it arrives
+     here as the two primers you would actually order.
 
-     Those two lists are localStorage, so they are per-browser: a primer
-     entered on somebody else's machine will not be here. The search says so
-     rather than quietly showing a short list. */
-  function plLsList(key) {
-    try {
-      var raw = JSON.parse(localStorage.getItem(key) || '[]');
-      return Array.isArray(raw) ? raw : [];
-    } catch (e) { return []; }
-  }
-  function plWhere(r) {
-    return [r.freezer, r.shelf, r.box].filter(Boolean).join(' · ');
-  }
+     Anything in the inventory that did not come from the primer generator —
+     primers entered through the table before it existed — is listed too. */
   function labPrimers() {
-    var out = [];
-    plLsList('regPrimers').forEach(function (r) {
-      if (!r || !r.sequence) return;
-      out.push({ name: r.name || ('PR' + (r.number || '')), seq: P.clean(r.sequence),
-        kind: 'primer', note: r.description || '', where: plWhere(r) });
-    });
-    plLsList('grnaPrimers').forEach(function (r) {
-      if (!r) return;
-      var what = r.spacerSeq ? 'spacer ' + r.spacerSeq : '';
-      var note = [r.description, what].filter(Boolean).join(' · ');
-      if (r.forwardPrimer) out.push({ name: r.forwardName || 'gRNA forward', seq: P.clean(r.forwardPrimer),
-        kind: 'gRNA cloning', note: note, where: plWhere(r) });
-      if (r.reversePrimer) out.push({ name: r.reverseName || 'gRNA reverse', seq: P.clean(r.reversePrimer),
-        kind: 'gRNA cloning', note: note, where: plWhere(r) });
-    });
+    var out = window.PrimerStore ? window.PrimerStore.flat().map(function (x) {
+      return { name: x.name, seq: P.clean(x.seq), kind: x.kind, note: x.note, where: x.where };
+    }) : [];
     (getInventory().primers || []).forEach(function (r) {
-      if (!r || !r.sequence) return;
+      if (!r || !r.sequence || r.kind) return;        // the generator's own rows arrive above
       out.push({ name: r.name || 'primer', seq: P.clean(r.sequence),
         kind: 'inventory', note: r.application || '', where: r.storage || '' });
     });
@@ -1544,7 +1519,7 @@
       '<div class="hint">Bases that do not match the template at the 5′ end are kept as a tail, which is normal for adding a site or an overlap.</div></div>' +
       '<div class="ln-form-row"><label>Or search the lab’s primers</label>' +
       '<input class="ln-search sm" id="pm-search" placeholder="🔍 Name, sequence or description" oninput="plPrimerSearch(this.value)" autocomplete="off">' +
-      '<div class="hint">Ordinary primers and gRNA cloning pairs, from the Primers page. That list is kept in this browser, so primers added on another machine will not appear here.</div></div>' +
+      '<div class="hint">Ordinary primers and gRNA cloning pairs, from the Primers page — the lab\u2019s shared list, so whatever anyone has recorded is here.</div></div>' +
       '<div id="pm-results">' + plPrimerRows('') + '</div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" onclick="plAddPrimer()">Attach</button></div>';

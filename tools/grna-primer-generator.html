@@ -8,6 +8,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="../js/primer-store.js?v=1"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .copy-icon { cursor: pointer; transition: all 0.2s; }
@@ -41,30 +42,42 @@
             const [regBox, setRegBox] = useState('1');
             const [regPrimerVendor, setRegPrimerVendor] = useState('IDT');
             const [regPrimerStatus, setRegPrimerStatus] = useState('Designed');
+            const [shared, setShared] = useState(false);
+            const [storeNote, setStoreNote] = useState('');
             const [showClearModal, setShowClearModal] = useState(false);
             const [clearPasscode, setClearPasscode] = useState('');
             const CLEAR_PASSCODE = 'DELETE123'; // Set your secure passcode here
 
             const BOX_CAPACITY = 100;
 
-            // Load from localStorage
+            /* The primers live in the lab's shared inventory, so a primer
+               entered here is a primer everyone sees. js/primer-store.js does
+               the talking; opened on its own, away from the notebook, it falls
+               back to this browser as it always did.
+
+               `loaded` guards the save effects below: they run once on mount
+               too, and without it an empty initial state would be written over
+               a list that had not arrived yet. */
+            const [loaded, setLoaded] = useState(false);
             React.useEffect(() => {
-                const savedGrna = localStorage.getItem('grnaPrimers');
-                const savedGrnaCounter = localStorage.getItem('grnaPrimerCounter');
-                const savedReg = localStorage.getItem('regPrimers');
-                const savedRegCounter = localStorage.getItem('regPrimerCounter');
-                
-                if (savedGrna) setGrnaPrimers(JSON.parse(savedGrna));
-                if (savedGrnaCounter) setGrnaPrimerCounter(parseInt(JSON.parse(savedGrnaCounter)));
-                if (savedReg) setRegPrimers(JSON.parse(savedReg));
-                if (savedRegCounter) setRegPrimerCounter(parseInt(JSON.parse(savedRegCounter)));
+                let dead = false;
+                PrimerStore.load().then(state => {
+                    if (dead) return;
+                    setGrnaPrimers(state.grna);
+                    setRegPrimers(state.regular);
+                    setGrnaPrimerCounter(state.grnaCounter);
+                    setRegPrimerCounter(state.regCounter);
+                    setShared(state.shared);
+                    setStoreNote(state.shared
+                        ? (state.moved ? 'Shared with the lab · ' + state.moved + ' primer' + (state.moved === 1 ? '' : 's') + ' moved up from this browser' : 'Shared with the lab')
+                        : 'This browser only — open the Primers page in the notebook to share these');
+                    setLoaded(true);
+                }, () => setLoaded(true));
+                return () => { dead = true; };
             }, []);
 
-            // Save to localStorage
-            React.useEffect(() => { if (grnaPrimers.length > 0) localStorage.setItem('grnaPrimers', JSON.stringify(grnaPrimers)); }, [grnaPrimers]);
-            React.useEffect(() => { localStorage.setItem('grnaPrimerCounter', JSON.stringify(grnaPrimerCounter)); }, [grnaPrimerCounter]);
-            React.useEffect(() => { if (regPrimers.length > 0) localStorage.setItem('regPrimers', JSON.stringify(regPrimers)); }, [regPrimers]);
-            React.useEffect(() => { localStorage.setItem('regPrimerCounter', JSON.stringify(regPrimerCounter)); }, [regPrimerCounter]);
+            React.useEffect(() => { if (loaded) PrimerStore.save('grna', grnaPrimers); }, [grnaPrimers, loaded]);
+            React.useEffect(() => { if (loaded) PrimerStore.save('regular', regPrimers); }, [regPrimers, loaded]);
 
             // Tm calculation
             const calculateTm = (sequence) => {
@@ -262,16 +275,20 @@
                 setClearPasscode('');
             };
 
+            // Only meaningful while standalone; shared primers are removed by the
+            // save effects, which see the lists go empty.
+            const forgetLocalCopies = () => {
+                ['grnaPrimers', 'grnaPrimerCounter', 'regPrimers', 'regPrimerCounter']
+                    .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+            };
+
             const confirmClearAll = () => {
                 if (clearPasscode.toUpperCase() === CLEAR_PASSCODE) {
                     setGrnaPrimers([]);
                     setGrnaPrimerCounter(1);
                     setRegPrimers([]);
                     setRegPrimerCounter(1);
-                    localStorage.removeItem('grnaPrimers');
-                    localStorage.removeItem('grnaPrimerCounter');
-                    localStorage.removeItem('regPrimers');
-                    localStorage.removeItem('regPrimerCounter');
+                    forgetLocalCopies();
                     setShowClearModal(false);
                     setClearPasscode('');
                     alert('✓ All data has been deleted successfully');
@@ -475,6 +492,11 @@
                         <div className="mb-8">
                             <h1 className="text-4xl font-bold text-gray-900 mb-2">Primer Generator - Dual System</h1>
                             <p className="text-lg text-gray-600">Separate documentation for gRNA cloning (PRg) and regular primers (PR)</p>
+                            {storeNote && (
+                                <p className={'mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ' + (shared ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800')}>
+                                    {shared ? '✓ ' : '⚠ '}{storeNote}
+                                </p>
+                            )}
                         </div>
 
                         {/* Data Management */}
@@ -791,6 +813,9 @@
                                 <div className="mb-6">
                                     <h3 className="text-2xl font-bold text-gray-900 mb-2">⚠️ Delete All Data</h3>
                                     <p className="text-gray-600">This action cannot be undone. All primers will be permanently deleted.</p>
+                                    {shared && (
+                                        <p className="text-red-600 font-semibold mt-2">These primers are shared with the lab. Deleting them here deletes them for everyone, not just on this computer.</p>
+                                    )}
                                 </div>
 
                                 <div className="mb-6">
