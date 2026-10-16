@@ -30,6 +30,17 @@
   padding:.5rem .7rem;margin-bottom:1.6rem;min-height:2.4em;}
 .ln-pl-maperr{font-family:var(--sans);font-size:13px;color:#7a2f2f;padding:1rem;}
 
+/* a sequence file is being dragged over the page. The page stays readable —
+   an overlay across it would hide the plasmid you are about to replace — so
+   this is an outline plus a line of text that follows the viewport, since the
+   page is usually taller than the screen. */
+.ln-section.ln-pl-dropping{outline:2px dashed rgba(13,92,71,.5);outline-offset:-10px;background:rgba(31,209,151,.045);}
+.ln-section.ln-pl-dropping::after{content:"Drop to read this file into the plasmid";
+  position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:40;pointer-events:none;
+  font-family:var(--sans);font-size:14px;font-weight:600;color:#0d5c47;background:#fbfaf5;
+  border:1px solid rgba(13,92,71,.35);border-radius:999px;padding:.5rem 1.1rem;
+  box-shadow:0 6px 18px rgba(22,36,31,.16);}
+
 /* map parts (the SVG is written by js/plasmid.js) */
 .pl-axis,.pl-ring{fill:none;stroke:#16241f;stroke-opacity:.35;stroke-width:1.5;}
 .pl-tick{stroke:#16241f;stroke-opacity:.3;stroke-width:1;}
