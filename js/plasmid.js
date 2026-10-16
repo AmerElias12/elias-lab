@@ -290,6 +290,12 @@
         if (text(pos, 8) !== 'SnapGene') return null;
         seen = true;
       } else if (type === 0) {
+        // The sequence block opens with a flags byte, so a zero-length one is
+        // not a sequence block at all. Without this the read runs one byte off
+        // the end and throws RangeError instead of returning null, and a
+        // truncated or mis-named .dna file crashes the import rather than
+        // being refused.
+        if (length < 1) break;
         topology = (view.getUint8(pos) & 1) ? 'circular' : 'linear';
         seq = clean(text(pos + 1, length - 1));
       } else if (type === 10) featuresXml = text(pos, length);
