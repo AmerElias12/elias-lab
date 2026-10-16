@@ -11,6 +11,11 @@
  *     linear drag        { start: 1,   end: 15,  length: 14, type: "SEQ" }
  *     annotation click   { start: 0,   end: 60,  length: 60, type: "ANNOTATION", name: "GFP" }
  *     across the origin  { start: 104, end: 6,   length: 16, type: "SEQ" }   // 114 bp
+ *     reverse-strand     { start: 420, end: 309, length: 111, type: "ANNOTATION", name: "REV" }
+ *
+ * The last one was captured from SeqViz 3.10.25 against a 504 bp construct
+ * carrying complement(310..420), and it is the one that matters: it has
+ * start > end exactly like the wrap above but means something else.
  */
 import assert from 'assert/strict';
 import { createRequire } from 'module';
