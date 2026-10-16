@@ -94,9 +94,11 @@
       (len ? '<div class="ln-pl-mapbox' + (p.topology === 'circular' ? '' : ' linear') + '" id="pl-map"></div>' +
         '<div class="ln-pl-mapsel" id="pl-map-selection">Drag across the map to select bases.</div>' : '') +
       '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>' +
-      featuresHtml(p) +
       primersHtml(p) +
-      seqPanelHtml(p);
+      seqPanelHtml(p) +
+      // The feature table is a reference list, read far less often than the
+      // map and the sequence, so it sits below both rather than between them.
+      featuresHtml(p);
     wire();
     mountMap(p);
   }
@@ -356,6 +358,7 @@
   function restore(stack, other) {
     var it = rec(), snap = stack.pop();
     if (!it || !snap) return;
+    dropEditBurst();
     other.push({ seq: it.seq || '', features: JSON.parse(JSON.stringify(it.features || [])), caret: plCaret });
     it.seq = snap.seq; it.features = snap.features;
     plCaret = clampPos(snap.caret); plSel = null; plNote = '';
@@ -371,17 +374,199 @@
     var len = edLen();
     pos = Math.max(0, Math.min(len, pos));
     del = Math.max(0, Math.min(len - pos, del));
+    beginEditBurst(it);
     pushUndo();
     var r = P.applyEdit(asPlasmid(it), { pos: pos, del: del, ins: ins });
     it.seq = r.seq; it.features = r.features;
     plNote = r.dropped.length ? r.dropped.length + ' feature(s) removed: ' + r.dropped.slice(0, 3).join(', ') : '';
     plCaret = pos + ins.length; plSel = null;
     markPlDirty(); scheduleSites(); renderSequenceOnly(); schedulePanels();
+    scheduleEditConfirm();
   }
   function edDeleteSelection() {
     if (!plSel) return false;
     edEdit(plSel.start, plSel.end - plSel.start, '');
     return true;
+  }
+
+  /* ---- an edit has to be approved before it stands ----
+     A key pressed by accident while the editor had focus used to change the
+     sequence with nothing said about it, and a plasmid is not something you
+     want quietly one base different from what you think it is.
+
+     Approval is asked once per burst of typing rather than once per
+     keystroke: pasting or typing a 300 base insert should not mean 300
+     dialogs. The edit is applied as it is typed, so the editor still behaves
+     like an editor, and the question comes once typing stops — which for the
+     single stray keypress this exists to catch is straight away. Cancel puts
+     the sequence and the features back exactly as they were before the burst
+     began, including the undo stack.
+
+     A click in the sequence ends a burst early, so two edits in different
+     places are never described as one edit spanning everything between. */
+  var plEditBurst = null, plEditTimer = null, plEditPending = null;
+  var EDIT_SETTLE_MS = 700;
+
+  function beginEditBurst(it) {
+    if (plEditBurst) return;
+    plEditBurst = { seq: P.clean(it.seq || ''),
+      features: JSON.parse(JSON.stringify(it.features || [])),
+      caret: plCaret, undoDepth: plUndo.length };
+  }
+  function scheduleEditConfirm() {
+    clearTimeout(plEditTimer);
+    plEditTimer = setTimeout(askEditConfirm, EDIT_SETTLE_MS);
+  }
+  function flushEditConfirm() {
+    if (!plEditBurst) return;
+    clearTimeout(plEditTimer);
+    askEditConfirm();
+  }
+  // Undo and redo do not go through edEdit, so a burst waiting to be asked
+  // about would describe a sequence that no longer exists.
+  function dropEditBurst() {
+    clearTimeout(plEditTimer);
+    plEditBurst = null;
+  }
+
+  /* What actually changed, whatever order the keystrokes arrived in: the
+     bases both versions share at each end are not part of the edit. */
+  function diffSeq(before, after) {
+    var max = Math.min(before.length, after.length), a = 0, b = 0;
+    while (a < max && before.charAt(a) === after.charAt(a)) a++;
+    while (b < max - a && before.charAt(before.length - 1 - b) === after.charAt(after.length - 1 - b)) b++;
+    return { at: a, removed: before.slice(a, before.length - b), inserted: after.slice(a, after.length - b) };
+  }
+  function shortBases(x) {
+    return x.length > 60 ? x.slice(0, 30) + '…' + x.slice(-30) : x;
+  }
+  function editHeadline(d) {
+    var at = d.at + 1;
+    if (!d.removed.length) return 'Insert ' + d.inserted.length + ' base' + (d.inserted.length === 1 ? '' : 's') + ' at ' + at;
+    if (!d.inserted.length) return 'Delete ' + d.removed.length + ' base' + (d.removed.length === 1 ? '' : 's') + ' at ' + at;
+    return 'Replace ' + d.removed.length + ' base' + (d.removed.length === 1 ? '' : 's') +
+      ' at ' + at + ' with ' + d.inserted.length;
+  }
+  function askEditConfirm() {
+    var it = rec(), burst = plEditBurst;
+    if (!it || !burst) return;
+    var now = P.clean(it.seq || '');
+    var d = diffSeq(burst.seq, now);
+    // Typed and taken back again before the question was asked.
+    if (!d.removed.length && !d.inserted.length) { dropEditBurst(); return; }
+    plEditPending = { burst: burst, diff: d };
+    plEditBurst = null;
+    document.getElementById('ln-modal-content').innerHTML =
+      '<h3>Approve this change to the sequence?</h3>' +
+      '<p class="ln-bulk-intro">' + esc(editHeadline(d)) + '. The plasmid is ' +
+      burst.seq.length.toLocaleString() + ' bp before and ' + now.length.toLocaleString() + ' bp after.</p>' +
+      (d.removed.length ? '<div class="ln-form-row"><label>Bases removed</label>' +
+        '<code class="pl-seq-out">' + esc(shortBases(d.removed)) + '</code></div>' : '') +
+      (d.inserted.length ? '<div class="ln-form-row"><label>Bases inserted</label>' +
+        '<code class="pl-seq-out">' + esc(shortBases(d.inserted)) + '</code></div>' : '') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="plEditCancel()">Cancel the edit</button>' +
+      '<button class="ln-modal-save" onclick="plEditApprove()">Approve edit</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plEditCancel() {
+    var it = rec(), pend = plEditPending;
+    plEditPending = null;
+    closeModal();
+    if (!it || !pend) return;
+    it.seq = pend.burst.seq;
+    it.features = pend.burst.features;
+    plUndo.length = pend.burst.undoDepth;      // the burst's own steps go with it
+    plRedo.length = 0;
+    plCaret = clampPos(pend.burst.caret); plSel = null; plNote = 'Edit cancelled.';
+    markPlDirty(); recomputeSites(); renderPlasmid();
+  }
+  function plEditApprove() {
+    var it = rec(), pend = plEditPending;
+    plEditPending = null;
+    if (!it || !pend) { closeModal(); return; }
+    var outcomes = featureOutcomes(pend.burst.features, it.features || [],
+      pend.burst.seq.length, P.clean(it.seq || '').length);
+    if (outcomes.length) { askFeatureFix(outcomes); return; }
+    closeModal();
+  }
+
+  /* ---- features the edit landed on ----
+     applyEdit has already moved every feature and dropped the ones that lost
+     all their bases. What it cannot decide is whether a feature that is now
+     a different length is still the same thing: cutting 60 bases out of a
+     CDS leaves something that is no longer that CDS, and the name should
+     probably say so.
+
+     Pairing up before and after by walking both lists in order: applyEdit
+     keeps the order and only ever drops, so a mismatch means the feature at
+     that point is gone. */
+  function featureOutcomes(before, after, lenBefore, lenAfter) {
+    var out = [], j = 0;
+    (before || []).forEach(function (f) {
+      var g = (after || [])[j];
+      if (g && g.name === f.name && g.type === f.type) {
+        var lb = P.featureLen(f, lenBefore), la = P.featureLen(g, lenAfter);
+        if (la !== lb) out.push({ index: j, name: f.name, type: f.type, before: lb, after: la, gone: false });
+        j++;
+      } else {
+        out.push({ index: -1, name: f.name, type: f.type, before: P.featureLen(f, lenBefore), after: 0, gone: true });
+      }
+    });
+    return out;
+  }
+  var plFeatureFixes = [];
+  function askFeatureFix(outcomes) {
+    plFeatureFixes = outcomes;
+    var changed = outcomes.filter(function (o) { return !o.gone; });
+    var gone = outcomes.filter(function (o) { return o.gone; });
+    document.getElementById('ln-modal-content').innerHTML =
+      '<h3>' + (changed.length ? 'These features changed length' : 'Features removed') + '</h3>' +
+      '<p class="ln-bulk-intro">The edit went through. ' +
+      (changed.length ? 'Each of these covered a stretch the edit touched, so it is no longer what it was. Say what should happen to it.' : '') +
+      '</p>' +
+      (gone.length ? '<div class="ln-bulk-note">Lost every base and ' +
+        (gone.length === 1 ? 'was' : 'were') + ' removed: ' + esc(gone.map(function (o) { return o.name; }).join(', ')) + '</div>' : '') +
+      changed.map(function (o, n) {
+        var grew = o.after > o.before;
+        return '<div class="pl-ff"><div class="pl-ff-head"><strong>' + esc(o.name) + '</strong> ' +
+          '<span class="hint">' + esc(o.type) + ' · ' + o.before + ' bp → ' + o.after + ' bp (' +
+          (grew ? '+' : '−') + Math.abs(o.after - o.before) + ')</span></div>' +
+          '<label><input type="radio" name="ff' + n + '" value="keep" checked onchange="plFeatureFixMode(' + n + ')"> Keep it as it is</label>' +
+          '<label><input type="radio" name="ff' + n + '" value="rename" onchange="plFeatureFixMode(' + n + ')"> Give it a new name</label>' +
+          '<input id="ff-name-' + n + '" class="pl-ff-name" value="' + esc(o.name) + '" disabled>' +
+          '<label><input type="radio" name="ff' + n + '" value="delete" onchange="plFeatureFixMode(' + n + ')"> Delete the feature</label></div>';
+      }).join('') +
+      '<div class="ln-modal-actions"><button class="ln-modal-save" onclick="plFeatureFixApply()">Done</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  // The name box only matters when renaming was chosen.
+  function plFeatureFixMode(n) {
+    var picked = document.querySelector('input[name="ff' + n + '"]:checked');
+    var box = document.getElementById('ff-name-' + n);
+    if (!picked || !box) return;
+    box.disabled = picked.value !== 'rename';
+    if (!box.disabled) box.focus();
+  }
+  function plFeatureFixApply() {
+    var it = rec();
+    var fixes = plFeatureFixes;
+    plFeatureFixes = [];
+    closeModal();
+    if (!it || !fixes.length) return;
+    var remove = [];
+    fixes.forEach(function (o, n) {
+      if (o.gone) return;
+      var picked = document.querySelector('input[name="ff' + n + '"]:checked');
+      var choice = picked ? picked.value : 'keep';
+      if (choice === 'delete') { remove.push(o.index); return; }
+      if (choice !== 'rename') return;
+      var box = document.getElementById('ff-name-' + n);
+      var name = box && box.value.trim();
+      if (name && it.features[o.index]) it.features[o.index].name = name.slice(0, 200);
+    });
+    // Highest index first, so removing one does not shift the next.
+    remove.sort(function (a, b) { return b - a; }).forEach(function (i) { it.features.splice(i, 1); });
+    markPlDirty(); recomputeSites(); renderPlasmid();
   }
 
   // ---- drawing ----
@@ -609,6 +794,7 @@
   function edMouseDown(e) {
     var pos = posFromEvent(e);
     if (pos == null) return;
+    flushEditConfirm();
     e.preventDefault();
     document.getElementById('pl-ed').focus();
     plDragging = true;
@@ -816,10 +1002,59 @@
      Check it against your own supplier's sequence before ordering. */
   var SGRNA_SCAFFOLD = 'GTTTTAGAGCTAGAAATAGCAAGTTAAAATAAGGCTAGTCCGTTATCAACTTGAAAAAGTGGCACCGAGTCGGTGC';
   var plGuides = null, plGuideOpts = { pam: 'SpCas9 (NGG)', region: 'all' };
+  /* Which guides are ticked, held by protospacer rather than by row number:
+     changing the PAM or the region redraws the list from scratch, and a row
+     number would then point at a different guide. */
+  var plGuidePicked = [];
   function openGuides() {
     var it = rec(); if (!it) return;
     if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    plGuidePicked = [];
     plGuideHtml();
+  }
+  function plGuideKey(gd) { return gd.strand + ':' + gd.start + ':' + gd.spacer; }
+  function plGuidePick(key, on) {
+    var at = plGuidePicked.indexOf(key);
+    if (on && at < 0) plGuidePicked.push(key);
+    else if (!on && at >= 0) plGuidePicked.splice(at, 1);
+    plGuideHead();
+  }
+  function plGuideAll(on) {
+    (plGuides || []).forEach(function (gd) { plGuidePick(plGuideKey(gd), on); });
+    Array.prototype.forEach.call(document.querySelectorAll('.pl-guide-pick'), function (c) { c.checked = on; });
+    plGuideHead();
+  }
+  // The header box and the button follow the ticks without redrawing the table.
+  function plGuideHead() {
+    var all = document.getElementById('pl-guide-all');
+    var n = plGuidePicked.length, total = (plGuides || []).length;
+    if (all) {
+      all.checked = total > 0 && n === total;
+      all.indeterminate = n > 0 && n < total;
+    }
+    var btn = document.getElementById('pl-guide-annotate');
+    if (btn) {
+      btn.disabled = !n;
+      btn.textContent = n ? 'Annotate ' + n + ' selected' : 'Annotate selected';
+    }
+  }
+  /* Put every ticked guide on the plasmid in one go. Annotating them one at a
+     time was the only way before, which for a handful of guides meant
+     reopening this panel for each one. */
+  function plGuideAnnotatePicked() {
+    var it = rec(); if (!it || !plGuidePicked.length) return;
+    var len = P.clean(it.seq).length, added = [];
+    (plGuides || []).forEach(function (gd) {
+      if (plGuidePicked.indexOf(plGuideKey(gd)) < 0) return;
+      var f = P.normFeature({ name: 'gRNA ' + gd.spacer.slice(0, 8) + '…', type: 'gRNA',
+        start: gd.start, end: gd.end, strand: gd.strand,
+        note: 'PAM ' + gd.pam + ', cuts at ' + (gd.cutAt + 1) }, len);
+      if (f) added.push(f);
+    });
+    if (!added.length) return;
+    it.features = (it.features || []).concat(added);
+    plGuidePicked = [];
+    closeModal(); markPlDirty(); renderPlasmid();
   }
   function plGuideHtml() {
     var it = rec(); if (!it) return;
@@ -838,9 +1073,13 @@
         '</select></div></div>' +
       '<p class="ln-bulk-intro">Off-targets counts how often the same protospacer appears elsewhere <strong>in this plasmid</strong>. It says nothing about the genome — check that separately.</p>' +
       (plGuides.length
-        ? '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr><th>Protospacer</th><th>PAM</th><th>Cuts at</th><th>Strand</th><th>GC</th><th>Repeats</th><th></th></tr></thead><tbody>' +
+        ? '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr>' +
+          '<th><input type="checkbox" id="pl-guide-all" title="Select every guide listed" onchange="plGuideAll(this.checked)"></th>' +
+          '<th>Protospacer</th><th>PAM</th><th>Cuts at</th><th>Strand</th><th>GC</th><th>Repeats</th><th></th></tr></thead><tbody>' +
           plGuides.map(function (gd, i) {
-            return '<tr><td><code>' + esc(gd.spacer) + '</code></td><td><code>' + esc(gd.pam) + '</code></td>' +
+            return '<tr><td><input type="checkbox" class="pl-guide-pick" onchange="plGuidePick(\'' + plGuideKey(gd) + '\', this.checked)"' +
+              (plGuidePicked.indexOf(plGuideKey(gd)) >= 0 ? ' checked' : '') + '></td>' +
+              '<td><code>' + esc(gd.spacer) + '</code></td><td><code>' + esc(gd.pam) + '</code></td>' +
               '<td class="ln-nowrap">' + (gd.cutAt + 1) + '</td><td>' + (gd.strand === -1 ? '←' : '→') + '</td>' +
               '<td class="ln-nowrap">' + gd.gc.toFixed(0) + '%</td>' +
               '<td>' + (gd.offTargets ? '<span class="warn">' + gd.offTargets + '</span>' : '0') + '</td>' +
@@ -848,8 +1087,11 @@
               '<button class="ln-icon-btn" onclick="plPegModal(' + i + ')">pegRNA</button></td></tr>';
           }).join('') + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No guide with that PAM here.</div>') +
-      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
+      '<div class="ln-modal-actions">' +
+      '<button class="ln-add-btn ghost" id="pl-guide-annotate" onclick="plGuideAnnotatePicked()" disabled>Annotate selected</button>' +
+      '<button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
     document.getElementById('ln-modal-bg').classList.add('open');
+    plGuideHead();
   }
   function plGuideSet() {
     plGuideOpts.pam = document.getElementById('pl-pam').value;
@@ -930,12 +1172,57 @@
   }
 
   // ---------- choosing enzymes ----------
-  var plEnzFilter = 'cut', plEnzSearch = '';
+  /* What is ticked lives here rather than in the checkboxes themselves. The
+     table is redrawn whenever the filter or the search changes, which would
+     otherwise throw away ticks the moment somebody narrowed the list — and
+     "tick all" would then mean "tick all of the ones I can see right now and
+     silently drop the rest". */
+  var plEnzFilter = 'cut', plEnzSearch = '', plEnzPicked = [];
   function openEnzymePanel() {
     var it = rec(); if (!it) return;
     if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    plEnzPicked = plOpts.enzymeNames.slice();
     plEnzHtml();
     document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plEnzPick(name, on) {
+    var at = plEnzPicked.indexOf(name);
+    if (on && at < 0) plEnzPicked.push(name);
+    else if (!on && at >= 0) plEnzPicked.splice(at, 1);
+    plEnzHead();
+  }
+  /* Tick or untick everything the filter and the search are currently
+     showing. Enzymes that cut nothing cannot be marked, so they are left
+     alone, and anything hidden keeps whatever it had. */
+  function plEnzAll(on) {
+    plEnzListed().forEach(function (e) { if (e.count) plEnzPick(e.name, on); });
+    plEnzHtml();
+  }
+  // Keep the header box in step with the rows without redrawing the table.
+  function plEnzHead() {
+    var box = document.getElementById('pl-enz-all');
+    if (!box) return;
+    var pickable = plEnzListed().filter(function (e) { return e.count; });
+    var on = pickable.filter(function (e) { return plEnzPicked.indexOf(e.name) >= 0; }).length;
+    box.checked = pickable.length > 0 && on === pickable.length;
+    box.indeterminate = on > 0 && on < pickable.length;
+    var n = document.getElementById('pl-enz-count');
+    if (n) n.textContent = plEnzPicked.length ? plEnzPicked.length + ' ticked' : 'none ticked';
+  }
+  // The enzymes the filter and the search currently show, which is what
+  // "tick all" acts on and what the header box reports against.
+  function plEnzListed() {
+    var it = rec(); if (!it) return [];
+    var q = plEnzSearch.trim().toLowerCase();
+    return P.enzymeSummary(asPlasmid(it)).filter(function (e) {
+      if (q && e.name.toLowerCase().indexOf(q) < 0 && e.site.toLowerCase().indexOf(q) < 0) return false;
+      if (plEnzFilter === 'none') return e.count === 0;
+      if (plEnzFilter === 'one') return e.count === 1;
+      if (plEnzFilter === 'two') return e.count === 2;
+      if (plEnzFilter === 'many') return e.count >= 3;
+      if (plEnzFilter === 'cut') return e.count > 0;
+      return true;
+    });
   }
   function plEnzHtml() {
     var it = rec(); if (!it) return;
@@ -945,16 +1232,7 @@
       if (!e.count) groups.none++; else if (e.count === 1) groups.one++;
       else if (e.count === 2) groups.two++; else groups.many++;
     });
-    var q = plEnzSearch.trim().toLowerCase();
-    var rows = sum.filter(function (e) {
-      if (q && e.name.toLowerCase().indexOf(q) < 0 && e.site.toLowerCase().indexOf(q) < 0) return false;
-      if (plEnzFilter === 'none') return e.count === 0;
-      if (plEnzFilter === 'one') return e.count === 1;
-      if (plEnzFilter === 'two') return e.count === 2;
-      if (plEnzFilter === 'many') return e.count >= 3;
-      if (plEnzFilter === 'cut') return e.count > 0;
-      return true;
-    });
+    var rows = plEnzListed();
     function tab(key, label, n) {
       return '<button type="button" class="ln-icon-btn' + (plEnzFilter === key ? ' on' : '') +
         '" onclick="plEnzSet(\'' + key + '\')">' + label + ' <span>' + n + '</span></button>';
@@ -968,18 +1246,23 @@
         tab('two', 'Cuts twice', groups.two) + tab('many', 'Three or more', groups.many) + tab('all', 'Every enzyme', sum.length) +
       '</div>' +
       '<input class="ln-search sm" id="pl-enz-search" placeholder="🔍 Enzyme or site" value="' + esc(plEnzSearch) + '" oninput="plEnzSearchSet(this.value)" style="margin:.6rem 0;width:100%;">' +
-      '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr><th></th><th>Enzyme</th><th>Site</th><th>Cuts</th><th>Where</th><th>End</th></tr></thead><tbody>' +
+      '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr>' +
+      '<th><input type="checkbox" id="pl-enz-all" title="Tick every enzyme listed" onchange="plEnzAll(this.checked)"></th>' +
+      '<th>Enzyme</th><th>Site</th><th>Cuts</th><th>Where</th><th>End</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (e) {
         return '<tr><td><input type="checkbox" class="pl-enz-pick" value="' + esc(e.name) + '"' +
-            (plOpts.enzymeNames.indexOf(e.name) >= 0 ? ' checked' : '') + (e.count ? '' : ' disabled') + '></td>' +
+            ' onchange="plEnzPick(this.value, this.checked)"' +
+            (plEnzPicked.indexOf(e.name) >= 0 ? ' checked' : '') + (e.count ? '' : ' disabled') + '></td>' +
           '<td>' + esc(e.name) + '</td><td><code>' + esc(e.site) + '</code></td>' +
           '<td class="ln-nowrap">' + e.count + '</td>' +
           '<td class="ln-nowrap">' + (e.cuts.length ? esc(e.cuts.slice(0, 6).join(', ')) + (e.cuts.length > 6 ? '…' : '') : '—') + '</td>' +
           '<td>' + (e.blunt ? 'blunt' : 'sticky') + '</td></tr>';
       }).join('') : '<tr><td colspan="6" class="ln-empty">Nothing matches.</td></tr>') +
       '</tbody></table></div>' +
-      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
+      '<div class="ln-modal-actions"><span class="hint" id="pl-enz-count" style="margin-right:auto;"></span>' +
+      '<button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
       '<button class="ln-modal-save" onclick="plEnzApply()">Mark the ticked ones</button></div>';
+    plEnzHead();
   }
   function plEnzSet(k) { plEnzFilter = k; plEnzHtml(); }
   function plEnzSearchSet(v) {
@@ -989,8 +1272,9 @@
     if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   }
   function plEnzApply() {
-    plOpts.enzymeNames = Array.prototype.filter.call(document.querySelectorAll('.pl-enz-pick'), function (c) { return c.checked; })
-      .map(function (c) { return c.value; });
+    // From what is ticked, not from what is on screen: a filtered-out row is
+    // still ticked, and reading the DOM would quietly drop it.
+    plOpts.enzymeNames = plEnzPicked.slice();
     plOpts.enzymes = plOpts.enzymeNames.length ? 'custom' : 'unique';
     closeModal(); renderSequenceOnly();
   }
@@ -1183,26 +1467,100 @@
       (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
   }
+  /* ---- the primers the lab has written down ----
+     They live in three places. The Primers page is the primer generator
+     running in an iframe from this same origin, so the two lists it keeps —
+     the ordinary primers and the pairs that clone a guide — are readable
+     from here; the inventory table is the older home and may still hold
+     some. A gRNA record is one pair, so it is listed as the two primers you
+     would actually order.
+
+     Those two lists are localStorage, so they are per-browser: a primer
+     entered on somebody else's machine will not be here. The search says so
+     rather than quietly showing a short list. */
+  function plLsList(key) {
+    try {
+      var raw = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) { return []; }
+  }
+  function plWhere(r) {
+    return [r.freezer, r.shelf, r.box].filter(Boolean).join(' · ');
+  }
+  function labPrimers() {
+    var out = [];
+    plLsList('regPrimers').forEach(function (r) {
+      if (!r || !r.sequence) return;
+      out.push({ name: r.name || ('PR' + (r.number || '')), seq: P.clean(r.sequence),
+        kind: 'primer', note: r.description || '', where: plWhere(r) });
+    });
+    plLsList('grnaPrimers').forEach(function (r) {
+      if (!r) return;
+      var what = r.spacerSeq ? 'spacer ' + r.spacerSeq : '';
+      var note = [r.description, what].filter(Boolean).join(' · ');
+      if (r.forwardPrimer) out.push({ name: r.forwardName || 'gRNA forward', seq: P.clean(r.forwardPrimer),
+        kind: 'gRNA cloning', note: note, where: plWhere(r) });
+      if (r.reversePrimer) out.push({ name: r.reverseName || 'gRNA reverse', seq: P.clean(r.reversePrimer),
+        kind: 'gRNA cloning', note: note, where: plWhere(r) });
+    });
+    (getInventory().primers || []).forEach(function (r) {
+      if (!r || !r.sequence) return;
+      out.push({ name: r.name || 'primer', seq: P.clean(r.sequence),
+        kind: 'inventory', note: r.application || '', where: r.storage || '' });
+    });
+    return out.filter(function (x) { return x.seq.length; });
+  }
+  var plPrimerHits = [];
+  function plPrimerRows(q) {
+    var all = labPrimers();
+    q = (q || '').trim().toLowerCase();
+    plPrimerHits = !q ? all : all.filter(function (x) {
+      return (x.name + ' ' + x.seq + ' ' + x.note + ' ' + x.kind).toLowerCase().indexOf(q) >= 0;
+    });
+    if (!all.length) {
+      return '<div class="ln-empty" style="padding:.8rem 0;">No primers recorded yet. Add them on the Primers page, ' +
+        'or type one in above.</div>';
+    }
+    if (!plPrimerHits.length) return '<div class="ln-empty" style="padding:.8rem 0;">Nothing matches “' + esc(q) + '”.</div>';
+    return '<div style="max-height:32vh;overflow:auto;"><table class="ln-table"><tbody>' +
+      plPrimerHits.slice(0, 200).map(function (x, i) {
+        return '<tr><td><strong>' + esc(x.name) + '</strong>' +
+          '<span class="pl-primer-kind">' + esc(x.kind) + '</span>' +
+          (x.note ? '<div class="hint">' + esc(x.note) + '</div>' : '') + '</td>' +
+          '<td><code>' + esc(x.seq.length > 42 ? x.seq.slice(0, 42) + '…' : x.seq) + '</code></td>' +
+          '<td class="ln-nowrap">' + x.seq.length + ' nt</td>' +
+          '<td class="ln-nowrap">' + (x.seq.length >= 14 ? P.tm(x.seq).toFixed(1) + ' °C' : '—') + '</td>' +
+          '<td class="ln-nowrap hint">' + esc(x.where) + '</td>' +
+          '<td class="ln-nowrap"><button class="ln-icon-btn" onclick="plPrimerUse(' + i + ')">Use</button></td></tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      (plPrimerHits.length > 200 ? '<div class="hint">Showing the first 200 of ' + plPrimerHits.length + '.</div>' : '');
+  }
   function openPrimerModal() {
-    var inv = (getInventory().primers || []).filter(function (x) { return x.sequence; });
     document.getElementById('ln-modal-content').innerHTML =
       '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Attach a primer</h3>' +
       '<div class="ln-form-row"><label>Name</label><input id="pm-name" placeholder="e.g. HK022_attB_F"></div>' +
       '<div class="ln-form-row"><label>Sequence (5′→3′)</label><input id="pm-seq" placeholder="ATGC…">' +
       '<div class="hint">Bases that do not match the template at the 5′ end are kept as a tail, which is normal for adding a site or an overlap.</div></div>' +
-      (inv.length ? '<div class="ln-form-row"><label>Or take one from the primer inventory</label><select id="pm-pick" onchange="plPrimerPick(this.value)">' +
-        '<option value="">—</option>' + inv.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name || 'primer') + ' · ' + esc(String(x.sequence).slice(0, 30)) + '</option>'; }).join('') +
-        '</select></div>' : '') +
+      '<div class="ln-form-row"><label>Or search the lab’s primers</label>' +
+      '<input class="ln-search sm" id="pm-search" placeholder="🔍 Name, sequence or description" oninput="plPrimerSearch(this.value)" autocomplete="off">' +
+      '<div class="hint">Ordinary primers and gRNA cloning pairs, from the Primers page. That list is kept in this browser, so primers added on another machine will not appear here.</div></div>' +
+      '<div id="pm-results">' + plPrimerRows('') + '</div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" onclick="plAddPrimer()">Attach</button></div>';
     document.getElementById('ln-modal-bg').classList.add('open');
   }
-  function plPrimerPick(i) {
-    var inv = (getInventory().primers || []).filter(function (x) { return x.sequence; });
-    var pick = inv[+i];
+  /* Only the result list is redrawn, so the search box keeps its focus and
+     its caret while someone is still typing into it. */
+  function plPrimerSearch(v) {
+    var out = document.getElementById('pm-results');
+    if (out) out.innerHTML = plPrimerRows(v);
+  }
+  function plPrimerUse(i) {
+    var pick = plPrimerHits[+i];
     if (!pick) return;
     document.getElementById('pm-name').value = pick.name || '';
-    document.getElementById('pm-seq').value = P.clean(pick.sequence);
+    document.getElementById('pm-seq').value = pick.seq;
   }
   function plAddPrimer() {
     var it = rec(); if (!it) return;
@@ -1682,6 +2040,9 @@
   window.openGuides = openGuides;
   window.plGuideSet = plGuideSet;
   window.plAnnotateGuide = plAnnotateGuide;
+  window.plGuidePick = plGuidePick;
+  window.plGuideAll = plGuideAll;
+  window.plGuideAnnotatePicked = plGuideAnnotatePicked;
   window.plPegModal = plPegModal;
   window.plPegRun = plPegRun;
   window.plAnnotatePeg = plAnnotatePeg;
@@ -1690,6 +2051,8 @@
   window.plEnzSet = plEnzSet;
   window.plEnzSearchSet = plEnzSearchSet;
   window.plEnzApply = plEnzApply;
+  window.plEnzPick = plEnzPick;
+  window.plEnzAll = plEnzAll;
   window.openClone = openClone;
   window.plCloneEnz = plCloneEnz;
   window.plCloneSrc = plCloneSrc;
@@ -1701,7 +2064,8 @@
   window.plCloneRun = plCloneRun;
   window.plCloneCreate = plCloneCreate;
   window.openPrimerModal = openPrimerModal;
-  window.plPrimerPick = plPrimerPick;
+  window.plPrimerSearch = plPrimerSearch;
+  window.plPrimerUse = plPrimerUse;
   window.plAddPrimer = plAddPrimer;
   window.plDeletePrimer = plDeletePrimer;
   window.plAnnotatePrimer = plAnnotatePrimer;
@@ -1733,4 +2097,8 @@
   window.plExport = plExport;
   window.exportPlasmidsCSV = exportPlasmidsCSV;
   window.plCopySelection = plCopySelection;
+  window.plEditApprove = plEditApprove;
+  window.plEditCancel = plEditCancel;
+  window.plFeatureFixMode = plFeatureFixMode;
+  window.plFeatureFixApply = plFeatureFixApply;
 })();
