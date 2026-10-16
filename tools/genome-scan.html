@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GenomeScan — Consensus Sequence Finder</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<!-- SeqViz: Benchling/SnapGene-style DNA sequence viewer -->
-<script src="https://unpkg.com/seqviz@3.10.22/dist/seqviz.min.js"></script>
+<!-- SeqViz: Benchling/SnapGene-style DNA sequence viewer. Vendored rather
+     than fetched from unpkg, so the tool works offline, cannot change under
+     us, and is the same copy the notebook's plasmid maps use. -->
+<script src="../vendor/seqviz.min.js" integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"></script>
 <style>
   :root {
     --bg:#0a0e14;--surface:#111720;--surface2:#161d28;--border:#1e2d3d;
