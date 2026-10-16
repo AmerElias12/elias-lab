@@ -13,12 +13,22 @@
 .ln-pl-stat em{font-style:normal;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#7a877f;}
 .ln-pl-stat.warn{background:#fdf6ea;border-color:rgba(168,106,18,.3);color:#7a4e0d;font-family:var(--sans);}
 
-/* ---- maps beside the details, then the linear map across the page ---- */
+/* ---- the map across the page, then the details beneath it ----
+   SeqViz puts the circular and linear views side by side inside one box, so
+   the box gets the full width rather than a column beside the details. It
+   fills whatever box it is given and scrolls inside it, so the box needs a
+   height of its own; left to size itself it would collapse to nothing and no
+   map would appear at all. */
 .ln-pl-maps{display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:1.6rem;align-items:start;margin-bottom:1.2rem;}
-.ln-pl-circ{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:.6rem;}
 .ln-pl-meta-wrap.wide{grid-column:1/-1;}
-.ln-pl-linear{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:1rem .6rem .4rem;margin-bottom:1.6rem;overflow-x:auto;}
+.ln-pl-mapbox{background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:.6rem;height:540px;margin-bottom:.6rem;}
+.ln-pl-mapbox.linear{height:340px;}   /* no circle to make room for */
 .ln-pl-map{display:block;max-width:100%;height:auto;}
+/* what the last drag or click on a map covered */
+.ln-pl-mapsel{font-family:var(--mono,ui-monospace,monospace);font-size:12px;line-height:1.5;white-space:pre-wrap;
+  word-break:break-all;color:#4a5a54;background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:12px;
+  padding:.5rem .7rem;margin-bottom:1.6rem;min-height:2.4em;}
+.ln-pl-maperr{font-family:var(--sans);font-size:13px;color:#7a2f2f;padding:1rem;}
 
 /* map parts (the SVG is written by js/plasmid.js) */
 .pl-axis,.pl-ring{fill:none;stroke:#16241f;stroke-opacity:.35;stroke-width:1.5;}
@@ -87,8 +97,12 @@
 /* ---- printing a plasmid ---- */
 @media print{
   .ln-pl-maps{display:block;}
-  .ln-pl-circ,.ln-pl-linear,.ln-pl-panel{border:none;background:#fff;padding:0;break-inside:avoid;margin-bottom:10px;}
-  .ln-pl-circ{max-width:120mm;margin:0 auto;}
+  .ln-pl-mapbox,.ln-pl-panel{border:none;background:#fff;padding:0;break-inside:avoid;margin-bottom:10px;}
+  /* SeqViz only draws the rows that are on screen, so the map prints as
+     whatever was visible. The sequence panel below is the full record. */
+  .ln-pl-mapbox{height:150mm;}
+  .ln-pl-mapbox.linear{height:90mm;}
+  .ln-pl-mapsel{display:none;}
   .ln-pl-meta-wrap{margin-top:10px;}
   .ln-pl-meta input,.ln-pl-meta select,.ln-pl-meta textarea{border:none !important;padding:0 !important;
     background:none;appearance:none;-webkit-appearance:none;font-size:12px;}

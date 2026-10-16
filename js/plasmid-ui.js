@@ -4,10 +4,14 @@
    One plasmid as a full page at #plasmid/<id>: where it is kept and
    how it was made, a circular and a linear map, the sequence, and
    the feature list. The maths and file reading live in js/plasmid.js.
+
+   The map is drawn by SeqViz through js/vector-viewer.js, and files are read
+   by js/plasmid-import.js. Both are loaded before this file.
    ============================================================ */
 (function () {
   'use strict';
   var P = window.Plasmid;
+  var VV = window.VectorViewer;
 
   var plId = null;            // the plasmid being shown
   var plDraft = null;         // a working copy: edits only reach the inventory on Save
@@ -87,14 +91,74 @@
         '</div></div>' +
       '<h2 class="ln-pl-name">' + esc(it.name || 'Untitled plasmid') + '</h2>' +
       '<div class="ln-pl-stats">' + statsHtml(p, it) + '</div>' +
-      (len ? '<div class="ln-pl-maps"><div class="ln-pl-circ">' + P.circularMapSvg(p, { size: 440 }) + '</div>' +
-        '<div class="ln-pl-meta-wrap">' + metaHtml(it) + '</div></div>' +
-        '<div class="ln-pl-linear">' + P.linearMapSvg(p, { width: 900 }) + '</div>'
-        : '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>') +
+      (len ? '<div class="ln-pl-mapbox' + (p.topology === 'circular' ? '' : ' linear') + '" id="pl-map"></div>' +
+        '<div class="ln-pl-mapsel" id="pl-map-selection">Drag across the map to select bases.</div>' : '') +
+      '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>' +
       featuresHtml(p) +
       primersHtml(p) +
       seqPanelHtml(p);
     wire();
+    mountMap(p);
+  }
+
+  // ---------- the map ----------
+  /* SeqViz draws it, through js/vector-viewer.js. It renders SVG rather than
+     a bitmap, so every base and annotation stays a DOM node and a drag can
+     report the bases it covers rather than a rectangle of pixels. That is
+     what feeds both the readout under the map and the sequence editor's own
+     selection.
+
+     One viewer, not two. SeqViz gives its event router a fixed element id, so
+     two Viewers on the same page collide over it and, when they mount in the
+     same tick, both end up drawing nothing. Its own 'both' mode puts the
+     circular and linear views side by side in one instance, which is also the
+     only way a selection shows up in both at once. A linear construct gets
+     the linear view alone: there is no circle to draw, and vector-viewer
+     refuses that view rather than drawing a misleading one. */
+  var plMap = null;
+
+  function unmountMap() {
+    if (plMap) { try { plMap.destroy(); } catch (e) {} }
+    plMap = null;
+  }
+  function mapPayload(p) {
+    return { name: p.name, seq: p.seq, topology: p.topology, features: p.features };
+  }
+  function mountMap(p) {
+    unmountMap();
+    var el = document.getElementById('pl-map');
+    if (!el || !p.seq.length || !VV) return;
+    try {
+      plMap = VV.createViewer(el, mapPayload(p), {
+        view: p.topology === 'circular' ? 'both' : 'linear', log: false, onSelect: onMapSelect });
+    } catch (e) {
+      el.innerHTML = '<div class="ln-pl-maperr">' + esc('The map could not be drawn: ' + e.message) + '</div>';
+    }
+  }
+  /* After an edit the sequence has changed but the page has not, so the map is
+     handed the new sequence instead of being torn down and rebuilt. When there
+     is no map there is nothing to refresh: a plasmid that started empty has no
+     map at all, and gains one the next time the whole page is drawn, which is
+     what it did before SeqViz as well. */
+  function refreshMap(p) {
+    if (!plMap) return;
+    try { plMap.update(mapPayload(p)); } catch (e) {}
+  }
+  /* SeqViz reports a selection as 0-based half-open coordinates, which is the
+     convention js/plasmid.js already uses, so nothing is translated on the
+     way in. The line under the map is written by vector-viewer, which knows
+     how to print a selection that runs across the origin; the editor's own
+     selection is a plain { start, end } and cannot hold one of those, so for
+     a wrapping selection it is left where it was. */
+  function onMapSelect(d) {
+    var line = document.getElementById('pl-map-selection');
+    if (line) line.textContent = VV.formatSelection(d);
+    if (!d.length || d.crossesOrigin) return;
+    var end = d.end === 0 ? edLen() : d.end;
+    if (end <= d.start) return;
+    plSel = { start: d.start, end: end };
+    plAnchor = d.start; plCaret = end; plNote = '';
+    paintSelection();
   }
 
   function statsHtml(p, it) {
@@ -273,10 +337,7 @@
       var p = asPlasmid(it);
       var stats = document.querySelector('.ln-pl-stats');
       if (stats) stats.innerHTML = statsHtml(p, it);
-      var circ = document.querySelector('.ln-pl-circ');
-      if (circ) circ.innerHTML = P.circularMapSvg(p, { size: 440 });
-      var lin = document.querySelector('.ln-pl-linear');
-      if (lin) lin.innerHTML = P.linearMapSvg(p, { width: 900 });
+      refreshMap(p);
       var feats = document.getElementById('pl-features');
       if (feats) feats.outerHTML = featuresHtml(p);
     }, 400);
@@ -1343,46 +1404,46 @@
   }
 
   // ---------- importing ----------
-  function readFile(file, asBinary) {
-    return new Promise(function (resolve, reject) {
-      var r = new FileReader();
-      r.onload = function () { resolve(r.result); };
-      r.onerror = function () { reject(new Error('Could not read ' + file.name)); };
-      if (asBinary) r.readAsArrayBuffer(file); else r.readAsText(file);
-    });
-  }
-  // SnapGene files are binary; everything else reads as text.
+  /* Reading the file and handing it to the parser is js/plasmid-import.js's
+     job: it decides from the extension whether to read text or bytes, and it
+     rejects with a reason rather than handing back a half-parsed result. The
+     one thing kept here is the retry for a SnapGene file that arrived without
+     its .dna extension, which happens often enough to be worth a second
+     read. */
   async function parseOne(file) {
-    var binary = /\.dna$/i.test(file.name);
-    var data = await readFile(file, binary);
-    var res = P.parseFile(file.name, binary ? new Uint8Array(data) : data);
-    if (!res.ok && !binary) {                      // a stray .dna without the extension
-      var buf = await readFile(file, true);
-      res = P.parseFile(file.name + '.dna', new Uint8Array(buf));
+    var Imp = window.PlasmidImport;
+    try {
+      return await Imp.readFile(file);
+    } catch (err) {
+      if (!Imp.isTextFormat(file.name)) throw err;
+      try {
+        return await Imp.readFile(new File([file], file.name + '.dna', { type: file.type }));
+      } catch (ignored) {
+        throw err;                   // the first complaint is the useful one
+      }
     }
-    return res;
+  }
+  /* One file onto the plasmid already open. Kept apart from the file picker
+     so the same path can be driven with a File from anywhere. */
+  async function importFileIntoThis(file) {
+    var it = rec(); if (!it || !file) return;
+    var res;
+    try { res = await parseOne(file); } catch (e) { alert(e.message); return; }
+    if (P.clean(it.seq || '').length &&
+      !confirm('Replace the sequence and features of this plasmid with ' + file.name + ' (' + res.plasmid.seq.length + ' bp, ' + res.plasmid.features.length + ' features)?')) return;
+    it.seq = res.plasmid.seq;
+    it.features = res.plasmid.features;
+    it.topology = res.plasmid.topology;
+    if (!it.name || /^untitled/i.test(it.name)) it.name = res.plasmid.name;
+    plCaret = 0; plSel = null; plUndo = []; plRedo = [];
+    recomputeSites();
+    markPlDirty(); renderPlasmid();
   }
   function plImportIntoThis() {
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.gb,.gbk,.genbank,.ape,.dna,.fa,.fasta,.fna,.fsa,.seq,.txt';
-    input.onchange = async function () {
-      var file = input.files && input.files[0];
-      if (!file) return;
-      var it = rec(); if (!it) return;
-      var res;
-      try { res = await parseOne(file); } catch (e) { alert(e.message); return; }
-      if (!res.ok) { alert(res.error); return; }
-      if (P.clean(it.seq || '').length &&
-        !confirm('Replace the sequence and features of this plasmid with ' + file.name + ' (' + res.plasmid.seq.length + ' bp, ' + res.plasmid.features.length + ' features)?')) return;
-      it.seq = res.plasmid.seq;
-      it.features = res.plasmid.features;
-      it.topology = res.plasmid.topology;
-      if (!it.name || /^untitled/i.test(it.name)) it.name = res.plasmid.name;
-      plCaret = 0; plSel = null; plUndo = []; plRedo = [];
-      recomputeSites();
-      markPlDirty(); renderPlasmid();
-    };
+    input.onchange = function () { importFileIntoThis(input.files && input.files[0]); };
     input.click();
   }
 
@@ -1409,8 +1470,7 @@
     var ok = [], bad = [];
     for (var i = 0; i < files.length; i++) {
       try {
-        var res = await parseOne(files[i]);
-        if (res.ok) ok.push({ file: files[i], res: res }); else bad.push(files[i].name + ' — ' + res.error);
+        ok.push({ file: files[i], res: await parseOne(files[i]) });
       } catch (e) { bad.push(files[i].name + ' — ' + e.message); }
     }
     plImport = ok;

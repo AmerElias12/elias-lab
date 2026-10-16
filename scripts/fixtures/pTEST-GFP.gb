@@ -1,0 +1,29 @@
+LOCUS       pTEST-GFP                480 bp ds-DNA     circular SYN 15-OCT-2026
+DEFINITION  A small circular test construct for the import path.
+ACCESSION   .
+KEYWORDS    .
+SOURCE      synthetic DNA construct
+FEATURES             Location/Qualifiers
+     source          1..480
+                     /organism="synthetic DNA construct"
+     CDS             1..240
+                     /label="EGFP"
+                     /product="enhanced green fluorescent protein"
+                     /ApEinfo_fwdcolor="#2f9e44"
+     promoter        250..300
+                     /label="CMV promoter"
+     CDS             complement(310..420)
+                     /label="AmpR"
+                     /note="ampicillin resistance marker"
+     misc_feature    join(460..480,1..20)
+                     /label="origin-spanning tag"
+ORIGIN
+        1 atgagcaaag gcgaagaact gtttaccggc gcacgaaact tgttggccca gtgtgaatcg
+       61 cttaagggtt aagtaagtgt gatgcatacg cctttacttg ctgtgtccac cccatcggac
+      121 tggcattttt attacactca gaaacagaac tcgggtaatt ttgacaggtc acgcagaggc
+      181 gcgccctcct gaagtgcgtg gacactcgct atgaatctct gatttaccca ctctgccaaa
+      241 ctccagcgcg gtcagttcca tcaccctaag taaccgaata atgcgttcgc tctattgact
+      301 acgacgcgct cattcccttg tcggagagtt atggaacaag gacgctgtct gagactagaa
+      361 gacagatagt gcacacgacc ggcgtcggag aaactctatt tgccgcctga caagtcaatg
+      421 cgatccgtag gggcagcgca gtatgccaag actataggca ctgtcgcatc acaaacgatt
+//

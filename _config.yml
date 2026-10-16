@@ -1,0 +1,16 @@
+# GitHub Pages publishes this repository straight from main, through Jekyll.
+# Jekyll's defaults are right for everything here — nothing has front matter,
+# so every file is copied as it is — except for one directory.
+#
+# backend/ is a FastAPI application with its own database and its own login.
+# It is not deployed, and the lab's notebook runs on Supabase instead. Left
+# in, Pages serves backend/static/index.html at /backend/static/ as a sign-in
+# form for an API that is not there: it looks like part of the lab's site,
+# takes an email and a password, and can only ever fail. Excluding it keeps
+# the application in the repository for local work and off the public site.
+#
+# vendor/ is deliberately NOT excluded. Jekyll's defaults exclude only
+# vendor/bundle, vendor/cache, vendor/gems and vendor/ruby, so the libraries
+# the notebook loads from vendor/ are published as before.
+exclude:
+  - backend

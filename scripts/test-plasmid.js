@@ -140,6 +140,15 @@ check('two segments touching both ends become one wrapped feature', function () 
 });
 check('a file that is not SnapGene is refused', function () {
   assert.equal(P.parseSnapGene(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])), null);
+  // Bytes that parse as a run of empty blocks used to read one byte past the
+  // end and throw RangeError, so a truncated or mis-named .dna file crashed
+  // the import instead of being refused. Refusing is the whole contract:
+  // parseFile tests the return value and never catches.
+  assert.equal(P.parseSnapGene(new Uint8Array(40).buffer), null);
+  assert.equal(P.parseSnapGene(new Uint8Array(40)), null);
+  var r = P.parseFile('fake.dna', new Uint8Array(40).buffer);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /SnapGene/);
 });
 
 console.log('Picking the format');
