@@ -227,13 +227,39 @@
   }
 
   /**
+   * SeqViz reports start > end for two situations that mean opposite things:
+   *
+   *     across the origin       { start: 480, end: 20,  length: 44  }   // 504 bp
+   *     reverse-strand feature  { start: 420, end: 309, length: 111 }
+   *
+   * Only `length` tells them apart: a wrap covers seqLen - start + end bases,
+   * a reverse-strand feature covers start - end, and it is simply reported
+   * 3' to 5'. Reading the second as the first is not a near miss — it returns
+   * the whole rest of the plasmid instead of the gene, and nearly every
+   * plasmid carries a resistance marker on the reverse strand.
+   *
+   * With no `length` to go on, start > end is taken as a wrap, which is what
+   * it means for a drag.
+   */
+  function orient(seq, sel) {
+    const start = Number(sel.start) || 0;
+    const end = Number(sel.end) || 0;
+    if (start <= end) return { start, end, reversed: false };
+    const reported = Number(sel.length);
+    const wrapped = seq.length - start + end;
+    if (Number.isFinite(reported) && reported !== wrapped && reported === start - end) {
+      return { start: end, end: start, reversed: true };
+    }
+    return { start, end, reversed: false };
+  }
+
+  /**
    * Everything worth showing about a selection: both coordinate conventions,
    * the bases, and the numbers somebody would otherwise work out by hand.
    */
   function describeSelection(seq, selection) {
     const sel = selection || {};
-    const start = Number(sel.start) || 0;
-    const end = Number(sel.end) || 0;
+    const { start, end, reversed } = orient(seq, sel);
     const bases = sliceSelection(seq, start, end);
     // end === 0 with a non-zero start is "runs to the end of the sequence",
     // not a wrap back to base 1: the slice stops at the end either way, and
@@ -254,6 +280,9 @@
       revComp: revComp(bases),
       gc: gcPercent(bases),
       crossesOrigin,
+      // the feature is annotated on the reverse strand; `bases` is still the
+      // forward strand, and `revComp` is the strand the feature is read on
+      reversed,
       // present when the click landed on a feature rather than bare sequence
       featureName: sel.name || '',
       kind: sel.type === 'ANNOTATION' ? 'feature'
@@ -267,7 +296,9 @@
     if (!d.length) return 'No selection';
     const where = d.crossesOrigin
       ? `${d.startDisplay}–${d.endDisplay} (crosses the origin)`
-      : `${d.startDisplay}–${d.endDisplay}`;
+      : d.reversed
+        ? `${d.startDisplay}–${d.endDisplay} (reverse strand)`
+        : `${d.startDisplay}–${d.endDisplay}`;
     const what = d.featureName ? `${d.featureName} · ` : '';
     const preview = d.bases.length > 120
       ? `${d.bases.slice(0, 60)}…${d.bases.slice(-60)}`
@@ -378,6 +409,7 @@
   return {
     normalizePayload,
     normalizeFeature,
+    orient,
     sliceSelection,
     describeSelection,
     formatSelection,

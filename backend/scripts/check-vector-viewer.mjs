@@ -159,6 +159,40 @@ check('a selection across the origin is the tail then the head', () => {
   assert.equal(SEQ.slice(104, 6), '', 'a plain slice would silently return nothing');
 });
 
+check('a reverse-strand feature is not mistaken for an origin wrap', () => {
+  // Captured from SeqViz: complement(310..420) on 504 bp. start > end, as a
+  // wrap would be, but `length` is start - end, not seqLen - start + end.
+  // Reading it as a wrap returned the 393 bases that are not the gene, and
+  // nearly every plasmid has its resistance marker on the reverse strand.
+  const long = SEQ.repeat(5).slice(0, 504);
+  const d = V.describeSelection(long, { start: 420, end: 309, length: 111, type: 'ANNOTATION', name: 'REV' });
+  assert.equal(d.crossesOrigin, false, 'it does not cross the origin');
+  assert.equal(d.reversed, true);
+  assert.equal(d.length, 111, 'the gene, not the 393 bases that are not the gene');
+  assert.equal(d.bases, long.slice(309, 420));
+  assert.equal(d.startDisplay, 310, 'read the way the GenBank file writes it');
+  assert.equal(d.endDisplay, 420);
+  assert.match(V.formatSelection(d), /reverse strand/);
+});
+
+check('a genuine wrap is still read as one, by its length', () => {
+  // Same shape, different length: 504 - 480 + 20 = 44 bases is a wrap.
+  const long = SEQ.repeat(5).slice(0, 504);
+  const d = V.describeSelection(long, { start: 480, end: 20, length: 44, type: 'ANNOTATION', name: 'WRAP' });
+  assert.equal(d.crossesOrigin, true);
+  assert.equal(d.reversed, false);
+  assert.equal(d.length, 44);
+  assert.equal(d.bases, long.slice(480) + long.slice(0, 20));
+});
+
+check('with no length reported, start > end still means a wrap', () => {
+  // Which is what it means for a drag, and what the earlier checks assume.
+  const d = V.describeSelection(SEQ, { start: 104, end: 6, type: 'SEQ' });
+  assert.equal(d.crossesOrigin, true);
+  assert.equal(d.reversed, false);
+  assert.deepEqual(V.orient(SEQ, { start: 104, end: 6 }), { start: 104, end: 6, reversed: false });
+});
+
 check('a selection that runs to the very end is not a wrap', () => {
   const d = V.describeSelection(SEQ, { start: 100, end: 0, type: 'SEQ' });
   assert.equal(d.bases, SEQ.slice(100));
