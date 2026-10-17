@@ -397,6 +397,71 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
   .ln-page-editor img{max-height:120mm;break-inside:avoid;}
 }
 @page wide{size:landscape;}
+/* ── Culture plates inside a notebook page ── */
+.ln-page-editor .ln-plate{margin:1rem 0;padding:.9rem 1rem;border:1px solid rgba(12,74,68,.25);
+  border-radius:12px;background:#f8fbf9;user-select:text;}
+.ln-plate-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;}
+.ln-plate-title{flex:1 1 12rem;min-width:0;font:inherit;font-family:var(--serif);font-size:16px;color:#0c4a44;
+  border:none;border-bottom:1px solid rgba(12,74,68,.2);background:none;padding:.15rem 0;}
+.ln-plate-title:focus{outline:none;border-bottom-color:#10b07e;}
+.ln-plate-fmt{display:flex;align-items:center;gap:.3rem;font-size:11.5px;font-weight:600;color:#5d6b63;}
+.ln-plate-count{font-size:11px;color:#7a877f;font-family:var(--mono);}
+.ln-plate-scroll{overflow-x:auto;}
+.ln-plate-tbl{border-collapse:separate;border-spacing:3px;}
+.ln-plate-tbl th{font-size:10.5px;font-family:var(--mono);color:#7a877f;font-weight:600;
+  text-align:center;padding:0 .2rem;}
+.ln-plate-tbl td{padding:0;}
+/* A well is a box you write in. They shrink as the plate gets denser, which
+   is the same trade-off the bench makes: a 96-well map is a glance, a 6-well
+   map is a sentence per well. */
+.ln-plate-tbl input{font:inherit;font-size:11px;width:5.2rem;height:2.4rem;padding:.2rem .3rem;
+  border:1px solid rgba(22,36,31,.18);border-radius:7px;background:#fff;text-align:center;}
+.ln-plate-tbl input:focus{outline:none;border-color:#10b07e;box-shadow:0 0 0 2px rgba(16,176,126,.15);}
+.ln-plate-tbl input:not(:placeholder-shown),.ln-plate-tbl input[value]:not([value=""]){background:#f3fbf7;}
+.ln-plate-48 input{width:3.6rem;height:2.1rem;font-size:10px;}
+.ln-plate-96 input{width:2.9rem;height:1.9rem;font-size:9.5px;padding:.1rem .15rem;}
+.ln-plate-1 input{width:14rem;height:3.4rem;font-size:13px;}
+
+/* ── A new day on the page ── */
+.ln-page-editor .ln-daymark{display:flex;align-items:center;gap:.8rem;margin:1.6rem 0 1rem;cursor:pointer;
+  user-select:none;}
+.ln-page-editor .ln-daymark::before,.ln-page-editor .ln-daymark::after{content:'';flex:1;height:1px;
+  background:rgba(12,74,68,.25);}
+.ln-page-editor .ln-daymark span{font-family:var(--serif);font-size:14px;font-weight:600;color:#0c4a44;
+  white-space:nowrap;}
+.ln-page-editor .ln-daymark:hover span{text-decoration:underline;}
+
+/* ── @-mentions ── */
+.ln-mention{display:inline;padding:.05rem .3rem;border-radius:5px;background:rgba(12,74,68,.1);
+  color:#0c4a44;font-weight:600;cursor:pointer;white-space:nowrap;}
+.ln-mention:hover{background:rgba(12,74,68,.2);}
+.ln-mention.gone{background:rgba(22,36,31,.08);color:#8a8a8a;text-decoration:line-through;cursor:not-allowed;}
+.ln-mention-pop{position:fixed;z-index:400;width:330px;max-height:280px;overflow:auto;background:#fff;
+  border:1px solid rgba(22,36,31,.15);border-radius:12px;box-shadow:0 12px 36px rgba(22,36,31,.18);padding:.3rem;}
+.ln-mention-opt{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;font:inherit;font-size:12.5px;
+  background:none;border:none;border-radius:8px;padding:.4rem .5rem;cursor:pointer;}
+.ln-mention-opt.on,.ln-mention-opt:hover{background:rgba(12,74,68,.08);}
+.ln-mention-ico{opacity:.6;flex:0 0 auto;}
+.ln-mention-main{display:flex;flex-direction:column;min-width:0;flex:1;}
+.ln-mention-label{font-weight:600;color:#16241f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ln-mention-meta{font-size:10.5px;color:#7a877f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ln-mention-group{font-size:10px;color:#7a877f;flex:0 0 auto;text-transform:uppercase;letter-spacing:.04em;}
+.ln-mention-empty{padding:.6rem;font-size:12px;color:#7a877f;}
+
+/* Entries that mention you, on the dashboard. */
+.ln-mentions-panel{margin:1.2rem 0 0;padding:.9rem 1rem;border:1px solid rgba(12,74,68,.2);
+  border-radius:14px;background:#f8fbf9;}
+.ln-mentions-head{font-size:12px;font-weight:700;color:#0c4a44;letter-spacing:.02em;margin-bottom:.5rem;}
+.ln-mentions-row{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;width:100%;
+  text-align:left;font:inherit;background:none;border:none;border-radius:8px;padding:.4rem .5rem;cursor:pointer;}
+.ln-mentions-row:hover{background:rgba(12,74,68,.07);}
+.ln-mentions-title{font-size:13.5px;font-weight:600;color:#16241f;}
+.ln-mentions-meta{font-size:11px;color:#7a877f;}
+
+/* The row an @-mention pointed at, so it can be found in a long table. */
+@keyframes ln-row-flash{0%,100%{background:transparent;}20%,70%{background:rgba(16,176,126,.22);}}
+.ln-row-flash{animation:ln-row-flash 2.2s ease;}
+
 /* ── Calculation tables inside a notebook page ── */
 .ln-calc-btn{font-weight:600;color:#0c4a44 !important;}
 .ln-calc-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.7rem;}
