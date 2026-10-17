@@ -1558,6 +1558,7 @@
     if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
     var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
     clone = {
+      picker: null,
       vec: { kind: 'this', id: it.id, tplId: it.id, fwd: '', rev: '', enz: [], pick: 0 },
       inserts: [{ kind: 'plasmid', id: others.length ? others[0].id : '', tplId: it.id,
         fwd: '', rev: '', enz: [], pick: 0, flip: false }]
@@ -1659,11 +1660,9 @@
   function cloneDigests() {
     return { vec: slotDigest(clone.vec), ins: clone.inserts.map(slotDigest) };
   }
-  /* Every primer the lab knows, offered as a datalist so the same box both
-     accepts a pasted oligo and completes one already on file. A cloning
-     primer is usually newly designed — the restriction site on its 5' tail is
-     the whole point — so typing has to be the first-class case, not an
-     afterthought behind a picker. */
+  /* Every primer the lab knows: the ones saved on this plasmid, and the
+     library behind the Primer Generator and the inventory. Deduplicated by
+     sequence, because the same oligo filed in two places is one oligo. */
   function clonePrimerList() {
     var seen = {}, out = [];
     primerList().concat(labPrimers()).forEach(function (pr) {
@@ -1673,11 +1672,6 @@
       out.push({ name: pr.name || 'primer', seq: s });
     });
     return out;
-  }
-  function clonePrimerDatalist() {
-    return '<datalist id="pl-clone-primers">' + clonePrimerList().map(function (pr) {
-      return '<option value="' + esc(pr.seq) + '">' + esc(pr.name) + '</option>';
-    }).join('') + '</datalist>';
   }
   function templateOptions(chosen) {
     var all = (getInventory().plasmids || []).filter(function (x) { return P.clean(x.seq || '').length; });
@@ -1704,14 +1698,10 @@
       return '<div class="ln-form-grid">' + kindRow +
           '<div class="ln-form-row"><label>Template</label><select onchange="plClonePcr(' + which + ',\'tplId\',this.value)">' +
             templateOptions(slot.tplId) + '</select></div>' +
-        '</div><div class="ln-form-grid">' +
-          '<div class="ln-form-row"><label>Forward primer (5′ → 3′)</label>' +
-            '<input list="pl-clone-primers" placeholder="site + overhang + annealing 3′ end" value="' + esc(slot.fwd) + '" ' +
-            'onchange="plClonePcr(' + which + ',\'fwd\',this.value)"></div>' +
-          '<div class="ln-form-row"><label>Reverse primer (5′ → 3′)</label>' +
-            '<input list="pl-clone-primers" placeholder="site + overhang + annealing 3′ end" value="' + esc(slot.rev) + '" ' +
-            'onchange="plClonePcr(' + which + ',\'rev\',this.value)"></div>' +
-        '</div>' + pcrSummary(mol);
+        '</div>' +
+        primerSlot(which, slot, 'fwd', 'Forward primer') +
+        primerSlot(which, slot, 'rev', 'Reverse primer') +
+        pcrSummary(mol);
     }
 
     var pick = which < 0 ? '' :
@@ -1720,6 +1710,125 @@
           : '<option value="">No other plasmid has a sequence yet</option>') + '</select></div>';
     return '<div class="ln-form-grid">' + kindRow + pick + '</div>';
   }
+  /* ---- choosing a primer for the PCR ----
+
+     From the library, not by retyping: the lab's primers are already on file
+     with their names, and a sequence copied by hand into a cloning dialog is
+     a sequence that can be copied wrong. The search also says which ones
+     actually anneal to the template that is chosen, worked out with the same
+     binder the plasmid page uses — so "which of our primers can I use here"
+     is answered by the list rather than by trying them one at a time.
+
+     Pasting is still possible, behind a link, because a primer designed this
+     morning for this clone is not in the library yet. */
+  function primerSlot(which, slot, field, label) {
+    var open = clone.picker && clone.picker.which === which && clone.picker.field === field;
+    var chosen = P.clean(slot[field] || '');
+    var known = chosen ? primerBySeq(chosen) : null;
+    var box;
+    if (chosen && !open) {
+      box = '<div class="pl-primer-chosen">' +
+        '<div><strong>' + esc(known ? known.name : 'Pasted primer') + '</strong>' +
+          '<span class="pl-primer-meta">' + chosen.length + ' nt · Tm ' + P.tm(chosen).toFixed(0) + ' °C</span></div>' +
+        '<code>' + esc(chosen.length > 46 ? chosen.slice(0, 44) + '…' : chosen) + '</code>' +
+        '<div class="pl-primer-acts">' +
+          '<button type="button" class="ln-icon-btn" onclick="plClonePickOpen(' + which + ',\'' + field + '\')">Change</button>' +
+          '<button type="button" class="ln-icon-btn" onclick="plClonePickClear(' + which + ',\'' + field + '\')">Clear</button>' +
+        '</div></div>';
+    } else {
+      box = '<div class="pl-primer-pick">' +
+        '<input class="ln-search sm" id="pl-pick-q-' + field + which + '" placeholder="🔍 Search the primer library by name or sequence"' +
+          ' value="' + esc(open ? (clone.picker.q || '') : '') + '"' +
+          ' onfocus="plClonePickOpen(' + which + ',\'' + field + '\',true)"' +
+          ' oninput="plClonePickSearch(this.value)">' +
+        '<div class="pl-primer-results" id="pl-pick-list-' + field + which + '">' +
+          (open ? primerResultsHtml(which, slot, field) : '') + '</div>' +
+        '<button type="button" class="ln-linkish" onclick="plClonePaste(' + which + ',\'' + field + '\')">' +
+          'or paste a sequence that is not in the library yet</button>' +
+      '</div>';
+    }
+    return '<div class="ln-form-row wide"><label>' + esc(label) + ' (5′ → 3′)</label>' + box + '</div>';
+  }
+  function primerBySeq(seq) {
+    var s = P.clean(seq);
+    return clonePrimerList().filter(function (pr) { return pr.seq === s; })[0] || null;
+  }
+  /* The list under the search box. Primers that anneal to the chosen template
+     on the strand this slot needs come first and say where they land; the
+     rest are still listed, because a primer that does not anneal is usually a
+     primer for a different template rather than a mistake. */
+  function primerResultsHtml(which, slot, field) {
+    var q = ((clone.picker && clone.picker.q) || '').trim().toLowerCase();
+    var want = field === 'fwd' ? 1 : -1;
+    var tplRec = null, cur = rec();
+    if (cur && slot.tplId === cur.id) tplRec = cur; else tplRec = plasmidById(slot.tplId);
+    var tp = tplRec ? asPlasmid(tplRec) : null;
+
+    var rows = clonePrimerList().filter(function (pr) {
+      if (!q) return true;
+      return pr.name.toLowerCase().indexOf(q) >= 0 || pr.seq.toLowerCase().indexOf(q) >= 0;
+    }).map(function (pr) {
+      var hit = tp ? bestHit(tp, pr.seq, want) : null;
+      return { pr: pr, hit: hit };
+    });
+    rows.sort(function (a, b) {
+      if (!!a.hit !== !!b.hit) return a.hit ? -1 : 1;
+      return a.pr.name.localeCompare(b.pr.name);
+    });
+
+    if (!rows.length) {
+      return '<div class="hint">' + (clonePrimerList().length
+        ? 'No primer matches that.'
+        : 'The primer library is empty. Primers saved on a plasmid or made with the Primer Generator appear here.') + '</div>';
+    }
+    var anneal = rows.filter(function (r) { return r.hit; }).length;
+    return (tp ? '<div class="hint">' + anneal + ' of ' + rows.length + ' anneal' + (anneal === 1 ? 's' : '') +
+        ' to ' + esc(tplRec.name || 'the template') + ' reading ' + (want === 1 ? 'forwards' : 'backwards') + '.</div>' : '') +
+      rows.slice(0, 40).map(function (r) {
+        var pr = r.pr, s = pr.seq;
+        return '<button type="button" class="pl-primer-row' + (r.hit ? ' fits' : '') + '"' +
+          ' onclick="plClonePickChoose(' + which + ',\'' + field + '\',\'' + esc(s) + '\')">' +
+          '<span class="pl-primer-row-name">' + esc(pr.name) + '</span>' +
+          '<code>' + esc(s.length > 36 ? s.slice(0, 34) + '…' : s) + '</code>' +
+          '<span class="pl-primer-meta">' + s.length + ' nt · Tm ' + P.tm(s).toFixed(0) + ' °C' +
+            (r.hit ? ' · anneals at ' + (r.hit.start + 1) + (r.hit.tail ? ', ' + r.hit.tail.length + ' nt tail' : '') : '') +
+          '</span></button>';
+      }).join('') +
+      (rows.length > 40 ? '<div class="hint">' + (rows.length - 40) + ' more — narrow the search.</div>' : '');
+  }
+  function plClonePickOpen(which, field, keep) {
+    if (keep && clone.picker && clone.picker.which === which && clone.picker.field === field) return;
+    clone.picker = { which: which, field: field, q: '' };
+    plCloneHtml();
+    var box = document.getElementById('pl-pick-q-' + field + which);
+    if (box) box.focus();
+  }
+  // Only the results redraw, so the search box keeps focus and the caret.
+  function plClonePickSearch(v) {
+    if (!clone.picker) return;
+    clone.picker.q = v;
+    var slot = slotOf(clone.picker.which);
+    var list = document.getElementById('pl-pick-list-' + clone.picker.field + clone.picker.which);
+    if (list) list.innerHTML = primerResultsHtml(clone.picker.which, slot, clone.picker.field);
+  }
+  function plClonePickChoose(which, field, seq) {
+    clone.picker = null;
+    plClonePcr(which, field, seq);
+  }
+  function plClonePickClear(which, field) {
+    clone.picker = null;
+    plClonePcr(which, field, '');
+  }
+  function plClonePaste(which, field) {
+    var typed = prompt('Paste the ' + (field === 'fwd' ? 'forward' : 'reverse') +
+      ' primer, 5′ → 3′, including any restriction site on its 5′ tail:', '');
+    if (typed == null) return;
+    var s = P.clean(typed);
+    if (!s.length) return;
+    clone.picker = null;
+    plClonePcr(which, field, s);
+  }
+
   /* What the PCR came out as, before anything is cut. Worth stating: if the
      product is not the length that was expected, every fragment below it is
      answering the wrong question. */
@@ -1741,7 +1850,7 @@
       '<p class="ln-bulk-intro">Cut the vector and the inserts, pick the piece to keep from each, and join them. ' +
       'Either side can be a plasmid or a PCR product — amplifying with primers that carry a restriction site on ' +
       'their 5′ tail is how a fragment gets an end its template never had. Every join is checked, so an end that ' +
-      'cannot ligate is caught before you order anything.</p>' + clonePrimerDatalist() +
+      'cannot ligate is caught before you order anything.</p>' +
       '<div class="pl-clone-box"><div class="ln-form-section">Vector — ' + esc(vecName) + '</div>' +
       sourceFields(-1, clone.vec, others) +
       '<div class="ln-form-grid">' +
@@ -1774,6 +1883,7 @@
   function plCloneKind(which, kind) {
     var slot = slotOf(which);
     slot.kind = kind;
+    clone.picker = null;
     // The enzymes that cut a plasmid rarely cut its PCR product the same
     // number of times, and a stale choice would silently pick a different
     // fragment, so both go back to unset.
@@ -2559,6 +2669,11 @@
   window.plCloneEnz = plCloneEnz;
   window.plCloneKind = plCloneKind;
   window.plClonePcr = plClonePcr;
+  window.plClonePickOpen = plClonePickOpen;
+  window.plClonePickSearch = plClonePickSearch;
+  window.plClonePickChoose = plClonePickChoose;
+  window.plClonePickClear = plClonePickClear;
+  window.plClonePaste = plClonePaste;
   window.plCloneSrc = plCloneSrc;
   window.plCloneFlip = plCloneFlip;
   window.plCloneVecPick = plCloneVecPick;

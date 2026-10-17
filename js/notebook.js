@@ -261,6 +261,29 @@ function dashGo(key, i) {
   if (grp && grp.rows[i] && grp.rows[i].query) grp.go(grp.rows[i]);
 }
 
+/* Entries somebody has @-mentioned you in.
+
+   This is what "notify" amounts to without a mail server: the entries that
+   name you, read out of the entries themselves. Nothing is stored about it,
+   so it cannot say you were mentioned in something that no longer mentions
+   you — a notification that outlives its reason is worse than none. */
+function renderMentionsPanel() {
+  var host = document.getElementById('ln-mentions-panel');
+  if (!host) return;
+  var me = currentUser();
+  var hits = (window.LabMentions && me) ? LabMentions.mentioning(me.id) : [];
+  if (!hits.length) { host.innerHTML = ''; host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = '<div class="ln-mentions-head">● You are mentioned in ' + hits.length +
+      ' entr' + (hits.length === 1 ? 'y' : 'ies') + '</div>' +
+    hits.slice(-6).reverse().map(function (n) {
+      return '<button type="button" class="ln-mentions-row" onclick="openEntry(\'' + esc(n.id) + '\')">' +
+        '<span class="ln-mentions-title">' + esc(n.title || 'Untitled entry') + '</span>' +
+        '<span class="ln-mentions-meta">' + esc(n.researcher || '') +
+        (n.date ? ' · ' + esc(n.date) : '') + '</span></button>';
+    }).join('');
+}
+
 function renderDashboard() {
   var groups = dashGroups();
   document.getElementById('ln-stats-grid').innerHTML = groups.map(function (grp) {
@@ -287,6 +310,7 @@ function renderDashboard() {
       }).join('') : '<div class="ln-empty" style="padding:.5rem 0;">Nothing here yet.</div>') +
       (grp.note ? '<div class="ln-dash-note">' + esc(grp.note) + '</div>' : '');
   }
+  renderMentionsPanel();
   var rp = getProtocols().slice(-3).reverse();
   document.getElementById('ln-recent-protocols').innerHTML = rp.length ? rp.map(function (p) { return '<div class="ln-card" style="padding:1rem;margin-bottom:.6rem;"><div class="ln-card-title" style="font-size:14px;">' + esc(p.title) + '</div><div class="ln-card-meta">' + esc(p.category) + ' · ' + esc(p.date) + '</div></div>'; }).join('') : '<div class="ln-empty" style="padding:0;">No protocols yet.</div>';
   var rn = getNotebooks().filter(function (n) { return !n.archived; }).slice(-3).reverse();
@@ -410,7 +434,8 @@ async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can
    text styles are dropped. */
 var SAFE_TAGS = ['p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
   'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'a'];
-var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true, 'ln-file': true };
+var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true, 'ln-file': true,
+  'ln-plate': true, 'ln-daymark': true, 'ln-mention': true, 'gone': true };
 var SAFE_STYLES = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
 var safeHtmlReady = false;
 function safeHtml(html) {
@@ -435,7 +460,10 @@ function safeHtml(html) {
   }
   return DOMPurify.sanitize(String(html || ''), {
     ALLOWED_TAGS: SAFE_TAGS,
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'download', 'data-path', 'data-calc', 'class', 'style', 'colspan', 'rowspan'],
+    // data-kind/data-id carry what a mention points at; data-day the date on
+    // a divider. All are read back only as an id or a date, never as markup.
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'download', 'data-path', 'data-calc', 'data-plate',
+      'data-day', 'data-kind', 'data-id', 'class', 'style', 'colspan', 'rowspan'],
     ADD_DATA_URI_TAGS: ['a'],
     ALLOW_DATA_ATTR: false
   }).replace(/<img(?![^>]*\b(?:src|data-path)=)[^>]*>/gi, ''); // images whose source was unsafe
@@ -512,10 +540,23 @@ function leaveEntryOk() { return true; }
    redrawn from the data when the tab comes back, and this goes on top. A
    file chosen but not yet uploaded cannot be carried across, so the input is
    deliberately left out rather than half-restored. */
+/* A calculation table or a plate keeps its numbers on the element, not in the
+   markup — the markup is the form. Writing that state back into the data
+   attribute before the page is copied is what lets the copy be rebuilt; the
+   innerHTML on its own would come back as a form full of defaults. */
+function syncBlockState(root) {
+  root.querySelectorAll('.ln-calc').forEach(function (b) {
+    if (b._calc) b.setAttribute('data-calc', JSON.stringify(b._calc));
+  });
+  root.querySelectorAll('.ln-plate').forEach(function (b) {
+    if (b._plate) b.setAttribute('data-plate', JSON.stringify(b._plate));
+  });
+}
 function entryCapture() {
   if (lnCurrentSection !== 'entry') return null;
   var body = document.getElementById('e-body');
   if (!body) return null;
+  syncBlockState(body);
   var values = {};
   ['e-title', 'e-researcher', 'e-date'].concat(ENTRY_FIELDS.map(function (f) { return 'e-' + f[0]; }))
     .forEach(function (id) {
@@ -534,7 +575,7 @@ function entryRestore(st) {
   var body = document.getElementById('e-body');
   if (body && typeof st.body === 'string') {
     body.innerHTML = safeHtml(st.body);
-    calcHydrate(body);
+    blockHydrate(body);
     hydrateEntryFiles(body);
   }
   document.querySelectorAll('#ln-paper textarea').forEach(autoGrow);
@@ -598,10 +639,14 @@ function renderEntry(id) {
 
   var editor = document.getElementById('e-body');
   editor.innerHTML = safeHtml(n.body || '');
-  calcHydrate(editor);
+  blockHydrate(editor);
   editor.addEventListener('input', calcHandle);
   editor.addEventListener('change', calcHandle);
   editor.addEventListener('click', calcHandle);
+  editor.addEventListener('input', LabPlates.handle);
+  editor.addEventListener('change', LabPlates.handle);
+  editor.addEventListener('click', LabPlates.handle);
+  LabMentions.attach(editor);
   hydrateEntryFiles(editor);
   initTableEditor();
   loadTablesIntoEditor((n.tables || []).map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }));
@@ -644,9 +689,19 @@ async function hydrateEntryFiles(root) {
 function entryBodyForSave() {
   var live = document.getElementById('e-body');
   var clone = live.cloneNode(true);
-  // Calculation tables: save their state and a plain snapshot, not the form.
+  // Calculation tables and plates: save their state and a plain snapshot, not
+  // the form. The clone is in the same order as the live page, so the live
+  // state can be matched to it by position.
   var liveCalcs = live.querySelectorAll('.ln-calc'), cloneCalcs = clone.querySelectorAll('.ln-calc');
   Array.prototype.forEach.call(cloneCalcs, function (b, i) { if (liveCalcs[i] && liveCalcs[i]._calc) { b._calc = liveCalcs[i]._calc; calcSnapshot(b); } });
+  var livePlates = live.querySelectorAll('.ln-plate'), clonePlates = clone.querySelectorAll('.ln-plate');
+  Array.prototype.forEach.call(clonePlates, function (b, i) {
+    if (livePlates[i] && livePlates[i]._plate) { b._plate = livePlates[i]._plate; LabPlates.snapshot(b); }
+  });
+  // A mention keeps only what it points at; the name is drawn again on the
+  // way back in, so renaming a plasmid renames every mention of it.
+  clone.querySelectorAll('.ln-mention').forEach(function (m) { m.removeAttribute('contenteditable'); });
+  clone.querySelectorAll('.ln-daymark').forEach(function (m) { m.removeAttribute('contenteditable'); });
   // Signed links expire, so stored images and files keep only their storage path.
   clone.querySelectorAll('img[data-path]').forEach(function (i) { i.removeAttribute('src'); });
   clone.querySelectorAll('a[data-path]').forEach(function (a) { a.removeAttribute('href'); });
@@ -699,6 +754,8 @@ function editorToolbarHtml() {
     '<span class="sep"></span>' + b('table', '\u229e Table', 'Insert a table') + b('tableRow', '+ Row', 'Add a row to the table you are in') + b('tableCol', '+ Col', 'Add a column to the table you are in') +
     b('file', '\ud83d\udcce File', 'Attach any file: images appear on the page, other files as a link (you can also paste or drop files)') +
     '<button type="button" class="ln-calc-btn" title="Insert a ready-made PCR, qPCR, transfection or electroporation table" onmousedown="event.preventDefault()" onclick="openCalcPicker()">\ud83e\uddee Calc table</button>' +
+    '<button type="button" class="ln-calc-btn" title="Insert a culture plate you can write in: 1, 6, 12, 24, 48 or 96 wells" onmousedown="event.preventDefault()" onclick="openPlatePicker()">\u25a6 Plate</button>' +
+    '<button type="button" class="ln-calc-btn" title="Start a new day on this page: a date and a line" onmousedown="event.preventDefault()" onclick="insertDayMark()">\ud83d\udcc5 New day</button>' +
     '<span class="sep"></span>' + b('removeFormat', 'Clear', 'Clear formatting') + b('undo', '\u21ba Undo', 'Undo (Ctrl/Cmd+Z)') + b('redo', '\u21bb Redo', 'Redo') +
     '<input type="file" id="e-file-input" multiple hidden onchange="editorInsertFiles(this.files);this.value=\'\'">' +
     '</div>';
@@ -1144,6 +1201,135 @@ function insertCalc(t) {
   markEntryDirty();
 }
 
+/* Put a block on the page at the caret.
+
+   Not execCommand('insertHTML'): a <div> dropped inside a <p> is invalid, so
+   the browser unwraps it — the block vanishes and its text is left behind in
+   the paragraph, which looks like nothing happened until you notice the date
+   sitting in the middle of a sentence. Climbing to the editor's own child
+   and inserting beside it puts the block where a block can actually live. */
+function insertBlockAtCaret(ed, node) {
+  ed.focus();
+  var sel = window.getSelection();
+  var range = (editorRange && ed.contains(editorRange.startContainer)) ? editorRange.cloneRange() : null;
+  if (!range) { range = document.createRange(); range.selectNodeContents(ed); range.collapse(false); }
+  var at = range.startContainer;
+  while (at && at !== ed && at.parentNode !== ed) at = at.parentNode;
+  if (at && at !== ed) ed.insertBefore(node, at.nextSibling);
+  else ed.appendChild(node);
+  // Somewhere to carry on typing, since the block itself is not editable.
+  var p = document.createElement('p');
+  p.appendChild(document.createElement('br'));
+  ed.insertBefore(p, node.nextSibling);
+  var after = document.createRange();
+  after.setStart(p, 0); after.collapse(true);
+  sel.removeAllRanges(); sel.addRange(after);
+  editorRange = after.cloneRange();
+}
+
+// ── CULTURE PLATES ─────────────────────────────────────────
+/* The block itself is js/plates.js; this is the picker and the insert, which
+   work exactly like the calculation tables above so there is one way to put
+   a block on a page rather than two. */
+function openPlatePicker() {
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Insert a culture plate</h3>' +
+    '<p class="ln-bulk-intro">A box per well to write in — what was seeded, what was added, which condition. ' +
+    'Wells are named the way the plate is printed and the way a plate reader exports them, so a map made here ' +
+    'lines up with the data that comes back. The format can be changed afterwards.</p>' +
+    '<div class="ln-calc-pick">' + LabPlates.ORDER.map(function (f) {
+      var g = LabPlates.grid(f);
+      return '<button type="button" class="ln-box-card" onclick="insertPlate(' + f + ')">' +
+        '<div class="ln-calc-pick-name">' + esc(g.label) + '</div>' +
+        '<div class="ln-box-card-meta">' + (f === 1 ? 'one dish' : g.rows + ' × ' + g.cols + ' wells') + '</div></button>';
+    }).join('') + '</div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+function insertPlate(f) {
+  closeModal();
+  var ed = document.getElementById('e-body');
+  var holder = document.createElement('div');
+  holder.className = 'ln-plate';
+  holder.setAttribute('data-plate', JSON.stringify(LabPlates.blank(f)));
+  insertBlockAtCaret(ed, holder);
+  LabPlates.hydrate(ed);
+  markEntryDirty();
+}
+
+// ── DAY DIVIDERS ───────────────────────────────────────────
+/* An experiment runs over days, and a page that records one is really
+   several pages. A divider says where one day ends and the next begins, so
+   "day 3" is something you can find rather than something you count down to.
+
+   The date is stored as plain YYYY-MM-DD and written out in full, because a
+   notebook read by somebody else should not need the reader to know whether
+   03/04 is March or April. */
+function dayLabel(iso) {
+  var d = new Date(String(iso || '') + 'T00:00:00');
+  if (isNaN(d.getTime())) return String(iso || '');
+  return d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+function dayMarkHtml(iso) {
+  return '<div class="ln-daymark" data-day="' + esc(iso) + '"><span>' + esc(dayLabel(iso)) + '</span></div>';
+}
+function insertDayMark() {
+  var ed = document.getElementById('e-body');
+  if (!ed) return;
+  var last = lastDayOnPage(ed);
+  var suggested = new Date().toISOString().slice(0, 10);
+  var iso = prompt('Start a new day on this page.\n\nDate (YYYY-MM-DD)' +
+    (last ? '\nThe last day on this page is ' + dayLabel(last) + '.' : ''), suggested);
+  if (iso == null) return;
+  iso = String(iso).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || isNaN(new Date(iso + 'T00:00:00').getTime())) {
+    alert('That is not a date. Use the form 2026-10-17.');
+    return;
+  }
+  var mark = document.createElement('div');
+  mark.className = 'ln-daymark';
+  mark.setAttribute('data-day', iso);
+  insertBlockAtCaret(ed, mark);
+  dayMarkHydrate(ed);
+  markEntryDirty();
+}
+function lastDayOnPage(root) {
+  var marks = root.querySelectorAll('.ln-daymark[data-day]');
+  return marks.length ? marks[marks.length - 1].getAttribute('data-day') : '';
+}
+/* Dividers are not editable text — clicking one asks for the date instead,
+   so a stray keystroke cannot leave a page with half a date on it. */
+function dayMarkHydrate(root) {
+  root.querySelectorAll('.ln-daymark').forEach(function (el) {
+    el.setAttribute('contenteditable', 'false');
+    var iso = el.getAttribute('data-day') || '';
+    el.innerHTML = '<span>' + esc(dayLabel(iso)) + '</span>';
+    if (el._wired) return;
+    el._wired = true;
+    el.addEventListener('click', function () {
+      var next = prompt('Date for this divider (YYYY-MM-DD), or leave empty to remove it:', el.getAttribute('data-day') || '');
+      if (next == null) return;
+      next = String(next).trim();
+      if (!next) { el.remove(); markEntryDirty(); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || isNaN(new Date(next + 'T00:00:00').getTime())) {
+        alert('That is not a date. Use the form 2026-10-17.');
+        return;
+      }
+      el.setAttribute('data-day', next);
+      el.innerHTML = '<span>' + esc(dayLabel(next)) + '</span>';
+      markEntryDirty();
+    });
+  });
+}
+
+/* Everything a page can hold that is more than text. One call, so a new kind
+   of block is added in one place rather than in four. */
+function blockHydrate(root) {
+  calcHydrate(root);
+  if (window.LabPlates) LabPlates.hydrate(root);
+  dayMarkHydrate(root);
+  if (window.LabMentions) LabMentions.hydrate(root);
+}
+
 // ── TABLE EDITOR ───────────────────────────────────────────
 var activeTables = [];
 function initTableEditor() { activeTables = []; }
@@ -1328,7 +1514,9 @@ function renderInventory(tab) {
   el.innerHTML = banner + count + '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
     cfg.cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th class="ln-row-actions">Actions</th></tr></thead><tbody>' +
     items.map(function (item) {
-      return '<tr>' + cfg.fields.map(function (f) {
+      // The id is on the row so an @-mention of this item can point straight
+      // at it rather than leaving somebody to find it in the table.
+      return '<tr data-item-id="' + esc(item.id || '') + '">' + cfg.fields.map(function (f) {
         var val = esc(item[f] || '\u2014');
         if (f === 'name' && currentInvTab === 'plasmids' && item.name) {
           val = '<a href="#plasmid/' + esc(item.id) + '" class="ln-box-link" onclick="openPlasmid(\'' + item.id + '\');return false;">' + esc(item.name) + '</a>';
