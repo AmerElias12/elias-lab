@@ -174,9 +174,9 @@ database, no files, no sessions. Sequence goes in, an answer comes back, and
 what the lab chooses to keep is saved through the notebook as usual. A restart
 loses nothing, which is why it is safe to run on something that sleeps.
 
-> **The service is on the `eln-backend` branch, not `main`.** `main` is what
-> GitHub Pages publishes and carries no Python. The commands below clone that
-> branch into a separate folder; nothing about your website checkout changes.
+> It lives in `backend/` in this repository, alongside the site. GitHub Pages
+> does not publish it — `_config.yml` excludes the directory — so it is here
+> for deploying and for local work, and the public site never sees it.
 
 ### Where to run it
 
@@ -262,11 +262,11 @@ gcloud projects add-iam-policy-binding eliaslab-tools \
 It costs nothing, the billing can stay on one card, and it is far easier to do
 now than on the day somebody needs it.
 
-**2 — Get the service.**
+**2 — Go to the service.** It is `backend/` in this repository, so from your
+checkout of the site:
 
 ```bash
-git clone -b eln-backend https://github.com/AmerElias12/elias-lab.git eliaslab-service
-cd eliaslab-service/backend
+cd backend
 cp Dockerfile.science Dockerfile
 ```
 
@@ -353,7 +353,8 @@ calculation makes the round trip hardly matter.
 ### Updating it later
 
 ```bash
-cd eliaslab-service && git pull && cd backend
+git pull
+cd backend
 cp Dockerfile.science Dockerfile
 gcloud run deploy eliaslab-tools --source . --region europe-west1
 ```
@@ -383,5 +384,5 @@ Optionally add `assets/og-image.png` (1200×630) for nicer link previews.
 | `js/science-api.js` | calls the molecular tools service, when one is configured |
 | `tools/` | GenomeScan, the Gibson calculator, the gRNA primer generator |
 | `supabase/schema.sql` | run once in Supabase |
-| `backend/` | the Python service — **on the `eln-backend` branch**, not here |
+| `backend/` | the Python service; excluded from Pages by `_config.yml` |
 | `scripts/*.mjs`, `scripts/test-plasmid.js` | the checks; `node scripts/<name>` runs one |
