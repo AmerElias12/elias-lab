@@ -4,13 +4,17 @@ The site is **static** — plain HTML/CSS/JS, no build step. You can host it on
 any static host (GitHub Pages, Netlify, Cloudflare Pages). The Lab Notebook
 talks directly to **Supabase** from the browser for shared, backed-up data.
 
-There are two independent things to set up:
+There are three things to set up, and only the first two are needed:
 
 1. **Supabase** — the shared backend for the Lab Notebook (auth + database + file storage).
 2. **A static host** — to serve the site publicly.
+3. **The molecular tools service** *(optional)* — a small Python service for the
+   restriction-cloning and primer-design calculations that no browser can do.
 
 You can do (2) first and run the notebook in **local mode** (data saved only in
-your browser) until you're ready for (1).
+your browser) until you're ready for (1). (3) can wait indefinitely: until it is
+configured the molecular tools do their arithmetic in the browser, exactly as
+they did before the service existed.
 
 ---
 
@@ -156,6 +160,162 @@ Drag-and-drop the whole `EliasLab website` folder onto
 
 ---
 
+## 3 · The molecular tools service (optional)
+
+The Gibson and gRNA tools can do two things a browser cannot: a restriction
+digest against the full REBASE enzyme set, and primer design with real melting
+temperatures and off-target screening. Both need **pydna** and **Biopython**,
+which are Python, so they run in a small service of their own —
+`backend/app/science.py`.
+
+Supabase cannot host it (Edge Functions are Deno) and nor can GitHub Pages
+(static files only), so it needs somewhere to run. It holds **no data**: no
+database, no files, no sessions. Sequence goes in, an answer comes back, and
+what the lab chooses to keep is saved through the notebook as usual. A restart
+loses nothing, which is why it is safe to run on something that sleeps.
+
+> **The service is on the `eln-backend` branch, not `main`.** `main` is what
+> GitHub Pages publishes and carries no Python. The commands below clone that
+> branch into a separate folder; nothing about your website checkout changes.
+
+### Where to run it
+
+**Google Cloud Run** is the recommendation. It scales to zero, so you pay
+nothing for the hours nobody is cloning; it takes the Dockerfile as it is; and
+it gives you an HTTPS URL with a managed certificate.
+
+That last one is a requirement rather than a convenience: the notebook is
+served over HTTPS, and a browser **will not let an HTTPS page call an `http://`
+endpoint**. A service on a lab machine without a certificate fails in the
+console with nothing useful on screen. Whatever you choose, it must be HTTPS.
+
+At this lab's volume it is free. The Cloud Run free tier is 2 million requests,
+180,000 vCPU-seconds and 360,000 GiB-seconds a month, renewing monthly
+(<https://cloud.google.com/run/pricing> — worth a glance, since the rates move).
+A primer design costs a second or two of CPU, so that allowance is on the order
+of 90,000 calls a month, and a busy lab might make a few hundred.
+
+### Steps
+
+You need the `gcloud` CLI (<https://cloud.google.com/sdk/docs/install>) and a
+Google account with billing enabled — Google asks for a card even for the free
+tier.
+
+**1 — Set up the project and turn on the APIs.**
+
+```bash
+gcloud auth login
+gcloud projects create eliaslab-tools --name="Elias Lab tools"
+gcloud config set project eliaslab-tools
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+```
+
+Then link a billing account to the project in the console
+(**Billing → Link a billing account**), and set a **budget alert** at a couple
+of dollars while you are there — Cloud Run has no hard spending cap, and an
+alert is the only thing that will tell you if something is misconfigured.
+
+**2 — Get the service.**
+
+```bash
+git clone -b eln-backend https://github.com/AmerElias12/elias-lab.git eliaslab-service
+cd eliaslab-service/backend
+cp Dockerfile.science Dockerfile
+```
+
+The copy is not cosmetic: `gcloud run deploy --source` hands the folder to
+Cloud Build, which looks for a file named exactly `Dockerfile`. Without it,
+Cloud Build falls back to Python buildpacks, installs the full
+`requirements.txt` — database drivers and all — and builds the wrong thing.
+
+**3 — Deploy.**
+
+Take the **JWT Secret** from Supabase → **Project Settings → API**. That is not
+the publishable (anon) key: the anon key is public, it is in this repository,
+and the service rejects it on purpose.
+
+```bash
+gcloud run deploy eliaslab-tools \
+  --source . \
+  --region europe-west1 \
+  --port 8000 \
+  --allow-unauthenticated \
+  --memory 1Gi \
+  --set-env-vars 'ELN_MODE=science,ELN_ENVIRONMENT=production,ELN_SUPABASE_JWT_SECRET=PASTE_IT_HERE,ELN_CORS_ORIGINS=["https://amerelias12.github.io"]'
+```
+
+Four of those flags are load-bearing:
+
+| flag | why |
+|---|---|
+| `--port 8000` | the container listens on 8000; Cloud Run assumes 8080 and would report the service as failing to start |
+| `--allow-unauthenticated` | the service checks the Supabase token itself. Cloud Run's own IAM auth would reject the browser before it ever got there |
+| `--memory 1Gi` | numpy and Biopython do not fit comfortably in the 512 MiB default |
+| `ELN_CORS_ORIGINS` | your Pages origin. Without it every response is discarded by the browser and the service looks like it is down — so in production it refuses to start rather than pretend |
+
+`--set-env-vars` splits on commas, so the single-origin JSON above is safe as
+written. For two origins use a different delimiter:
+`--set-env-vars '^##^ELN_CORS_ORIGINS=["https://a","https://b"]##ELN_MODE=science'`.
+
+If your project signs tokens with a published key rather than a shared secret,
+set `ELN_SUPABASE_URL=https://<ref>.supabase.co` instead of the secret and the
+service will fetch the keys itself.
+
+> Putting the JWT secret in a plain environment variable means anyone with
+> console access to the project can read it. For a lab that is usually fine; if
+> you would rather it were not, put it in **Secret Manager** and swap
+> `--set-env-vars` for `--set-secrets ELN_SUPABASE_JWT_SECRET=eln-jwt:latest`.
+
+**4 — Check it answers.**
+
+```bash
+curl https://eliaslab-tools-XXXXXX.europe-west1.run.app/api/health
+```
+
+```json
+{"status":"ok","mode":"science","accepts":["supabase"]}
+```
+
+`accepts` is the useful part: `["supabase"]` means it can verify your tokens.
+An empty list means neither the secret nor the URL reached it, and every real
+request would come back 401.
+
+**5 — Point the site at it.** Edit [`js/config.js`](js/config.js) on `main`:
+
+```js
+SCIENCE_API_URL: 'https://eliaslab-tools-XXXXXX.europe-west1.run.app'
+```
+
+Commit and push. Pages redeploys in a minute or two, and the server panels in
+the Gibson and gRNA tools come on by themselves. Leave it blank to turn them
+off again — the tools keep working in the browser.
+
+### What to expect
+
+**The first request each morning is slow.** The image is about 400 MB, mostly
+numpy and Biopython, so a cold start takes a few seconds. After that it is
+quick until the service goes back to sleep. If it annoys you, add
+`--min-instances 1`, which keeps one warm and takes you off the free tier to a
+few dollars a month.
+
+`europe-west1` (Belgium) is the nearest Tier 1 region. Google also has
+`me-west1` (Tel Aviv), which would shave latency, but it is priced differently
+and may not sit in the free tier — check before switching, since a one-second
+calculation makes the round trip hardly matter.
+
+### Updating it later
+
+```bash
+cd eliaslab-service && git pull && cd backend
+cp Dockerfile.science Dockerfile
+gcloud run deploy eliaslab-tools --source . --region europe-west1
+```
+
+Environment variables set on a previous deploy are kept, so they do not need
+repeating.
+
+---
+
 ## Add the team photo
 Drop a portrait JPG named **`team-photo.jpg`** into [`assets/`](assets/).
 Until then the About section shows a styled "AE" placeholder (not broken).
@@ -166,7 +326,15 @@ Optionally add `assets/og-image.png` (1200×630) for nicer link previews.
 |------|---------|
 | `index.html` | public marketing site |
 | `notebook.html` | internal Lab Notebook app |
-| `css/` | `tokens.css` (brand vars), `site.css`, `notebook.css` |
-| `js/` | `config.js`, `data.js` (backend), `notebook.js`, `tools.js`, `site.js` |
-| `tools/genome-scan.html` | bundled GenomeScan tool |
+| `css/` | `tokens.css` (brand vars), `site.css`, `notebook.css`, `plasmid.css` |
+| `js/config.js` | Supabase keys and `SCIENCE_API_URL` — the one file to edit |
+| `js/data.js` | the backend: Supabase, or localStorage in local mode |
+| `js/notebook.js` | the notebook itself — entries, inventory, dashboard |
+| `js/tabs.js` | several pages open at once, inside the notebook |
+| `js/plasmid.js`, `js/plasmid-ui.js` | sequence maths, and the plasmid page |
+| `js/plates.js`, `js/mentions.js` | culture plates and @-mentions on a page |
+| `js/science-api.js` | calls the molecular tools service, when one is configured |
+| `tools/` | GenomeScan, the Gibson calculator, the gRNA primer generator |
 | `supabase/schema.sql` | run once in Supabase |
+| `backend/` | the Python service — **on the `eln-backend` branch**, not here |
+| `scripts/*.mjs`, `scripts/test-plasmid.js` | the checks; `node scripts/<name>` runs one |
