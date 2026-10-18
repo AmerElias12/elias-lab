@@ -201,6 +201,19 @@ You need the `gcloud` CLI (<https://cloud.google.com/sdk/docs/install>) and a
 Google account with billing enabled — Google asks for a card even for the free
 tier.
 
+**Which Google account: the Gmail one** (`amerelias02@gmail.com`), not the
+Braude address. Braude's mail runs on Microsoft 365, so `@braude.ac.il` is not
+a Google account and `gcloud auth login` has nothing to sign in as.
+
+Three different accounts are involved in this repository and it is easy to
+reach for the wrong one:
+
+| account | what it is for |
+|---|---|
+| Google (Gmail) | the Cloud Run project and its billing — this section only |
+| Supabase | the notebook's database and logins; `ADMIN_EMAIL` is a Braude address |
+| GitHub | the repository and the published Pages site |
+
 **1 — Set up the project and turn on the APIs.**
 
 ```bash
@@ -214,6 +227,18 @@ Then link a billing account to the project in the console
 (**Billing → Link a billing account**), and set a **budget alert** at a couple
 of dollars while you are there — Cloud Run has no hard spending cap, and an
 alert is the only thing that will tell you if something is misconfigured.
+
+**Add a second owner.** The account above owns the project, so on a personal
+Gmail the lab's tools depend on one person's personal account: nobody else can
+redeploy them, and losing access to that account loses the service.
+
+```bash
+gcloud projects add-iam-policy-binding eliaslab-tools \
+  --member="user:SECOND_PERSON@gmail.com" --role="roles/owner"
+```
+
+It costs nothing, the billing can stay on one card, and it is far easier to do
+now than on the day somebody needs it.
 
 **2 — Get the service.**
 
