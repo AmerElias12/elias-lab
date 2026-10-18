@@ -199,7 +199,20 @@ of 90,000 calls a month, and a busy lab might make a few hundred.
 
 You need the `gcloud` CLI (<https://cloud.google.com/sdk/docs/install>) and a
 Google account with billing enabled — Google asks for a card even for the free
-tier.
+tier. What that card is and is not used for is set out below.
+
+**Which Google account: the Gmail one** (`amerelias02@gmail.com`), not the
+Braude address. Braude's mail runs on Microsoft 365, so `@braude.ac.il` is not
+a Google account and `gcloud auth login` has nothing to sign in as.
+
+Three different accounts are involved in this repository and it is easy to
+reach for the wrong one:
+
+| account | what it is for |
+|---|---|
+| Google (Gmail) | the Cloud Run project and its billing — this section only |
+| Supabase | the notebook's database and logins; `ADMIN_EMAIL` is a Braude address |
+| GitHub | the repository and the published Pages site |
 
 **1 — Set up the project and turn on the APIs.**
 
@@ -212,8 +225,42 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 
 Then link a billing account to the project in the console
 (**Billing → Link a billing account**), and set a **budget alert** at a couple
-of dollars while you are there — Cloud Run has no hard spending cap, and an
-alert is the only thing that will tell you if something is misconfigured.
+of dollars while you are there. Be clear about what that does: it *notifies*,
+it does not stop anything. Cloud Run has no hard spending cap, so the alert is
+the only thing that will tell you if something is misconfigured. (A genuine
+stop is possible — a budget wired to Pub/Sub and a function that disables
+billing — but it is more machinery than a lab usually needs.)
+
+#### What the card is actually for
+
+A credit or debit card is required at signup; an email address alone will not
+create a billing account. Nothing is charged automatically, though, and the
+sequence is worth knowing before you start:
+
+| when | what happens |
+|---|---|
+| signup | the card is verified. $300 of credit, 90 days, no billing for usage |
+| days 1–90 | the service runs on that credit and would use a few cents of it |
+| **day 90** | **you must upgrade to a paid account, or the service stops** |
+| after upgrading | the card is live, but the free tier covers this usage — expect **$0/month** |
+
+The trial does not convert on its own: if you do nothing at day 90 the billing
+account closes and the resources stop, which is safe but also means the tools
+quietly stop working. The free allowance that makes this cost nothing applies
+to upgraded accounts, so the upgrade is the step that makes it free *and*
+permanent, not the step that starts charging you.
+
+**Add a second owner.** The account above owns the project, so on a personal
+Gmail the lab's tools depend on one person's personal account: nobody else can
+redeploy them, and losing access to that account loses the service.
+
+```bash
+gcloud projects add-iam-policy-binding eliaslab-tools \
+  --member="user:SECOND_PERSON@gmail.com" --role="roles/owner"
+```
+
+It costs nothing, the billing can stay on one card, and it is far easier to do
+now than on the day somebody needs it.
 
 **2 — Get the service.**
 
