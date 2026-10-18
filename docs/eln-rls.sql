@@ -125,11 +125,12 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'lab', 'app_user', 'lab_member', 'project',
+    'lab', 'app_user', 'lab_member', 'project', 'refresh_token',
     'notebook_entry', 'notebook_entry_version', 'entry_signature',
     'plasmid', 'entry_plasmid', 'plasmid_lineage', 'sequence_feature',
     'feature_type', 'feature_library_entry', 'plasmid_sample', 'storage_box',
     'primer', 'primer_binding', 'primer_pair',
+    'assembly', 'assembly_fragment',
     'guide_rna', 'pegrna_detail', 'guide_off_target',
     'attachment', 'audit_event'
   ] LOOP
@@ -150,7 +151,7 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'project', 'notebook_entry', 'plasmid', 'storage_box',
-    'primer', 'primer_pair', 'guide_rna'
+    'primer', 'primer_pair', 'guide_rna', 'assembly'
   ] LOOP
     EXECUTE format($f$
       CREATE POLICY %1$I_select ON %1$I FOR SELECT
@@ -197,6 +198,25 @@ CREATE POLICY app_user_update ON app_user FOR UPDATE
        WHERE m.user_id = app_user.id AND m.lab_id = (SELECT current_lab())))
   )
   WITH CHECK (true);
+
+-- Your own sessions, and nobody else's — not even a lab administrator's. A
+-- session is not lab data; it is the thing that proves somebody is who they
+-- say they are, and an admin who can read one can become its owner.
+--
+-- There is no SELECT of other people's rows at any privilege level here, which
+-- is also why reuse detection and revocation run inside the SECURITY DEFINER
+-- function in docs/eln-auth.sql: at refresh time nobody is authenticated yet,
+-- so current_user_id() is null and these policies correctly show nothing.
+CREATE POLICY refresh_token_select ON refresh_token FOR SELECT
+  USING (user_id = (SELECT current_user_id()));
+CREATE POLICY refresh_token_insert ON refresh_token FOR INSERT
+  WITH CHECK (user_id = (SELECT current_user_id()));
+-- Revoking is an UPDATE. There is no DELETE policy: a session that ended is
+-- part of the record of who was signed in when, and an audit that can be
+-- tidied away is not one.
+CREATE POLICY refresh_token_update ON refresh_token FOR UPDATE
+  USING (user_id = (SELECT current_user_id()))
+  WITH CHECK (user_id = (SELECT current_user_id()));
 
 CREATE POLICY lab_member_select ON lab_member FOR SELECT
   USING (lab_id = (SELECT current_lab()) AND (SELECT can_read()));
@@ -255,6 +275,17 @@ CREATE POLICY plasmid_lineage_all ON plasmid_lineage FOR ALL
           AND EXISTS (SELECT 1 FROM plasmid pa
                        WHERE pa.id = plasmid_lineage.parent_id
                          AND pa.lab_id = (SELECT current_lab())));
+
+-- A fragment is reachable exactly when its assembly is, which is the same
+-- rule as sequence_feature and for the same reason: one place decides.
+CREATE POLICY assembly_fragment_all ON assembly_fragment FOR ALL
+  USING (EXISTS (SELECT 1 FROM assembly a
+                  WHERE a.id = assembly_fragment.assembly_id
+                    AND a.lab_id = (SELECT current_lab())))
+  WITH CHECK ((SELECT can_write()) AND EXISTS (
+            SELECT 1 FROM assembly a
+             WHERE a.id = assembly_fragment.assembly_id
+               AND a.lab_id = (SELECT current_lab())));
 
 CREATE POLICY primer_binding_all ON primer_binding FOR ALL
   USING (EXISTS (SELECT 1 FROM primer pr
@@ -380,6 +411,7 @@ CREATE INDEX IF NOT EXISTS plasmid_lab_idx         ON plasmid (lab_id);
 CREATE INDEX IF NOT EXISTS notebook_entry_lab_idx  ON notebook_entry (lab_id);
 CREATE INDEX IF NOT EXISTS guide_rna_lab_idx       ON guide_rna (lab_id);
 CREATE INDEX IF NOT EXISTS primer_lab_idx          ON primer (lab_id);
+CREATE INDEX IF NOT EXISTS assembly_lab_id_idx      ON assembly (lab_id);
 CREATE INDEX IF NOT EXISTS lab_member_lab_user_idx ON lab_member (lab_id, user_id);
 
 -- =============================================================================

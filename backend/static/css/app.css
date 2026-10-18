@@ -305,6 +305,158 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 }
 @media (max-width: 720px) { .add-member { grid-template-columns: 1fr; } }
 
+/* --- vector viewer ------------------------------------------------------- */
+.vector {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr) 19rem;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+.vector__list, .vector__side {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .75rem;
+  max-height: 78vh; overflow: auto;
+}
+.vector__side { padding: 1rem; display: grid; gap: .75rem; }
+.vector__side .section__title { margin: 0; }
+.vector__main {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.vector__bar {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--border);
+}
+/* SeqViz measures its own height from the container, so this needs a real
+   one — a percentage against an auto-height parent collapses to nothing and
+   the map renders 0px tall with no error anywhere. */
+.vector__canvas { height: 72vh; min-height: 24rem; }
+.vector__canvas:empty::after {
+  content: "Choose a plasmid from the list.";
+  display: grid; place-items: center; height: 100%;
+  color: var(--text-dim); font-size: .9rem;
+}
+/* The library draws its own type; keep it monospace so bases line up. */
+.vector__canvas text { font-family: var(--mono); }
+
+.segmented { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: .15rem; }
+.seg {
+  border: 0; background: transparent; color: var(--text-dim);
+  font: inherit; font-size: .85rem; font-weight: 550;
+  padding: .3rem .7rem; border-radius: 6px; cursor: pointer;
+}
+.seg.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+.tabs--sm { margin-bottom: .6rem; }
+.tabs--sm .tab { padding: .3rem .4rem; font-size: .82rem; }
+.lib-search { margin-bottom: .6rem; }
+/* A library row carries two actions, so it is not one big button. */
+.lib-row { display: block; cursor: default; }
+.lib-row .row__meta { margin-top: .4rem; gap: .4rem; flex-wrap: wrap; }
+.lib-row .btn { padding: .3rem .6rem; font-size: .8rem; }
+.mono-sm { font-family: var(--mono); font-size: .78rem; color: var(--text-dim); word-break: break-all; }
+.badge--binds { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
+
+#clone-panel { padding: .25rem; }
+#clone-panel .field > span { font-size: .8rem; }
+#clone-paste { font-family: var(--mono); font-size: .75rem; }
+.alert--note {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+
+.facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; font-size: .88rem; }
+.facts dt { color: var(--text-dim); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+#vector-bases { font-family: var(--mono); font-size: .8rem; line-height: 1.5; word-break: break-all; }
+.stack--wide { max-width: 44rem; }
+
+@media (max-width: 1200px) {
+  .vector { grid-template-columns: 1fr; }
+  .vector__list, .vector__side { max-height: none; }
+  .vector__canvas { height: 60vh; }
+}
+
+.pending {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: .5rem 0 0;
+  padding: .6rem .9rem; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  font-size: .9rem;
+}
+/* Dropping is only a hint until the file lands, so the cue has to be obvious
+   and has to go away again. */
+.vector__canvas.is-dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.design-form {
+  display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;
+  margin: 1rem 0;
+}
+.design-form .field { min-width: 11rem; }
+#design-template { font-family: var(--mono); font-size: .78rem; }
+
+/* The guidance is the part of a qPCR design the tool cannot do for you, so
+   it sits above the table rather than under it. */
+.guidance {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.guidance h2 { font-size: 1rem; margin-bottom: .35rem; }
+.guidance > p { margin: 0 0 .9rem; max-width: 70ch; font-size: .9rem; }
+.guidance__cols {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+.guidance__cols h3 {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-dim); margin-bottom: .4rem;
+}
+.guidance__cols ul { margin: 0; padding-left: 1.1rem; }
+.guidance__cols li { font-size: .86rem; margin-bottom: .4rem; line-height: 1.5; }
+
+.table-wrap { overflow-x: auto; margin-top: 1.25rem; }
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: .85rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.data-table caption {
+  caption-side: top; text-align: left; padding: .75rem 1rem;
+  color: var(--text-dim); font-size: .85rem; border-bottom: 1px solid var(--border);
+}
+.data-table th, .data-table td {
+  padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table thead th {
+  background: var(--surface-2); font-weight: 600; font-size: .78rem;
+  color: var(--text-dim); position: sticky; top: 0;
+}
+/* The two rows of a pair read as one block; the rule between pairs is what
+   separates them. */
+.data-table tbody tr.pair-start td { border-top: 2px solid var(--border); }
+.data-table tbody tr:hover td { background: var(--surface-2); }
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .seq { font-family: var(--mono); font-size: .8rem; }
+.data-table .warn { color: var(--danger); }
+.data-table .good { color: var(--ok); }
+.data-table tr.pair-warnings td { white-space: normal; color: var(--danger); font-size: .8rem; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 /* --- toast --------------------------------------------------------------- */
 .toast {
   position: fixed; inset: auto 1.25rem 1.25rem auto;

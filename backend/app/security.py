@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import secrets
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -70,6 +71,23 @@ class TokenError(Exception):
     """Any reason a token is not usable: malformed, expired, wrong signature."""
 
 
+def _signing_secret() -> str:
+    """The configured signing key, or a refusal that says what to set.
+
+    ELN_JWT_SECRET is optional in the settings so that the science service can
+    run on Supabase tokens alone (see app/science.py). Everything in this
+    module needs it, and handing PyJWT a None key raises something about
+    types rather than about configuration.
+    """
+    secret = get_settings().jwt_secret
+    if not secret:
+        raise TokenError(
+            "ELN_JWT_SECRET is not set, so this service can neither issue nor "
+            "verify its own tokens"
+        )
+    return secret
+
+
 def create_access_token(
     *,
     user_id: uuid.UUID,
@@ -87,7 +105,7 @@ def create_access_token(
     """
     settings = get_settings()
     now = dt.datetime.now(tz=dt.timezone.utc)
-    lifetime = dt.timedelta(hours=settings.access_token_hours)
+    lifetime = dt.timedelta(minutes=settings.access_token_minutes)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "lab_id": str(lab_id) if lab_id else None,
@@ -96,7 +114,7 @@ def create_access_token(
         "exp": int((now + lifetime).timestamp()),
         "jti": uuid.uuid4().hex,
     }
-    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    token = jwt.encode(payload, _signing_secret(), algorithm=settings.jwt_algorithm)
     return token, int(lifetime.total_seconds())
 
 
@@ -109,15 +127,39 @@ def decode_access_token(token: str) -> dict[str, Any]:
     key gets used as an HMAC secret.
     """
     settings = get_settings()
+    secret = _signing_secret()
     try:
         return jwt.decode(
             token,
-            settings.jwt_secret,
+            secret,
             algorithms=[settings.jwt_algorithm],
             options={"require": ["exp", "sub", "jti"]},
         )
     except jwt.PyJWTError as exc:
         raise TokenError(str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Refresh tokens
+# ---------------------------------------------------------------------------
+def new_refresh_token() -> tuple[str, bytes]:
+    """A fresh token and the hash to store for it.
+
+    `secrets.token_urlsafe(32)` is 256 bits from the system CSPRNG — not
+    guessable, and nothing an attacker can narrow down, which is why the
+    stored form is a plain SHA-256 rather than argon2. A password hash exists
+    to make guessing expensive; there is nothing here to guess, and paying
+    50 ms of argon2 on every refresh would buy exactly nothing.
+
+    The hash is stored so that a leaked database backup contains no usable
+    sessions. The token itself is returned once and never again.
+    """
+    raw = secrets.token_urlsafe(32)
+    return raw, hash_refresh_token(raw)
+
+
+def hash_refresh_token(raw: str) -> bytes:
+    return hashlib.sha256(raw.encode("ascii")).digest()
 
 
 # ---------------------------------------------------------------------------

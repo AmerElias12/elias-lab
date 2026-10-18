@@ -1,0 +1,34 @@
+# The science service only: app/science.py, which serves restriction cloning
+# and primer design and touches no database.
+#
+# What is deliberately absent is the entire data layer — asyncpg, psycopg and
+# alembic. Those are the three that need a database to be worth installing,
+# and this service has none.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32
+pydantic>=2.8,<3
+pydantic-settings>=2.4
+
+# [crypto] is what makes ES256/RS256 available, and newer Supabase projects
+# sign with a published asymmetric key rather than the shared secret. Without
+# the extra, those tokens fail with "algorithm not supported", which reads
+# like a configuration mistake and is not one.
+PyJWT[crypto]>=2.8
+
+# app/schemas.py takes its enums from app/db.py, which is SQLAlchemy, and
+# app/security.py imports argon2 at module scope. Neither is used by anything
+# this service serves. They are here because the import graph reaches them,
+# not because a request does — both are small, and untangling that is not
+# worth a second copy of the schemas to keep in step.
+sqlalchemy>=2.0.34,<2.1
+argon2-cffi>=21.3
+email-validator>=2.2   # pydantic's EmailStr needs it at import, not at call
+
+# The reason this service exists at all: none of this runs in a Supabase Edge
+# Function, which is Deno. biopython brings REBASE (~1,090 enzymes), pydna
+# models sticky ends and decides which will actually ligate, and `primers`
+# proposes pairs (with seqfold behind it for folding energy).
+biopython>=1.83
+pydna>=5.2
+primers>=0.5

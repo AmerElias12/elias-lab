@@ -74,6 +74,11 @@ ALTER TABLE plasmid        ADD COLUMN IF NOT EXISTS is_shared boolean NOT NULL D
 ALTER TABLE primer         ADD COLUMN IF NOT EXISTS is_shared boolean NOT NULL DEFAULT true;
 ALTER TABLE primer_pair    ADD COLUMN IF NOT EXISTS is_shared boolean NOT NULL DEFAULT true;
 ALTER TABLE guide_rna      ADD COLUMN IF NOT EXISTS is_shared boolean NOT NULL DEFAULT true;
+-- assembly carries both from the start; these are here so the file applies
+-- cleanly to a database built before it existed.
+ALTER TABLE assembly       ADD COLUMN IF NOT EXISTS
+  owner_id uuid REFERENCES app_user(id) ON DELETE SET NULL;
+ALTER TABLE assembly       ADD COLUMN IF NOT EXISTS is_shared boolean NOT NULL DEFAULT true;
 
 -- A table-level GRANT covers columns added later, so the privileges from
 -- eln-rls.sql section 3 already apply to these. Nothing to re-grant.
@@ -115,7 +120,8 @@ DECLARE
     'plasmid',        'owner_id',
     'primer',         'owner_id',
     'primer_pair',    'owner_id',
-    'guide_rna',      'owner_id'
+    'guide_rna',      'owner_id',
+    'assembly',       'owner_id'
   ];
   i int;
   t text;
@@ -220,7 +226,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'notebook_entry', 'plasmid', 'primer', 'primer_pair', 'guide_rna'
+    'notebook_entry', 'plasmid', 'primer', 'primer_pair', 'guide_rna', 'assembly'
   ] LOOP
     EXECUTE format('DROP POLICY IF EXISTS %1$I_in_lab ON %1$I', t);
     EXECUTE format($f$
@@ -256,6 +262,7 @@ CREATE INDEX IF NOT EXISTS plasmid_lab_owner_idx         ON plasmid        (lab_
 CREATE INDEX IF NOT EXISTS primer_lab_owner_idx          ON primer        (lab_id, owner_id);
 CREATE INDEX IF NOT EXISTS primer_pair_lab_owner_idx     ON primer_pair   (lab_id, owner_id);
 CREATE INDEX IF NOT EXISTS guide_rna_lab_owner_idx       ON guide_rna     (lab_id, owner_id);
+CREATE INDEX IF NOT EXISTS assembly_lab_owner_idx        ON assembly      (lab_id, owner_id);
 
 -- No index on is_shared. It is a boolean that is true for nearly every row, so
 -- it cannot narrow anything; the planner would ignore the index and the writes

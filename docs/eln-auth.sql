@@ -64,6 +64,7 @@ GRANT EXECUTE ON FUNCTION current_lab_role() TO eln_auth;
 GRANT SELECT, INSERT, UPDATE ON app_user   TO eln_auth;
 GRANT SELECT, INSERT         ON lab        TO eln_auth;
 GRANT SELECT, INSERT         ON lab_member TO eln_auth;
+GRANT SELECT, INSERT, UPDATE ON refresh_token TO eln_auth;
 
 -- -----------------------------------------------------------------------------
 -- 1 · Logging in
@@ -220,6 +221,125 @@ END
 $$;
 
 -- -----------------------------------------------------------------------------
+-- 3c · Refreshing a session
+-- -----------------------------------------------------------------------------
+-- The third pre-identity operation, and the subtlest. A refresh happens when
+-- the access token has already expired — that is the point of it — so
+-- current_user_id() is null and the policies on refresh_token correctly show
+-- nothing. The caller is not yet anybody; the row is what will make them
+-- somebody.
+--
+-- Rotation and reuse detection in one statement, deliberately. The sequence
+-- is: find the token, check it, insert its successor, point the old one at
+-- the new one. Split across round trips, two refreshes arriving together can
+-- both pass the check and both mint a successor, which is exactly the
+-- duplicate the reuse detection exists to catch — so it would detect a theft
+-- that never happened and sign the person out. SELECT ... FOR UPDATE makes
+-- the second one wait.
+--
+-- Reuse detection is the reason rotation is worth doing at all. A refresh
+-- token that has already been replaced is a token somebody kept a copy of:
+-- either the thief refreshed and the real user followed, or the reverse.
+-- There is no way to tell which party is which, so the whole family goes and
+-- both are asked to sign in again. Annoying once, and the alternative is a
+-- thief with an indefinitely renewable session.
+--
+-- `outcome` rather than an exception, because four of the five answers are
+-- ordinary: an old tab, a token from a signed-out session, one that expired
+-- over the weekend. Only 'reused' is a security event, and the application
+-- logs that one differently.
+CREATE OR REPLACE FUNCTION auth_rotate_refresh_token(
+  p_old_sha256 bytea,
+  p_new_sha256 bytea,
+  p_expires_at timestamptz,
+  p_user_agent text DEFAULT NULL
+) RETURNS TABLE (user_id uuid, family_id uuid, outcome text)
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+AS $$
+DECLARE
+  tok  refresh_token%ROWTYPE;
+  new_id uuid;
+BEGIN
+  SELECT * INTO tok FROM refresh_token t
+   WHERE t.token_sha256 = p_old_sha256
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, 'unknown'::text;
+    RETURN;
+  END IF;
+
+  IF tok.replaced_by_id IS NOT NULL THEN
+    -- Somebody is holding a copy. Revoke the lineage, not just this row:
+    -- the successor is the one actually in use and is what has to stop.
+    UPDATE refresh_token
+       SET revoked_at = now(), revoked_reason = 'refresh token reused'
+     WHERE refresh_token.family_id = tok.family_id
+       AND refresh_token.revoked_at IS NULL;
+    RETURN QUERY SELECT tok.user_id, tok.family_id, 'reused'::text;
+    RETURN;
+  END IF;
+
+  IF tok.revoked_at IS NOT NULL THEN
+    RETURN QUERY SELECT tok.user_id, tok.family_id, 'revoked'::text;
+    RETURN;
+  END IF;
+
+  IF tok.expires_at <= now() THEN
+    RETURN QUERY SELECT tok.user_id, tok.family_id, 'expired'::text;
+    RETURN;
+  END IF;
+
+  INSERT INTO refresh_token (user_id, token_sha256, family_id, expires_at, user_agent)
+  VALUES (tok.user_id, p_new_sha256, tok.family_id, p_expires_at,
+          coalesce(p_user_agent, tok.user_agent))
+  RETURNING id INTO new_id;
+
+  UPDATE refresh_token
+     SET replaced_by_id = new_id, last_used_at = now()
+   WHERE refresh_token.id = tok.id;
+
+  RETURN QUERY SELECT tok.user_id, tok.family_id, 'ok'::text;
+END
+$$;
+
+-- Signing out, which also happens before anybody is authenticated: the access
+-- token has usually expired by the time somebody clicks it, and a sign-out
+-- that only works while you are still signed in is not one.
+--
+-- Requiring a bearer token here was the alternative and is worse: it would
+-- leave the session alive in exactly the case where ending it matters most.
+-- The cookie is the only credential needed, and the worst a forged call can do
+-- is sign somebody out.
+CREATE OR REPLACE FUNCTION auth_revoke_refresh_family(
+  p_sha256 bytea,
+  p_reason text DEFAULT 'signed out'
+) RETURNS integer
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+AS $fn$
+DECLARE
+  fam uuid;
+  n   integer;
+BEGIN
+  SELECT family_id INTO fam FROM refresh_token WHERE token_sha256 = p_sha256;
+  IF fam IS NULL THEN
+    RETURN 0;
+  END IF;
+  -- The whole lineage, not the presented token: its successor is the one
+  -- actually in use, and leaving that alive would make sign-out cosmetic.
+  UPDATE refresh_token
+     SET revoked_at = now(), revoked_reason = p_reason
+   WHERE family_id = fam AND revoked_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END
+$fn$;
+
+-- -----------------------------------------------------------------------------
 -- 4 · Who may call them
 -- -----------------------------------------------------------------------------
 -- Owned by eln_auth so SECURITY DEFINER runs as the exempt role. Executable by
@@ -229,16 +349,22 @@ ALTER FUNCTION auth_lookup_credentials(text)              OWNER TO eln_auth;
 ALTER FUNCTION auth_register_user(text, text, text, text)  OWNER TO eln_auth;
 ALTER FUNCTION auth_create_lab(text, text, uuid)           OWNER TO eln_auth;
 ALTER FUNCTION auth_find_user_by_email(text)               OWNER TO eln_auth;
+ALTER FUNCTION auth_rotate_refresh_token(bytea, bytea, timestamptz, text) OWNER TO eln_auth;
+ALTER FUNCTION auth_revoke_refresh_family(bytea, text)     OWNER TO eln_auth;
 
 REVOKE ALL ON FUNCTION auth_lookup_credentials(text)             FROM PUBLIC;
 REVOKE ALL ON FUNCTION auth_register_user(text, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION auth_create_lab(text, text, uuid)          FROM PUBLIC;
 REVOKE ALL ON FUNCTION auth_find_user_by_email(text)              FROM PUBLIC;
+REVOKE ALL ON FUNCTION auth_rotate_refresh_token(bytea, bytea, timestamptz, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION auth_revoke_refresh_family(bytea, text)    FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION auth_lookup_credentials(text)              TO eln_app;
 GRANT EXECUTE ON FUNCTION auth_register_user(text, text, text, text) TO eln_app;
 GRANT EXECUTE ON FUNCTION auth_create_lab(text, text, uuid)          TO eln_app;
 GRANT EXECUTE ON FUNCTION auth_find_user_by_email(text)              TO eln_app;
+GRANT EXECUTE ON FUNCTION auth_rotate_refresh_token(bytea, bytea, timestamptz, text) TO eln_app;
+GRANT EXECUTE ON FUNCTION auth_revoke_refresh_family(bytea, text)    TO eln_app;
 
 -- -----------------------------------------------------------------------------
 -- 5 · Seeing your own labs

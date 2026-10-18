@@ -18,7 +18,7 @@ import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -156,10 +156,30 @@ class LoginRequest(ApiModel):
 
 
 class Token(BaseModel):
+    """What a sign-in hands back.
+
+    `refresh_token` is deliberately always None here. The refresh token goes
+    out as an httpOnly cookie instead, so that script on this origin cannot
+    read it — which is the entire reason for having one. Putting it in the
+    body as well would hand it straight back to the thing it is hiding from.
+    The field stays so that the shape does not change if that is ever revisited.
+    """
+
     access_token: str
     refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int
+
+
+class SessionRead(ReadModel):
+    """One signed-in session, for the person who owns it."""
+
+    id: uuid.UUID
+    issued_at: datetime
+    expires_at: datetime
+    last_used_at: datetime | None = None
+    user_agent: str | None = None
+    current: bool = False
 
 
 class TokenPayload(BaseModel):
@@ -448,6 +468,523 @@ class PlasmidHistoryRow(ReadModel):
 
 
 # ---------------------------------------------------------------------------
+# Primers
+# ---------------------------------------------------------------------------
+class PrimerCreate(ApiModel):
+    """An oligo as ordered.
+
+    tm_c and gc_percent are supplied rather than computed here. The arithmetic
+    lives in js/plasmid.js, where it is tested, and a second implementation in
+    Python would be a second answer to the same question — so what is stored is
+    what the designer saw when they chose the primer, which is also the number
+    they would defend in a meeting.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    sequence: DnaStr
+    is_shared: bool = True
+    # Free text on purpose. "gRNA cloning oligo", "colony PCR", "sequencing" —
+    # labs name these things their own way, and an enum would be wrong within
+    # a month. It is searchable, which is what matters.
+    purpose: str | None = Field(default=None, max_length=300)
+    tm_c: Decimal | None = Field(default=None, ge=0, le=120)
+    gc_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+    _clean = field_validator("sequence")(classmethod(lambda cls, v: _clean_dna(v)))
+
+    @field_validator("sequence")
+    @classmethod
+    def long_enough_to_anneal(cls, v: str) -> str:
+        # Shorter than this is not a primer; it is usually a paste that lost
+        # its first line.
+        if len(v) < 8:
+            raise ValueError("a primer needs at least 8 bases")
+        if len(v) > 200:
+            raise ValueError("longer than 200 bases is an oligo nobody ordered")
+        return v
+
+
+class PrimerUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    purpose: str | None = Field(default=None, max_length=300)
+    tm_c: Decimal | None = Field(default=None, ge=0, le=120)
+    gc_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    owner_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    # No `sequence`. An ordered oligo is a physical thing in a freezer box; if
+    # the sequence is wrong the answer is a new primer, not a quiet edit that
+    # leaves every experiment citing this one describing something else.
+
+
+class PrimerSummary(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    sequence: str
+    length_nt: int
+    is_shared: bool
+    purpose: str | None = None
+    tm_c: Decimal | None = None
+    gc_percent: Decimal | None = None
+    updated_at: datetime
+
+
+class PrimerRead(PrimerSummary):
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# In-silico cloning
+# ---------------------------------------------------------------------------
+class CloningRequest(ApiModel):
+    """Two molecules and the enzymes to cut them with.
+
+    Sequences arrive as text — GenBank, FASTA or bare bases — rather than as
+    plasmid ids, because the common case is simulating against something that
+    is not in the notebook yet: a vendor's map, a colleague's attachment, a
+    construct somebody is still deciding whether to order.
+    """
+
+    sequence_a: str = Field(min_length=1, description="GenBank, FASTA or plain bases")
+    sequence_b: str = Field(min_length=1, description="GenBank, FASTA or plain bases")
+    enzymes: list[str] = Field(min_length=1, max_length=8)
+    name_a: str = Field(default="A", max_length=40)
+    name_b: str = Field(default="B", max_length=40)
+    # Linear products are usually an intermediate nobody wants to see; asking
+    # for them is how you work out why no circle formed.
+    circular_only: bool = True
+
+    @field_validator("enzymes")
+    @classmethod
+    def names_look_like_enzymes(cls, v: list[str]) -> list[str]:
+        cleaned = [n.strip() for n in v if n and n.strip()]
+        if not cleaned:
+            raise ValueError("name at least one enzyme")
+        for name in cleaned:
+            if not re.fullmatch(r"[A-Za-z0-9.\-]{2,20}", name):
+                raise ValueError(f"{name!r} is not an enzyme name")
+        return cleaned
+
+
+class CloningEnd(BaseModel):
+    kind: str
+    overhang: str
+
+
+class CloningFeature(BaseModel):
+    name: str
+    type: str
+    start: int
+    end: int
+    strand: int
+
+
+class CloningFragment(BaseModel):
+    source: str
+    index: int
+    length_bp: int
+    five_prime: CloningEnd
+    three_prime: CloningEnd
+    features: list[CloningFeature] = Field(default_factory=list)
+
+
+class CloningInput(BaseModel):
+    name: str
+    length_bp: int
+    topology: str
+    fragments: list[CloningFragment]
+
+
+class CloningJunction(BaseModel):
+    """Whether an enzyme can still cut the product.
+
+    The question underneath: did the junction rebuild the site. Two EcoRI ends
+    do; a BamHI end joined to a BglII end does not, and the insert cannot be
+    cut back out afterwards.
+    """
+
+    enzyme: str
+    site: str
+    sites_in_product: int
+    regenerated: bool
+
+
+class CloningPart(BaseModel):
+    source: str
+    fragment: int
+    length_bp: int
+    orientation: str
+
+
+class CloningConstruct(BaseModel):
+    """Shaped so static/js/vector-viewer.js can draw it with no translation."""
+
+    name: str
+    sequence: str
+    topology: str
+    length_bp: int
+    features: list[CloningFeature] = Field(default_factory=list)
+    parts: list[CloningPart] = Field(default_factory=list)
+    junctions: list[CloningJunction] = Field(default_factory=list)
+
+
+class CloningResponse(BaseModel):
+    enzymes: list[str]
+    inputs: dict[str, CloningInput]
+    constructs: list[CloningConstruct]
+    #: Things worth reading beside the result: why nothing formed, or why
+    #: there are nine products and most of them are unwanted.
+    notes: list[str] = Field(default_factory=list)
+
+
+class PrimerDesignRequest(ApiModel):
+    """A template and what the product should look like.
+
+    The template is sent as text rather than as a plasmid id: the common case
+    is designing against a region somebody has just pasted, or a stretch of a
+    genome that is not in the notebook at all.
+    """
+
+    template: str = Field(min_length=1)
+    product_length: int = Field(ge=50, le=20_000)
+    optimal_tm: float = Field(default=60.0, ge=40, le=75)
+    max_pairs: int = Field(default=3, ge=1, le=10)
+    #: What the primers are for, which decides whether off-target screening is
+    #: expected. Amplifying from a purified plasmid has no background to
+    #: mis-prime against; a qRT-PCR or an analytical PCR runs against a genome
+    #: or a transcriptome, where mis-priming is the usual reason it fails.
+    purpose: Literal["cloning", "qpcr", "analytical"] = "cloning"
+    #: The background to screen against — the locus with its flanks, the
+    #: paralogs, the transcript panel. FASTA or bases; several records are
+    #: fine. Not a whole genome: that is a job for BLAST on a server with one.
+    screen_against: str | None = None
+    screen_name: str = Field(default="the screening sequence", max_length=120)
+
+
+class DesignedPrimer(BaseModel):
+    sequence: str
+    length: int
+    tm: float
+    gc_percent: float
+    start: int
+    end: int
+    strand: int
+    hairpin_dg: float
+    self_dimer_run: int
+    self_dimer_3prime_run: int
+    gc_clamp: bool
+    gc_in_last_five: int
+    #: Places in the background where this primer's 3' end could sit, counting
+    #: one mismatch, on either strand. One of them is normally the intended
+    #: site. Zero when nothing was screened.
+    binding_sites: int = 0
+
+
+class PredictedAmplicon(BaseModel):
+    """A product the background would give — wanted or not."""
+
+    start: int
+    end: int
+    length: int
+    forward_primer: str
+    reverse_primer: str
+    intended: bool
+
+
+class DesignedPair(BaseModel):
+    forward: DesignedPrimer
+    reverse: DesignedPrimer
+    product_start: int
+    product_end: int
+    product_length: int
+    tm_difference: float
+    hetero_dimer_run: int
+    hetero_dimer_3prime_run: int
+    hetero_dimer_severity: str
+    score: float
+    #: The score broken into the things it is made of, so somebody can
+    #: disagree with the weighting rather than only with the total.
+    penalties: dict[str, float]
+    screened: bool = False
+    spurious_amplicons: int = 0
+    amplicons: list[PredictedAmplicon] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PrimerDesignTarget(BaseModel):
+    product_length: int
+    optimal_tm: float
+
+
+class GuidanceSection(BaseModel):
+    heading: str
+    rules: list[str]
+
+
+class DesignGuidance(BaseModel):
+    """Advice the endpoint cannot act on itself.
+
+    Present for a qRT-PCR design, where placing the pair across an exon–exon
+    junction is what keeps contaminating genomic DNA out of the result — a
+    decision about the transcript, taken before any sequence is pasted in.
+    """
+
+    title: str
+    summary: str
+    sections: list[GuidanceSection]
+
+
+class ScreenSummary(BaseModel):
+    name: str
+    length_bp: int
+    seed_len: int
+    max_mismatches: int
+
+
+class PrimerDesignResponse(BaseModel):
+    template_length: int
+    target: PrimerDesignTarget
+    purpose: str
+    #: None when nothing was screened — which for qPCR or analytical work is
+    #: itself worth seeing.
+    screen: ScreenSummary | None = None
+    #: Present for qPCR, where the thing that matters most is a decision this
+    #: endpoint cannot make for you.
+    guidance: DesignGuidance | None = None
+    #: What the quoted Tm means. Biopython's defaults are a hybridisation
+    #: experiment, not a PCR, and the difference is around ten degrees — so
+    #: the conditions travel with the number.
+    tm_conditions: dict[str, float | str]
+    windows_tried: int
+    pairs_found: int
+    pairs: list[DesignedPair]
+    notes: list[str] = Field(default_factory=list)
+
+
+class PcrCreate(ApiModel):
+    """An amplification, with the product the design says it gives.
+
+    The product is sent rather than computed here: js/plasmid.js worked it out
+    from the template and the two bindings, including the case where the
+    amplicon runs across the origin of a circular plasmid, and recomputing it
+    in Python would be a second answer to the same question.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    forward_primer_id: uuid.UUID
+    reverse_primer_id: uuid.UUID
+    is_shared: bool = True
+    template_plasmid_id: uuid.UUID | None = None
+    expected_bp: int | None = Field(default=None, gt=0)
+    annealing_temp_c: Decimal | None = Field(default=None, ge=0, le=120)
+    product_start: int | None = Field(default=None, ge=0)
+    product_end: int | None = Field(default=None, ge=0)
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+    @field_validator("product_sequence")
+    @classmethod
+    def product_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+    @model_validator(mode="after")
+    def two_different_primers(self) -> "PcrCreate":
+        # The database has the same CHECK; this one produces a sentence.
+        if self.forward_primer_id == self.reverse_primer_id:
+            raise ValueError("a PCR needs two different primers")
+        return self
+
+
+class PcrUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    annealing_temp_c: Decimal | None = Field(default=None, ge=0, le=120)
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class PcrRead(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    is_shared: bool
+    forward_primer_id: uuid.UUID
+    reverse_primer_id: uuid.UUID
+    template_plasmid_id: uuid.UUID | None = None
+    expected_bp: int | None = None
+    annealing_temp_c: Decimal | None = None
+    product_start: int | None = None
+    product_end: int | None = None
+    product_sequence: str | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssemblyFragmentCreate(ApiModel):
+    """One piece. `ordinal` is the design, not a display order."""
+
+    ordinal: int = Field(ge=1, le=20)
+    name: str = Field(min_length=1, max_length=200)
+    source_plasmid_id: uuid.UUID | None = None
+    start_pos: int | None = Field(default=None, ge=0)
+    end_pos: int | None = Field(default=None, ge=0)
+    length_bp: int | None = Field(default=None, gt=0)
+    forward_primer_id: uuid.UUID | None = None
+    reverse_primer_id: uuid.UUID | None = None
+    overlap_sequence: str | None = None
+    note: str | None = None
+
+    @field_validator("overlap_sequence")
+    @classmethod
+    def overlap_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+
+class AssemblyFragmentRead(ReadModel):
+    """Spelled out rather than inherited from the Create model.
+
+    The two carry the same fields and must not carry the same config: a Create
+    model forbids unknown keys so a typo in a request is reported, and a Read
+    model populates from ORM attributes. Inheriting one from the other gets the
+    wrong half — which here meant the response could not be built from a row at
+    all.
+    """
+
+    id: uuid.UUID
+    assembly_id: uuid.UUID
+    ordinal: int
+    name: str
+    source_plasmid_id: uuid.UUID | None = None
+    start_pos: int | None = None
+    end_pos: int | None = None
+    length_bp: int | None = None
+    forward_primer_id: uuid.UUID | None = None
+    reverse_primer_id: uuid.UUID | None = None
+    overlap_sequence: str | None = None
+    note: str | None = None
+
+
+class AssemblyCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=200)
+    method: ConstructionKind = ConstructionKind.gibson
+    is_shared: bool = True
+    overlap_bp: int | None = Field(default=None, ge=10, le=120)
+    product_plasmid_id: uuid.UUID | None = None
+    product_bp: int | None = Field(default=None, gt=0)
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    fragments: list[AssemblyFragmentCreate] = Field(default_factory=list)
+
+    @field_validator("product_sequence")
+    @classmethod
+    def product_is_dna(cls, v: str | None) -> str | None:
+        return _clean_dna(v) if v else None
+
+    @model_validator(mode="after")
+    def fragments_are_an_ordered_set(self) -> "AssemblyCreate":
+        if self.method is ConstructionKind.gibson and len(self.fragments) < 2:
+            raise ValueError("a Gibson assembly needs a vector and at least one insert")
+        ordinals = [f.ordinal for f in self.fragments]
+        if len(set(ordinals)) != len(ordinals):
+            raise ValueError("two fragments cannot share an ordinal")
+        if ordinals and sorted(ordinals) != list(range(1, len(ordinals) + 1)):
+            # A gap means a fragment was dropped on the way, and in a Gibson
+            # the next fragment's primer carries the previous one's end — so a
+            # gap is not a cosmetic problem, it is a design that will not
+            # assemble.
+            raise ValueError("fragment ordinals must run 1..n with no gaps")
+        return self
+
+
+class AssemblyUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_shared: bool | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class AssemblySummary(ReadModel):
+    id: uuid.UUID
+    lab_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
+    name: str
+    is_shared: bool
+    method: ConstructionKind
+    overlap_bp: int | None = None
+    product_plasmid_id: uuid.UUID | None = None
+    product_bp: int | None = None
+    fragment_count: int = 0
+    updated_at: datetime
+
+
+class AssemblyRead(AssemblySummary):
+    product_sequence: str | None = None
+    designed_in_entry_id: uuid.UUID | None = None
+    notes: str | None = None
+    created_at: datetime
+    fragments: list[AssemblyFragmentRead] = Field(default_factory=list)
+
+
+class PrimerBindingCreate(ApiModel):
+    """Where a primer anneals on a plasmid, as the designer found it.
+
+    Recorded rather than recomputed. The binding is the documented fact — this
+    oligo was used with that construct — and a later edit to the plasmid should
+    not silently move or erase it.
+    """
+
+    plasmid_id: uuid.UUID
+    start_pos: int = Field(ge=0)
+    end_pos: int = Field(ge=0)
+    strand: int = Field(ge=-1, le=1)
+    annealed_nt: int = Field(gt=0)
+    # The 5' overhang that does not anneal: a restriction site, a Gibson arm,
+    # a barcode. Empty for a plain primer.
+    tail_sequence: str = ""
+    tm_annealed_c: Decimal | None = Field(default=None, ge=0, le=120)
+
+    @field_validator("tail_sequence")
+    @classmethod
+    def tail_is_dna_or_empty(cls, v: str) -> str:
+        return _clean_dna(v) if v else ""
+
+
+class PrimerBindingRead(ReadModel):
+    id: uuid.UUID
+    primer_id: uuid.UUID
+    plasmid_id: uuid.UUID
+    start_pos: int
+    end_pos: int
+    strand: int
+    annealed_nt: int
+    tail_sequence: str
+    tm_annealed_c: Decimal | None = None
+
+
+class PrimerBindingDetail(PrimerBindingRead):
+    """A binding with enough of the primer to draw it, so the map does not need
+    a second request per primer."""
+
+    primer_name: str
+    primer_sequence: str
+
+
+# ---------------------------------------------------------------------------
 # 4 · CRISPR designs
 # ---------------------------------------------------------------------------
 class PegRNADetailCreate(ApiModel):
@@ -557,6 +1094,12 @@ class GuideRNASummary(ReadModel):
     pam_sequence: str
     nuclease: str
     target_plasmid_id: uuid.UUID | None = None
+    # Where it sits, in the list view. Without these the molecular tool can
+    # tell you a guide targets the open plasmid but cannot draw it, which is
+    # the one thing the list is there for.
+    target_start: int | None = None
+    target_strand: int | None = None
+    cut_position: int | None = None
     gc_percent: Decimal | None = None
     updated_at: datetime
 

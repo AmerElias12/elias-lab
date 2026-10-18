@@ -241,6 +241,135 @@ async def exercise() -> int:
                   _fresh_account_has_no_lab())
 
         # ---------------------------------------------------------------
+        # sessions: the part a JWT cannot do on its own
+        # ---------------------------------------------------------------
+        async def refresh_with(cookie: str | None):
+            """Refresh carrying exactly one cookie, and no jar.
+
+            httpx merges a per-request `cookies=` with the client's own jar
+            rather than replacing it, so the live session cookie went along
+            for the ride and every negative case here passed when it should
+            have failed. A throwaway client with an explicit header is the
+            only way to be sure what was sent.
+            """
+            headers = {"Cookie": f"eln_refresh={cookie}"} if cookie is not None else {}
+            fresh = httpx.AsyncClient(transport=transport, base_url="http://test")
+            try:
+                return await fresh.post("/api/auth/refresh", headers=headers)
+            finally:
+                await fresh.aclose()
+
+        async def _login_sets_an_httponly_cookie():
+            r = await c.post("/api/auth/login",
+                             json={"email": "pi@braude.ac.il",
+                                   "password": "correct horse battery staple"})
+            assert r.status_code == 200, r.text
+            assert r.json()["refresh_token"] is None, (
+                "the refresh token must not come back in the body as well; that "
+                "hands it to the script it is being hidden from"
+            )
+            raw = r.headers.get("set-cookie", "")
+            assert "eln_refresh=" in raw, raw
+            assert "HttpOnly" in raw, raw
+            assert "SameSite=strict" in raw.replace("samesite", "SameSite"), raw
+            assert "Path=/api/auth" in raw, raw
+        await run("signing in sets an httpOnly, same-site refresh cookie",
+                  _login_sets_an_httponly_cookie())
+
+        async def _refresh_rotates():
+            before = c.cookies.get("eln_refresh")
+            assert before, "the client is holding the cookie"
+            r = await c.post("/api/auth/refresh")
+            assert r.status_code == 200, r.text
+            assert r.json()["access_token"], r.text
+            after = c.cookies.get("eln_refresh")
+            assert after and after != before, "each refresh must mint a new token"
+        await run("a refresh returns a new access token and rotates the cookie",
+                  _refresh_rotates())
+
+        async def _a_spent_token_kills_the_family():
+            """The reason rotation is worth having. A refresh token that has
+            already been replaced is one somebody kept a copy of; there is no
+            way to tell the thief from the owner, so both are signed out."""
+            spent = c.cookies.get("eln_refresh")
+            r1 = await c.post("/api/auth/refresh")
+            assert r1.status_code == 200, r1.text
+            live = c.cookies.get("eln_refresh")
+            assert live != spent
+
+            # Present the one that was already used.
+            replay = await refresh_with(spent)
+            assert replay.status_code == 401, f"{replay.status_code} {replay.text}"
+
+            # And the successor the honest holder had is now dead too.
+            after = await refresh_with(live)
+            assert after.status_code == 401, (
+                f"the family should have been revoked: {after.status_code} {after.text}"
+            )
+        await run("replaying a spent refresh token revokes the whole family",
+                  _a_spent_token_kills_the_family())
+
+        async def _every_failure_looks_the_same():
+            for cookie in ("not-a-token", "", "x" * 60):
+                r = await refresh_with(cookie)
+                assert r.status_code == 401, f"{cookie!r} gave {r.status_code}"
+            bare = await refresh_with(None)
+            assert bare.status_code == 401, bare.text
+        await run("an unknown, empty or malformed refresh token is the same 401",
+                  _every_failure_looks_the_same())
+
+        # Sign in again: the family above was deliberately destroyed.
+        pi_token = await login("pi@braude.ac.il")
+
+        async def _logout_ends_the_session():
+            held = c.cookies.get("eln_refresh")
+            r = await c.post("/api/auth/logout")
+            assert r.status_code == 204, r.text
+            dead = await refresh_with(held)
+            assert dead.status_code == 401, (
+                f"signing out must end the session, not just clear the cookie: {dead.text}"
+            )
+        await run("signing out ends the session on the server, not just in the browser",
+                  _logout_ends_the_session())
+
+        pi_token = await login("pi@braude.ac.il")
+
+        async def _sessions_are_listed_and_revocable():
+            # A second sign-in, as if from another machine.
+            other = httpx.AsyncClient(transport=transport, base_url="http://test")
+            try:
+                await other.post("/api/auth/login",
+                                 json={"email": "pi@braude.ac.il",
+                                       "password": "correct horse battery staple"})
+                sessions = (await c.get("/api/auth/sessions", headers=auth(pi_token))).json()
+                assert len(sessions) >= 2, sessions
+                assert sum(1 for s in sessions if s["current"]) == 1, (
+                    "exactly one session is the one asking"
+                )
+                elsewhere = next(s for s in sessions if not s["current"])
+                gone = await c.delete(f"/api/auth/sessions/{elsewhere['id']}",
+                                      headers=auth(pi_token))
+                assert gone.status_code == 204, gone.text
+                # That other browser can no longer refresh.
+                still = await other.post("/api/auth/refresh")
+                assert still.status_code == 401, still.text
+            finally:
+                await other.aclose()
+        await run("sessions can be listed and signed out from somewhere else",
+                  _sessions_are_listed_and_revocable())
+
+        async def _sessions_are_private_even_from_admins():
+            """A session is not lab data: whoever can read one can become its
+            owner. The policy has no administrator branch."""
+            import sqlalchemy as sa
+            from app.session import get_engine
+            async with get_engine().connect() as conn:
+                n = (await conn.execute(sa.text("SELECT count(*) FROM refresh_token"))).scalar()
+                assert n == 0, f"the application read {n} sessions with no scope set"
+        await run("nobody reads somebody else's sessions, administrators included",
+                  _sessions_are_private_even_from_admins())
+
+        # ---------------------------------------------------------------
         # starting a lab
         # ---------------------------------------------------------------
         async def _create_lab():
@@ -367,6 +496,598 @@ async def exercise() -> int:
             weird = await c.get("/api/entries?q=%27%29%3B--", headers=auth(pi_token))
             assert weird.status_code == 200, weird.text
         await run("full-text search finds it, and takes punctuation as text", _search())
+
+        # ---------------------------------------------------------------
+        # plasmids, which is what the map draws
+        # ---------------------------------------------------------------
+        plasmid: dict = {}
+
+        async def _create_plasmid_with_features():
+            """The shape an import produces: a sequence plus features, one of
+            which crosses the origin."""
+            r = await c.post(
+                "/api/plasmids",
+                headers=auth(pi_token),
+                json={
+                    "name": "pTEST-GFP",
+                    "sequence": "ATGC" * 120,          # 480 bp
+                    "topology": "circular",
+                    "external_source": "GenBank file: pTEST-GFP.gb",
+                    "features": [
+                        {"name": "EGFP", "type_key": "CDS", "start_pos": 0,
+                         "end_pos": 240, "strand": 1, "color": "#2f9e44"},
+                        {"name": "source", "type_key": "source", "start_pos": 0,
+                         "end_pos": 480, "strand": 1},
+                        {"name": "wrapper", "type_key": "misc_feature", "start_pos": 459,
+                         "end_pos": 20, "strand": 1, "wraps_origin": True},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            plasmid.update(r.json())
+            assert plasmid["length_bp"] == 480, plasmid
+            assert len(plasmid["features"]) == 3, plasmid["features"]
+        await run("a plasmid is created with its features in one request",
+                  _create_plasmid_with_features())
+
+        async def _read_it_back():
+            """This is the check that was missing: every relationship is
+            lazy="raise", so building the response from the ORM object walks
+            into that guard and returns 500."""
+            r = await c.get(f"/api/plasmids/{plasmid['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert got["sequence"].startswith("ATGC"), got["sequence"][:10]
+            assert len(got["features"]) == 3, got["features"]
+            by = {f["name"]: f for f in got["features"]}
+            assert by["EGFP"]["color"] == "#2f9e44"
+            assert by["wrapper"]["wraps_origin"] is True
+            assert by["wrapper"]["start_pos"] == 459 and by["wrapper"]["end_pos"] == 20
+        await run("and read back whole, features and all", _read_it_back())
+
+        async def _unknown_feature_key_is_coerced_not_refused():
+            """sequence_feature.type_key is a foreign key into a controlled
+            vocabulary. Real files carry keys that are not in it, and refusing
+            a whole plasmid over one annotation is the wrong answer."""
+            r = await c.post(
+                "/api/plasmids",
+                headers=auth(pi_token),
+                json={
+                    "name": "pOddKeys", "sequence": "ATGC" * 60,
+                    "external_source": "test",
+                    "features": [
+                        {"name": "strange", "type_key": "not_a_real_key",
+                         "start_pos": 0, "end_pos": 30, "strand": 1},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            f = r.json()["features"][0]
+            assert f["type_key"] == "misc_feature", f
+            assert "not_a_real_key" in (f["note"] or ""), (
+                "the original key must survive in the note, or the import is lossy"
+            )
+        await run("an unknown feature key is coerced, and recorded in the note",
+                  _unknown_feature_key_is_coerced_not_refused())
+
+        async def _list_omits_the_sequence():
+            page = (await c.get("/api/plasmids", headers=auth(pi_token))).json()
+            assert page["total"] == 2, page
+            assert "sequence" not in page["items"][0], "a page of 10 kb plasmids is not a list"
+            hit = (await c.get("/api/plasmids?q=pTEST", headers=auth(pi_token))).json()
+            assert hit["total"] == 1, hit
+        await run("the list omits sequences and can be searched by name",
+                  _list_omits_the_sequence())
+
+        # ---------------------------------------------------------------
+        # the oligo library, and finding it again
+        # ---------------------------------------------------------------
+        primer: dict = {}
+
+        async def _create_primers():
+            for name, seq, purpose in (
+                ("pTEST-F", "ATGAGCAAAGGCGAAGAACTG", "colony PCR of the GFP insert"),
+                ("pTEST-R", "GGTCGCATCGCCTTCGCCTTC", "colony PCR of the GFP insert"),
+                ("gRNA-site1-top", "CACCGACGTTGCAACGTTGCAAGG", "gRNA cloning oligo, BsmBI"),
+            ):
+                r = await c.post("/api/primers", headers=auth(pi_token),
+                                 json={"name": name, "sequence": seq, "purpose": purpose})
+                assert r.status_code == 201, r.text
+                if name == "pTEST-F":
+                    primer.update(r.json())
+            assert primer["length_nt"] == 21, primer
+        await run("primers are created, and the database computes their length",
+                  _create_primers())
+
+        async def _search_the_library():
+            # The search people use: what was this oligo for.
+            hits = (await c.get("/api/primers?q=colony", headers=auth(pi_token))).json()
+            assert hits["total"] == 2, hits
+            # The one the molecular tool needs: gRNA-cloning oligos.
+            grna = (await c.get("/api/primers?q=gRNA%20cloning", headers=auth(pi_token))).json()
+            assert grna["total"] == 1, grna
+            assert grna["items"][0]["name"] == "gRNA-site1-top"
+        await run("the library is searchable by what a primer was for", _search_the_library())
+
+        async def _have_we_made_this_already():
+            """Ordering a duplicate of an oligo already in the freezer is the
+            waste this answers."""
+            dup = (await c.get(
+                "/api/primers?sequence=ATGAGCAAAGGCGAAGAACTG", headers=auth(pi_token)
+            )).json()
+            assert dup["total"] == 1, dup
+            assert dup["items"][0]["name"] == "pTEST-F"
+            none = (await c.get(
+                "/api/primers?sequence=TTTTTTTTTTTTTTTTTTTT", headers=auth(pi_token)
+            )).json()
+            assert none["total"] == 0, none
+        await run("an exact sequence search says whether we already have it",
+                  _have_we_made_this_already())
+
+        async def _sequence_cannot_be_edited():
+            """An ordered oligo is a tube in a freezer. Editing its sequence
+            would leave every experiment citing it describing something else."""
+            r = await c.patch(f"/api/primers/{primer['id']}", headers=auth(pi_token),
+                              json={"sequence": "ACGTACGTACGTACGTACGT"})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            still = (await c.get(f"/api/primers/{primer['id']}", headers=auth(pi_token))).json()
+            assert still["sequence"] == "ATGAGCAAAGGCGAAGAACTG"
+        await run("a primer's sequence is not editable", _sequence_cannot_be_edited())
+
+        async def _attach_to_a_plasmid():
+            r = await c.post(
+                f"/api/primers/{primer['id']}/bindings",
+                headers=auth(pi_token),
+                json={"plasmid_id": plasmid["id"], "start_pos": 0, "end_pos": 21,
+                      "strand": 1, "annealed_nt": 21, "tail_sequence": ""},
+            )
+            assert r.status_code == 201, r.text
+
+            listed = (await c.get(
+                f"/api/primers/bindings?plasmid_id={plasmid['id']}", headers=auth(pi_token)
+            )).json()
+            assert len(listed) == 1, listed
+            # The map needs the sequence to draw it; a request per primer would
+            # be a round trip per arrow.
+            assert listed[0]["primer_name"] == "pTEST-F", listed[0]
+            assert listed[0]["primer_sequence"] == "ATGAGCAAAGGCGAAGAACTG", listed[0]
+        await run("a primer is attached to a plasmid and comes back with it",
+                  _attach_to_a_plasmid())
+
+        async def _cannot_attach_across_labs():
+            import uuid as _uuid
+            r = await c.post(
+                f"/api/primers/{primer['id']}/bindings",
+                headers=auth(pi_token),
+                json={"plasmid_id": str(_uuid.uuid4()), "start_pos": 0, "end_pos": 21,
+                      "strand": 1, "annealed_nt": 21},
+            )
+            assert r.status_code == 404, f"{r.status_code} {r.text}"
+        await run("a primer cannot be filed against a plasmid you cannot see",
+                  _cannot_attach_across_labs())
+
+        # ---------------------------------------------------------------
+        # the designs the molecular tool works out
+        # ---------------------------------------------------------------
+        pcr: dict = {}
+
+        async def _store_a_pcr_product():
+            fwd = (await c.get("/api/primers?sequence=ATGAGCAAAGGCGAAGAACTG",
+                               headers=auth(pi_token))).json()["items"][0]
+            rev = (await c.get("/api/primers?q=pTEST-R", headers=auth(pi_token))).json()["items"][0]
+            r = await c.post(
+                "/api/pcr",
+                headers=auth(pi_token),
+                json={
+                    "name": "colony PCR across the insert",
+                    "forward_primer_id": fwd["id"],
+                    "reverse_primer_id": rev["id"],
+                    "template_plasmid_id": plasmid["id"],
+                    "product_start": 0, "product_end": 222,
+                    "product_sequence": "ATGC" * 55 + "AT",
+                    "annealing_temp_c": 58.0,
+                },
+            )
+            assert r.status_code == 201, r.text
+            pcr.update(r.json())
+            assert pcr["expected_bp"] == 222, (
+                "the length should follow from the product rather than be asked for twice"
+            )
+            assert pcr["product_sequence"].startswith("ATGC")
+        await run("a PCR product is stored with its template and primers",
+                  _store_a_pcr_product())
+
+        async def _pcr_is_found_from_the_template():
+            """What the map asks: with this plasmid open, what has been
+            amplified off it."""
+            hits = (await c.get(f"/api/pcr?template_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert hits["total"] == 1, hits
+            assert hits["items"][0]["id"] == pcr["id"]
+        await run("and found again from the plasmid it was run on",
+                  _pcr_is_found_from_the_template())
+
+        async def _one_primer_is_not_a_pcr():
+            fwd = pcr["forward_primer_id"]
+            r = await c.post("/api/pcr", headers=auth(pi_token),
+                             json={"name": "nonsense", "forward_primer_id": fwd,
+                                   "reverse_primer_id": fwd})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "two different primers" in r.text, r.text
+        await run("the same primer twice is refused, with the reason",
+                  _one_primer_is_not_a_pcr())
+
+        assembly: dict = {}
+
+        async def _store_a_gibson_design():
+            """Three fragments, in order, each with the overlap that joins it
+            to the one before. The order is the design, not a display choice."""
+            r = await c.post(
+                "/api/assemblies",
+                headers=auth(pi_token),
+                json={
+                    "name": "pTEST-GFP v2 by Gibson",
+                    "method": "gibson",
+                    "overlap_bp": 25,
+                    "product_bp": 5200,
+                    "fragments": [
+                        {"ordinal": 1, "name": "backbone", "source_plasmid_id": plasmid["id"],
+                         "start_pos": 0, "end_pos": 240, "length_bp": 240,
+                         "overlap_sequence": "ACGTACGTACGTACGTACGTACGTA"},
+                        {"ordinal": 2, "name": "GFP insert", "length_bp": 720,
+                         "overlap_sequence": "TTGCAACGTTGCAACGTTGCAACGT"},
+                        {"ordinal": 3, "name": "terminator", "length_bp": 300,
+                         "overlap_sequence": "GGCCGGCCGGCCGGCCGGCCGGCCG"},
+                    ],
+                },
+            )
+            assert r.status_code == 201, r.text
+            assembly.update(r.json())
+            assert assembly["fragment_count"] == 3, assembly
+            assert [f["ordinal"] for f in assembly["fragments"]] == [1, 2, 3]
+            assert assembly["fragments"][0]["name"] == "backbone"
+        await run("a Gibson design is stored with its fragments in order",
+                  _store_a_gibson_design())
+
+        async def _fragments_come_back_in_order():
+            """AssemblyRead names `fragments`, which is lazy="raise" — the trap
+            the plasmid and guide routes both fell into."""
+            r = await c.get(f"/api/assemblies/{assembly['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert [f["ordinal"] for f in got["fragments"]] == [1, 2, 3], got["fragments"]
+            assert got["fragments"][1]["overlap_sequence"] == "TTGCAACGTTGCAACGTTGCAACGT"
+            assert got["overlap_bp"] == 25
+        await run("and read back in order, without a lazy-load", _fragments_come_back_in_order())
+
+        async def _a_gap_in_the_order_is_refused():
+            """In a Gibson each fragment's forward primer carries the previous
+            one's end, so a missing ordinal is not cosmetic — it is a design
+            that cannot assemble."""
+            r = await c.post("/api/assemblies", headers=auth(pi_token),
+                             json={"name": "broken", "fragments": [
+                                 {"ordinal": 1, "name": "a"},
+                                 {"ordinal": 3, "name": "c"}]})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "no gaps" in r.text, r.text
+            lonely = await c.post("/api/assemblies", headers=auth(pi_token),
+                                  json={"name": "one piece", "fragments": [
+                                      {"ordinal": 1, "name": "a"}]})
+            assert lonely.status_code == 422, lonely.text
+            assert "vector and at least one insert" in lonely.text, lonely.text
+        await run("a design with a gap, or with nothing to join, is refused",
+                  _a_gap_in_the_order_is_refused())
+
+        async def _assemblies_are_found_from_either_end():
+            used = (await c.get(f"/api/assemblies?uses_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert used["total"] == 1, used
+            assert used["items"][0]["fragment_count"] == 3, used["items"][0]
+            made = (await c.get(f"/api/assemblies?product_plasmid_id={plasmid['id']}",
+                                headers=auth(pi_token))).json()
+            assert made["total"] == 0, "this plasmid was a source, not the product"
+        await run("assemblies are findable by what they used and by what they made",
+                  _assemblies_are_found_from_either_end())
+
+        async def _a_design_cannot_point_outside_the_lab():
+            import uuid as _uuid
+            r = await c.post("/api/assemblies", headers=auth(pi_token),
+                             json={"name": "smuggled", "fragments": [
+                                 {"ordinal": 1, "name": "a",
+                                  "source_plasmid_id": str(_uuid.uuid4())},
+                                 {"ordinal": 2, "name": "b"}]})
+            assert r.status_code == 404, f"{r.status_code} {r.text}"
+        await run("a fragment cannot name a plasmid you cannot see",
+                  _a_design_cannot_point_outside_the_lab())
+
+        # ---------------------------------------------------------------
+        # primer design
+        # ---------------------------------------------------------------
+        async def _design_route_is_not_eaten_by_the_id_route():
+            """/api/primers/design sits beside /api/primers/{primer_id}.
+            Declared the wrong way round, "design" is handed to the UUID
+            parser and the endpoint 422s for everyone, forever."""
+            import random as _r
+            rng = _r.Random(5)
+            template = "".join(rng.choice("ACGT") for _ in range(900))
+            r = await c.post(
+                "/api/primers/design",
+                headers=auth(pi_token),
+                json={"template": template, "product_length": 400, "optimal_tm": 60},
+            )
+            assert r.status_code == 200, f"{r.status_code} {r.text[:300]}"
+            out = r.json()
+            assert out["pairs"], out["notes"]
+            assert len(out["pairs"]) <= 3
+            best = out["pairs"][0]
+            # Everything the table shows has to be in the payload.
+            for side in ("forward", "reverse"):
+                p = best[side]
+                assert {"sequence", "tm", "gc_percent", "hairpin_dg", "length"} <= set(p), p
+                assert template[p["start"]:p["end"]], "the primer should be placed on the template"
+            assert set(best["penalties"]) >= {"tm", "gc", "dimer", "hairpin"}, best["penalties"]
+            assert abs(sum(best["penalties"].values()) - best["score"]) < 0.01
+        await run("primer design returns ranked pairs with their scores broken down",
+                  _design_route_is_not_eaten_by_the_id_route())
+
+        async def _design_screens_for_qpcr_and_analytical_work():
+            """The distinction the purpose switch exists for: amplifying from a
+            purified plasmid has no background to mis-prime against, a qRT-PCR
+            or an analytical PCR runs against a genome."""
+            import random as _r
+            rng = _r.Random(17)
+            gene = "".join(rng.choice("ACGT") for _ in range(900))
+            background = "".join(rng.choice("ACGT") for _ in range(3000)) + gene
+
+            # Without a screen, a qPCR design has to admit the check was skipped.
+            bare = await c.post("/api/primers/design", headers=auth(pi_token),
+                                json={"template": gene, "product_length": 150,
+                                      "purpose": "qpcr"})
+            assert bare.status_code == 200, bare.text
+            out = bare.json()
+            assert out["screen"] is None
+            assert any("Nothing was screened" in n for n in out["notes"]), out["notes"]
+            assert out["pairs"][0]["screened"] is False
+
+            # With one, every primer reports where else it could sit.
+            screened = await c.post(
+                "/api/primers/design", headers=auth(pi_token),
+                json={"template": gene, "product_length": 150, "purpose": "qpcr",
+                      "screen_against": background, "screen_name": "the locus"},
+            )
+            assert screened.status_code == 200, screened.text
+            got = screened.json()
+            assert got["screen"]["length_bp"] == len(background), got["screen"]
+            assert got["screen"]["max_mismatches"] == 1
+            best = got["pairs"][0]
+            assert best["screened"] is True
+            assert best["forward"]["binding_sites"] >= 1, best["forward"]
+            # The real product should be found in the background and marked.
+            assert any(a["intended"] for a in best["amplicons"]), best["amplicons"]
+            assert best["spurious_amplicons"] == 0, best["amplicons"]
+            assert "off_target" in best["penalties"]
+        await run("a qPCR design screens against the background, or says it did not",
+                  _design_screens_for_qpcr_and_analytical_work())
+
+        async def _a_second_binding_site_shows_up_in_the_answer():
+            """A pseudogene where both primers sit facing each other makes a
+            band. The pair that does it must stop being the recommendation."""
+            import random as _r
+            rng = _r.Random(5)
+            gene = "".join(rng.choice("ACGT") for _ in range(900))
+            clean = "".join(rng.choice("ACGT") for _ in range(2500)) + gene
+
+            first = (await c.post("/api/primers/design", headers=auth(pi_token),
+                                  json={"template": gene, "product_length": 150,
+                                        "purpose": "analytical",
+                                        "screen_against": clean})).json()["pairs"][0]
+            f, r = first["forward"]["sequence"], first["reverse"]["sequence"]
+            assert first["spurious_amplicons"] == 0
+
+            rc = str.maketrans("ACGT", "TGCA")
+            filler = "".join(rng.choice("ACGT") for _ in range(300))
+            trap = clean + ("N" * 50) + f + filler + r.translate(rc)[::-1]
+
+            after = (await c.post("/api/primers/design", headers=auth(pi_token),
+                                  json={"template": gene, "product_length": 150,
+                                        "purpose": "analytical", "max_pairs": 3,
+                                        "screen_against": trap})).json()
+            assert f not in [p["forward"]["sequence"] for p in after["pairs"]], (
+                "a pair that would give a second band should not be recommended"
+            )
+        await run("a pair that would amplify a pseudogene loses its place",
+                  _a_second_binding_site_shows_up_in_the_answer())
+
+        async def _design_refuses_what_cannot_work():
+            import random as _r
+            rng = _r.Random(6)
+            template = "".join(rng.choice("ACGT") for _ in range(600))
+            cases = [
+                ({"template": "a note about the PCR", "product_length": 200},
+                 "A, C, G and T"),
+                ({"template": template, "product_length": 5000}, "does not fit"),
+                ({"template": template[:200] + "N" * 20 + template[220:],
+                  "product_length": 300}, "ambiguous"),
+            ]
+            for body, fragment in cases:
+                r = await c.post("/api/primers/design", headers=auth(pi_token), json=body)
+                assert r.status_code == 400, f"{body['product_length']}: {r.status_code} {r.text[:200]}"
+                assert fragment.lower() in r.text.lower(), (fragment, r.text[:200])
+            # And the schema catches the ones it can before any work is done.
+            short = await c.post("/api/primers/design", headers=auth(pi_token),
+                                 json={"template": template, "product_length": 10})
+            assert short.status_code == 422, short.text
+        await run("a design that cannot work says which part cannot",
+                  _design_refuses_what_cannot_work())
+
+        async def _design_needs_a_lab():
+            r = await c.post("/api/primers/design",
+                             json={"template": "ATGC" * 50, "product_length": 100})
+            assert r.status_code == 401, f"{r.status_code} {r.text}"
+        await run("primer design is not an open compute service", _design_needs_a_lab())
+
+        # ---------------------------------------------------------------
+        # in-silico cloning
+        # ---------------------------------------------------------------
+        ECORI, BAMHI = "GAATTC", "GGATCC"
+        PAYLOAD = "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT"
+        VECTOR_SEQ = ("ATGC" * 10) + ECORI + ("T" * 20) + BAMHI + ("CGCG" * 10)
+        INSERT_SEQ = ("A" * 30) + ECORI + PAYLOAD + BAMHI + ("C" * 30)
+
+        async def _cloning_needs_a_lab():
+            r = await c.post(
+                "/api/cloning/digest-ligation",
+                json={"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                      "enzymes": ["EcoRI", "BamHI"]},
+            )
+            assert r.status_code == 401, f"{r.status_code} {r.text}"
+        await run("the cloning endpoint is not an open compute service",
+                  _cloning_needs_a_lab())
+
+        async def _simulate_a_cloning():
+            r = await c.post(
+                "/api/cloning/digest-ligation",
+                headers=auth(pi_token),
+                json={"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                      "enzymes": ["EcoRI", "BamHI"],
+                      "name_a": "vector", "name_b": "insert"},
+            )
+            assert r.status_code == 200, r.text
+            out = r.json()
+            assert out["enzymes"] == ["BamHI", "EcoRI"], out["enzymes"]
+            assert len(out["inputs"]["a"]["fragments"]) == 2, out["inputs"]["a"]
+            wanted = [k for k in out["constructs"] if PAYLOAD in k["sequence"]]
+            assert wanted, [k["length_bp"] for k in out["constructs"]]
+            got = wanted[0]
+            # The response has to be drawable without translation: this is the
+            # shape static/js/vector-viewer.js takes.
+            assert got["topology"] == "circular"
+            assert set(["name", "sequence", "topology", "features"]) <= set(got)
+            assert all(
+                {"name", "type", "start", "end", "strand"} <= set(f) for f in got["features"]
+            ), got["features"]
+            by = {j["enzyme"]: j for j in got["junctions"]}
+            assert by["EcoRI"]["regenerated"] is True, by["EcoRI"]
+        await run("two plasmids and two enzymes come back as a construct the viewer can draw",
+                  _simulate_a_cloning())
+
+        async def _cloning_failures_are_the_callers():
+            """An enzyme that does not cut, a sequence that is not DNA, a
+            misspelled name. All 400 with a sentence saying which."""
+            cases = [
+                ({"sequence_a": "ATGC" * 40, "sequence_b": "ATGC" * 40,
+                  "enzymes": ["EcoRI"]}, "nothing to ligate"),
+                ({"sequence_a": "a note about the cloning", "sequence_b": INSERT_SEQ,
+                  "enzymes": ["EcoRI"]}, "not a DNA sequence"),
+                ({"sequence_a": VECTOR_SEQ, "sequence_b": INSERT_SEQ,
+                  "enzymes": ["ecori"]}, "did you mean"),
+            ]
+            for body, fragment in cases:
+                r = await c.post("/api/cloning/digest-ligation",
+                                 headers=auth(pi_token), json=body)
+                assert r.status_code == 400, f"{body['enzymes']}: {r.status_code} {r.text}"
+                assert fragment.lower() in r.text.lower(), (fragment, r.text)
+        await run("a cloning that cannot work says which part cannot",
+                  _cloning_failures_are_the_callers())
+
+        async def _enzyme_names_are_searchable():
+            r = await c.get("/api/cloning/enzymes?q=bam", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            names = r.json()
+            assert "BamHI" in names, names[:10]
+            assert all("bam" in n.lower() for n in names), names[:10]
+        await run("enzyme names can be searched, so nobody guesses the spelling",
+                  _enzyme_names_are_searchable())
+
+        # ---------------------------------------------------------------
+        # guides
+        # ---------------------------------------------------------------
+        guide: dict = {}
+
+        async def _create_guide_with_pegrna():
+            r = await c.post(
+                "/api/guides",
+                headers=auth(pi_token),
+                json={
+                    "name": "g-GFP-1", "kind": "pegRNA",
+                    "spacer": "ACGTTGCAACGTTGCAAGGT",
+                    "pam_sequence": "AGG", "pam_pattern": "NGG",
+                    "target_plasmid_id": plasmid["id"],
+                    "target_strand": 1, "target_start": 40, "cut_position": 57,
+                    "pegrna": {
+                        "pbs": "GCAACGTTGC", "rt_template": "ATGCATGCAT",
+                        "extension": "ATGCATGCATGCAACGTTGC",
+                        "edit_type": "substitution", "edit_position": 60,
+                        "edit_size_bp": 1, "nick_position": 57,
+                    },
+                },
+            )
+            assert r.status_code == 201, r.text
+            guide.update(r.json())
+            assert guide["pegrna"] is not None, guide
+            assert guide["pegrna"]["pbs"] == "GCAACGTTGC", guide["pegrna"]
+        await run("a pegRNA is stored with its extension", _create_guide_with_pegrna())
+
+        async def _read_guide_back():
+            """GuideRNARead names pegrna and off_targets, both lazy="raise" —
+            the same trap the plasmid routes fell into."""
+            r = await c.get(f"/api/guides/{guide['id']}", headers=auth(pi_token))
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert got["spacer"] == "ACGTTGCAACGTTGCAAGGT"
+            assert got["pegrna"]["extension"] == "ATGCATGCATGCAACGTTGC"
+            assert got["off_targets"] == []
+        await run("and read back with its extension, without a lazy-load", _read_guide_back())
+
+        async def _guides_for_the_open_plasmid():
+            """What the molecular tool asks: with this plasmid open, which
+            guides has the lab already designed against it?"""
+            hits = (await c.get(
+                f"/api/guides?target_plasmid_id={plasmid['id']}", headers=auth(pi_token)
+            )).json()
+            assert hits["total"] == 1, hits
+            got = hits["items"][0]
+            assert got["name"] == "g-GFP-1"
+            # The list view has to carry the position, or the map can say a
+            # guide targets this plasmid and still not be able to draw it.
+            assert got["target_start"] == 40, got
+            assert got["target_strand"] == 1, got
+            assert got["cut_position"] == 57, got
+            dup = (await c.get(
+                "/api/guides?spacer=ACGTTGCAACGTTGCAAGGT", headers=auth(pi_token)
+            )).json()
+            assert dup["total"] == 1, dup
+        await run("guides can be found by the plasmid they target, or by spacer",
+                  _guides_for_the_open_plasmid())
+
+        async def _a_guide_must_target_something():
+            """Refused by the schema before it reaches the database, with a
+            message naming the rule. The CHECK is still there as the backstop
+            for anything that does not come through this API."""
+            r = await c.post("/api/guides", headers=auth(pi_token),
+                             json={"name": "g-nowhere", "spacer": "ACGTTGCAACGTTGCAAGGA",
+                                   "pam_sequence": "AGG", "pam_pattern": "NGG"})
+            assert r.status_code == 422, f"{r.status_code} {r.text}"
+            assert "needs a target" in r.text, r.text
+        await run("a guide with nothing to target is refused, with the reason",
+                  _a_guide_must_target_something())
+
+        async def _a_broken_reference_is_a_bad_request():
+            """A foreign key the schema cannot check: the entry id is a valid
+            UUID and simply does not exist. Postgres raises 23503, and the
+            caller should hear 400 rather than "database error" — answering
+            500 sends whoever reads the logs hunting a fault that is not
+            there."""
+            import uuid as _uuid
+            r = await c.post(
+                "/api/plasmids", headers=auth(pi_token),
+                json={"name": "pGhost", "sequence": "ATGC" * 30,
+                      "created_in_entry_id": str(_uuid.uuid4())},
+            )
+            assert r.status_code == 400, f"{r.status_code} {r.text}"
+            assert "does not exist" in r.text, r.text
+        await run("a reference to something that is not there reads as a bad request",
+                  _a_broken_reference_is_a_bad_request())
 
         # ---------------------------------------------------------------
         # sharing, between real people

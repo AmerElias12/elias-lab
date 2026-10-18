@@ -9,3 +9,12 @@ PyJWT>=2.8             # not python-jose, which is unmaintained
 argon2-cffi>=21.3      # check_needs_rehash is used on login
 email-validator>=2.2   # pydantic's EmailStr needs it at import, not at call
 python-multipart>=0.0.12
+alembic>=1.13           # migrations; run as the owner, never as eln_app
+psycopg[binary]>=3.2    # the sync driver Alembic uses — see config.sync_migration_url
+# In-silico cloning. biopython brings REBASE (~1,090 enzymes); pydna models
+# sticky ends and decides which ones will actually ligate.
+biopython>=1.83
+pydna>=5.2
+# Primer design. `primers` proposes pairs (and uses seqfold for folding
+# energy); the scoring, dimer checks and Tm under PCR conditions are ours.
+primers>=0.5

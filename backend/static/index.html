@@ -6,7 +6,7 @@
 <title>Elias Lab — Notebook</title>
 <meta name="description" content="Electronic lab notebook: entries, plasmids, primers and guides.">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="/css/app.css?v=4">
+<link rel="stylesheet" href="/css/app.css?v=9">
 </head>
 <body>
 
@@ -88,7 +88,7 @@
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3a3 3 0 110 6 3 3 0 010-6zM1 17c0-3.3 2.7-6 6-6s6 2.7 6 6zM14 9a2.5 2.5 0 110-5 2.5 2.5 0 010 5zm.5 2c2.5 0 4.5 2 4.5 4.5V17h-4v-.5c0-1.9-.8-3.6-2-4.8.5-.1 1-.2 1.5-.2z"/></svg>
         Lab
       </button>
-      <button class="nav__item" data-view="plasmids" disabled title="Phase 3">
+      <button class="nav__item" data-view="plasmids">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 3a5 5 0 110 10 5 5 0 010-10z"/></svg>
         Plasmids
       </button>
@@ -217,6 +217,211 @@
       <ul class="list list--versions" id="version-list"></ul>
     </section>
 
+    <!-- Plasmids: list + interactive map -->
+    <section class="view" data-view="plasmids">
+      <div class="view__head">
+        <h1 class="view__title">Plasmids</h1>
+        <div class="view__head-actions">
+          <button class="btn btn--ghost" id="plasmid-demo">Load an example</button>
+          <button class="btn btn--ghost" id="plasmid-import">Import file…</button>
+          <input type="file" id="plasmid-file" hidden multiple
+                 accept=".gb,.gbk,.genbank,.ape,.dna,.fa,.fasta,.fsa,.fna,.seq,.txt">
+          <button class="btn btn--primary" id="plasmid-new">+ Add from sequence</button>
+        </div>
+      </div>
+      <p class="muted view__lede">
+        Click or drag on either map to read off the bases. Drop a GenBank,
+        SnapGene or FASTA file anywhere on the map to import it.
+      </p>
+
+      <div class="pending" id="import-pending" hidden>
+        <span id="import-pending-text"></span>
+        <span class="topbar__spacer"></span>
+        <button class="btn btn--ghost" id="import-discard">Discard</button>
+        <button class="btn btn--primary" id="import-save">Save to lab</button>
+      </div>
+
+      <div class="vector">
+        <aside class="vector__list">
+          <div class="tabs tabs--sm" role="tablist">
+            <button class="tab is-active" role="tab" data-libtab="plasmids">Plasmids</button>
+            <button class="tab" role="tab" data-libtab="primers">Primers</button>
+            <button class="tab" role="tab" data-libtab="guides">Guides</button>
+            <button class="tab" role="tab" data-libtab="clone">Clone</button>
+          </div>
+          <input type="search" id="lib-search" class="lib-search" hidden
+                 placeholder="Search the library…" aria-label="Search the library">
+          <div class="pending" id="pcr-bar" hidden>
+            <span id="pcr-bar-text"></span>
+            <button class="btn btn--primary" id="pcr-save">Save PCR</button>
+          </div>
+          <ul class="list" id="plasmid-list"></ul>
+          <button class="btn btn--ghost btn--block" id="open-design" hidden>Design primers…</button>
+          <ul class="list" id="primer-list" hidden></ul>
+          <ul class="list" id="guide-list" hidden></ul>
+
+          <div id="clone-panel" hidden class="stack">
+            <p class="muted" id="clone-lede">Digest both, join the ends that fit.</p>
+            <label class="field">
+              <span>Cut with</span>
+              <input type="text" id="clone-enzymes" placeholder="EcoRI, BamHI"
+                     list="enzyme-options" autocomplete="off">
+              <datalist id="enzyme-options"></datalist>
+            </label>
+            <label class="field">
+              <span>Join to</span>
+              <select id="clone-partner"></select>
+            </label>
+            <label class="field" id="clone-paste-field">
+              <span>Paste GenBank, FASTA or bases</span>
+              <textarea id="clone-paste" rows="4" placeholder="LOCUS …, &gt;name …, or ATGC…"></textarea>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="clone-linear"> Show linear products too
+            </label>
+            <button class="btn btn--primary btn--block" id="clone-run">Simulate</button>
+            <p class="alert" id="clone-notes" hidden></p>
+            <ul class="list" id="clone-results"></ul>
+          </div>
+        </aside>
+
+        <div class="vector__main">
+          <div class="vector__bar">
+            <strong id="vector-name">No plasmid selected</strong>
+            <span class="badge" id="vector-size"></span>
+            <span class="topbar__spacer"></span>
+            <div class="segmented" role="group" aria-label="Map view">
+              <button class="seg is-active" data-mapview="both">Both</button>
+              <button class="seg" data-mapview="circular">Circular</button>
+              <button class="seg" data-mapview="linear">Linear</button>
+            </div>
+          </div>
+
+          <div id="vector-canvas" class="vector__canvas"></div>
+          <p class="alert alert--error" id="vector-warnings" hidden></p>
+        </div>
+
+        <aside class="vector__side">
+          <h2 class="section__title">Selection</h2>
+          <dl class="facts" id="vector-facts"></dl>
+          <label class="field">
+            <span>Selected bases</span>
+            <textarea id="vector-bases" rows="8" readonly
+                      placeholder="Click or drag on the map."></textarea>
+          </label>
+          <button class="btn btn--ghost btn--block" id="vector-copy">Copy bases</button>
+
+          <h2 class="section__title">Saved designs</h2>
+          <ul class="list" id="design-list"></ul>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Add a plasmid -->
+    <section class="view" data-view="plasmid-new">
+      <div class="view__head">
+        <button class="btn btn--ghost" id="plasmid-back">← Plasmids</button>
+        <button class="btn btn--primary" id="plasmid-save">Save</button>
+      </div>
+      <h1 class="view__title">Add a plasmid</h1>
+      <p class="muted view__lede">
+        Paste a sequence. Line numbers and spacing from a GenBank block are fine.
+      </p>
+      <form id="plasmid-form" class="entry stack--wide">
+        <label class="field"><span>Name</span>
+          <input type="text" name="name" required maxlength="200" placeholder="pLenti-GFP"></label>
+        <label class="field"><span>Topology</span>
+          <select name="topology">
+            <option value="circular" selected>Circular</option>
+            <option value="linear">Linear</option>
+          </select></label>
+        <label class="field"><span>Where it came from</span>
+          <input type="text" name="external_source" placeholder="Addgene #12345, or a colleague"></label>
+        <label class="field"><span>Sequence</span>
+          <textarea name="sequence" rows="10" required
+                    placeholder="ATGAGCAAAGGCGAAGAACTG…"></textarea></label>
+      </form>
+    </section>
+
+    <!-- Primer design -->
+    <section class="view" data-view="primer-design">
+      <div class="view__head">
+        <button class="btn btn--ghost" id="design-back">← Plasmids</button>
+      </div>
+      <h1 class="view__title">Design primers</h1>
+      <p class="muted view__lede">
+        Candidate windows of about the target length are designed into and ranked.
+        Nothing is saved until you choose a pair.
+      </p>
+
+      <form id="design-form" class="design-form">
+        <label class="field">
+          <span>Purpose</span>
+          <select name="purpose" id="design-purpose">
+            <option value="cloning" selected>Cloning from a plasmid</option>
+            <option value="qpcr">qRT-PCR</option>
+            <option value="analytical">Analytical PCR on genomic DNA</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Product length (bp)</span>
+          <input type="number" name="product_length" value="500" min="50" max="20000" required>
+        </label>
+        <label class="field">
+          <span>Annealing T<sub>m</sub> (°C)</span>
+          <input type="number" name="optimal_tm" value="60" min="40" max="75" step="0.5" required>
+        </label>
+        <button class="btn btn--primary" type="submit">Design</button>
+      </form>
+
+      <label class="field">
+        <span>Template <small class="muted" id="design-source"></small></span>
+        <textarea name="template" id="design-template" rows="5"
+                  placeholder="Paste a template, or open a plasmid first."></textarea>
+      </label>
+
+      <label class="field" id="design-screen-field" hidden>
+        <span>
+          Screen against <small class="muted">— the locus with its flanks, the
+          paralogs, or the transcript panel. FASTA or bases; several records
+          are fine. Not a whole genome.</small>
+        </span>
+        <textarea name="screen_against" id="design-screen" rows="4"
+                  placeholder="&gt;NM_000546 TP53 transcript&#10;ATGGAGGAGCCGCAGTCAGAT…"></textarea>
+      </label>
+
+      <section class="guidance" id="design-guidance" hidden aria-labelledby="guidance-title">
+        <h2 id="guidance-title"></h2>
+        <p class="muted" id="guidance-summary"></p>
+        <div class="guidance__cols" id="guidance-body"></div>
+      </section>
+
+      <p class="alert alert--note" id="design-notes" hidden></p>
+
+      <div class="table-wrap">
+        <table class="data-table" id="design-table" hidden>
+          <caption id="design-caption"></caption>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Primer</th>
+              <th scope="col">Sequence (5′→3′)</th>
+              <th scope="col">Len</th>
+              <th scope="col">T<sub>m</sub></th>
+              <th scope="col">GC</th>
+              <th scope="col">Hairpin ΔG</th>
+              <th scope="col">Dimer</th>
+              <th scope="col">Off-target</th>
+              <th scope="col">Product</th>
+              <th scope="col">Score</th>
+              <th scope="col"><span class="sr-only">Save</span></th>
+            </tr>
+          </thead>
+          <tbody id="design-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Lab members -->
     <section class="view" data-view="lab">
       <h1 class="view__title">Lab</h1>
@@ -266,6 +471,12 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </div>
 
-<script src="/js/app.js?v=4"></script>
+<script src="/vendor/seqviz.min.js"
+        integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"
+        crossorigin="anonymous"></script>
+<script src="/js/plasmid.js?v=1"></script>
+<script src="/js/plasmid-import.js?v=1"></script>
+<script src="/js/vector-viewer.js?v=2"></script>
+<script src="/js/app.js?v=13"></script>
 </body>
 </html>
