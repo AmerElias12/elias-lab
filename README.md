@@ -32,6 +32,7 @@ EliasLab website/
 ├── wix/                  # GENERATED — do not edit by hand
 │   ├── elias-lab-wix.html  # whole site, self-contained (paste into Wix)
 │   └── scanner-embed.html  # just the att-site scanner widget
+├── instagram-video-bot/  # renders lab Reels with ffmpeg and posts them (see its README)
 ├── DEPLOY.md             # Supabase + static hosting guide
 ├── WIX.md                # how to publish on Wix
 └── README.md

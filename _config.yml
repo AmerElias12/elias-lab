@@ -12,5 +12,9 @@
 # vendor/ is deliberately NOT excluded. Jekyll's defaults exclude only
 # vendor/bundle, vendor/cache, vendor/gems and vendor/ruby, so the libraries
 # the notebook loads from vendor/ are published as before.
+#
+# instagram-video-bot/ is a command-line tool that runs on a lab computer.
+# Nothing in it is a web page, and its README is setup notes, not site content.
 exclude:
   - backend
+  - instagram-video-bot

@@ -1,0 +1,5 @@
+# Rendered videos: rebuilt from the specs in reels/ whenever they are needed.
+out/
+*.json.tmp
+__pycache__/
+.venv/
