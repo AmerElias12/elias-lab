@@ -1,0 +1,45 @@
+# Settings for the daily generated Reel (pipeline.py). No secrets here: keys
+# go in .env. Edit freely; `python pipeline.py check` validates this file.
+
+# The recurring character. Claude restates this in every video prompt, because
+# the video model has no memory of yesterday's clip.
+[character]
+name        = "Inty"
+look        = "a small round mint-green enzyme creature with two stubby arms, big curious eyes and a teal lab coat, holding a glowing strand of DNA like a ribbon"
+personality = "curious, cheerful, a little clumsy, delighted by tiny details"
+style       = "stylized 3D animation, soft studio lighting, pastel colours, shallow depth of field, smooth motion"
+
+# What the posts are about, and who they are for.
+[content]
+brand    = "the Elias Lab, a molecular biology and gene therapy lab"
+audience = "students and science-curious people who like short, playful explainers"
+language = "English"
+themes = [
+  "how an enzyme finds one exact spot in a long DNA strand",
+  "a day in a molecular biology lab, seen at molecule size",
+  "what a plasmid is, as a tiny circular road trip",
+  "cells dividing, as a dance",
+  "the lab freezer at -80 degrees, from the inside",
+  "gene therapy as delivering a corrected page to a book",
+]
+hashtag_count   = 8
+always_hashtags = ["eliaslab"]   # added to every post
+
+[video]
+provider  = "piapi"    # "piapi" or "kling"
+# PiAPI: the Kling version, e.g. "1.6", "2.1".
+# Kling direct: the model_name, e.g. "kling-v1-6", "kling-v2-1".
+model     = "1.6"
+mode      = "std"      # "std" (cheaper) or "pro" (sharper)
+duration  = 5          # seconds: 5 or 10
+cfg_scale = 0.5        # 0-1: how literally the prompt is followed
+negative_prompt = "text, letters, watermark, logo, subtitles, blurry, distorted face, extra limbs"
+timeout_minutes = 30   # give up waiting after this long; the next run resumes
+
+[edit]
+music_dir       = "music"  # drop licensed tracks here; newest unused first
+music_volume    = 0.9
+original_volume = 0.0      # 0 = drop the generated clip's own sound
+
+[post]
+share_to_feed = true

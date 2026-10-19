@@ -36,8 +36,10 @@ class Ledger:
         self._save()
 
     def published(self, name: str, *, container_id: str, media_id: str | None,
-                  permalink: str | None) -> None:
-        self.entries[name] = {"status": "published", "container_id": container_id,
+                  permalink: str | None, **extra) -> None:
+        """`extra` is kept with the entry: the daily pipeline records the topic
+        and the music track, so tomorrow's run can avoid repeating either."""
+        self.entries[name] = {**extra, "status": "published", "container_id": container_id,
                               "media_id": media_id, "permalink": permalink,
                               "posted_at": _now()}
         self._save()
