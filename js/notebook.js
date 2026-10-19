@@ -1392,6 +1392,11 @@ function renderWebapps() {
   // Full standalone apps. The Primer Generator is not here: it is the
   // Inventory -> Primers page.
   var custom = '' +
+    // First, because the person most likely to open this page is the person
+    // who has not used the notebook before.
+    appCard('https://claude.ai/artifact/JRF9PbuxPvXxqeivBDzL14', '📖', 'Lab Notebook Guide',
+      'How every module works, field by field — inventory, primers, plasmids and cloning, tissue culture, glycerol stocks',
+      'Elias Lab · guide ↗') +
     // Full standalone apps, opened in their own tab
     appCard('tools/gibson-calculator.html', '⚙️', 'Gibson Assembly Calculator', 'Reaction volume calculator for NEB Gibson and EURx LigON kits, with protocol notes') +
     appCard('tools/genome-scan.html', '🧭', 'GenomeScan', 'Consensus / att-site finder across the human genome (BLAST + Open Targets)');
@@ -1413,10 +1418,12 @@ function renderWebapps() {
     return '<a href="' + t.url + '" target="_blank" rel="noopener" class="ln-webapp-card"><div class="ln-webapp-icon">' + t.icon + '</div><div class="ln-webapp-name">' + t.name + '</div><div class="ln-webapp-desc">' + t.desc + '</div></a>';
   }).join('');
 }
-// A full standalone tool, opened in its own tab.
-function appCard(href, icon, name, desc) {
+// A full standalone tool, opened in its own tab. `label` is the line above
+// the name; it defaults to the tool wording, because not everything the lab
+// publishes here is a tool — the guide is a document.
+function appCard(href, icon, name, desc, label) {
   return '<a href="' + href + '" target="_blank" rel="noopener" class="ln-webapp-card custom">' +
-    '<div class="ln-webapp-custom-label">Elias Lab Tool · full app ↗</div>' +
+    '<div class="ln-webapp-custom-label">' + (label || 'Elias Lab Tool · full app ↗') + '</div>' +
     '<div class="ln-webapp-icon">' + icon + '</div>' +
     '<div class="ln-webapp-name">' + name + '</div>' +
     '<div class="ln-webapp-desc">' + desc + '</div></a>';
