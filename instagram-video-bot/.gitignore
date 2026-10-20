@@ -1,10 +1,5 @@
-# Rendered videos and each day's work: rebuilt or re-fetched when needed.
+# Rendered videos: rebuilt from the specs in reels/ whenever they are needed.
 out/
 *.json.tmp
 __pycache__/
 .venv/
-scheduler/node_modules/
-
-# Music is licensed to the lab, not to everyone who can read this repository.
-music/*
-!music/README.md

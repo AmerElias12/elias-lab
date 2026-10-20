@@ -23,7 +23,6 @@ from reelbot import render as rendering
 from reelbot import spec as specs
 from reelbot.instagram import DEFAULT_HOST, DEFAULT_VERSION, Instagram, InstagramError
 from reelbot.ledger import Ledger
-from reelbot.publish import publish
 
 BOT_DIR = pathlib.Path(__file__).resolve().parent
 REELS_DIR = BOT_DIR / "reels"
@@ -84,9 +83,40 @@ def post_reel(reel: specs.Reel, ledger: Ledger, args, *, ig: Instagram | None = 
         print("dry run: nothing was sent to Instagram")
         return
 
+    ig = ig or client()
+
+    # A previous run got as far as publishing and then stopped. Ask Instagram
+    # what happened before doing anything that could post it twice.
+    if entry and entry["status"] == "publishing":
+        cid = entry["container_id"]
+        code, _ = ig.container_status(cid)
+        print(f"resuming {name}: container {cid} is {code or 'unknown'}")
+        if code == "PUBLISHED":
+            ledger.published(name, container_id=cid, media_id=None, permalink=None)
+            print(f"{name} had in fact been posted; recorded it")
+            return
+        if code in ("FINISHED", "IN_PROGRESS"):
+            ig.wait_until_ready(cid)
+            _publish(ig, ledger, name, cid)
+            return
+        ledger.forget(name)  # expired or failed: start again
+
+    video = render_reel(reel, args)
+    print("uploading to Instagram")
     thumb = round(reel.cover_at * 1000) if reel.cover_at is not None else None
-    publish(ig or client(), ledger, name, lambda: render_reel(reel, args),
-            reel.full_caption(), share_to_feed=reel.share_to_feed, thumb_offset_ms=thumb)
+    cid, uri = ig.create_container(reel.full_caption(), share_to_feed=reel.share_to_feed,
+                                   thumb_offset_ms=thumb)
+    ig.upload(uri, video)
+    ig.wait_until_ready(cid)
+    _publish(ig, ledger, name, cid)
+
+
+def _publish(ig: Instagram, ledger: Ledger, name: str, cid: str) -> None:
+    ledger.publishing(name, cid)
+    media_id = ig.publish(cid)
+    link = ig.permalink(media_id)
+    ledger.published(name, container_id=cid, media_id=media_id, permalink=link)
+    print(f"posted {name}: {link or media_id}")
 
 
 # ── commands ────────────────────────────────────────────────────
