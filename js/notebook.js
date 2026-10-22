@@ -1479,6 +1479,38 @@ function expiryState(value) {
   return null;
 }
 
+/* Rows arrive from the database in the order they were added, which is
+   nobody's reading order: a stock numbered 22 sits between 72 and 1 because
+   that is when it was typed in. They are sorted here by the field that
+   identifies the row — the serial for glycerol stocks, the name everywhere
+   else, which is `fields[0]` in every category.
+
+   Numeric-aware, because these identifiers are usually bare numbers and a
+   plain string sort puts 100 before 22 before 5 — as unreadable as no sort
+   at all. Intl.Collator with numeric:true also orders a padded scheme like
+   GS-0007 correctly, and names that end in a number.
+
+   A row whose identifying field is empty goes last. Blank rows happen —
+   a bulk upload with trailing lines leaves them — and sorting them to the
+   top would push the real stocks out of the first screen. */
+var invCollator = (function () {
+  try { return new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }); }
+  catch (e) { return null; }   // very old browser: localeCompare below still sorts
+})();
+function invCompare(a, b, key) {
+  var x = String(a[key] == null ? '' : a[key]).trim();
+  var y = String(b[key] == null ? '' : b[key]).trim();
+  if (!x !== !y) return x ? -1 : 1;
+  if (!x) return 0;
+  return invCollator ? invCollator.compare(x, y) : x.localeCompare(y, undefined, { numeric: true });
+}
+/* A copy, not a sort in place: `items` is the app's own array, and drawing a
+   table should not quietly reorder the state that the CSV export, the box
+   maps and the dashboard all read. */
+function sortInventory(items, cfg) {
+  return items.slice().sort(function (a, b) { return invCompare(a, b, cfg.fields[0]); });
+}
+
 function renderInventory(tab) {
   currentInvTab = tab || currentInvTab;
   var cfg = INV_CONFIG[currentInvTab];
@@ -1499,6 +1531,7 @@ function renderInventory(tab) {
 
   if (!all.length) { el.innerHTML = '<div class="ln-empty">No ' + INV_LABELS[currentInvTab].many + ' added yet.</div>'; return; }
   if (!items.length) { el.innerHTML = '<div class="ln-empty">Nothing here matches \u201c' + esc(q) + '\u201d.</div>'; return; }
+  items = sortInventory(items, cfg);
 
   // Expiry summary, kits only.
   var banner = '';
@@ -1555,6 +1588,9 @@ function renderInventory(tab) {
 function exportInventoryCSV(cat) {
   var cfg = INV_CONFIG[cat], items = getInventory()[cat] || [];
   if (!items.length) { alert('There is nothing in ' + INV_LABELS[cat].many + ' to export yet.'); return; }
+  // In the same order as the page. A spreadsheet handed to somebody for an
+  // order or an audit should not arrive shuffled by when each row was typed.
+  items = sortInventory(items, cfg);
   var rows = [cfg.cols].concat(items.map(function (item) {
     return cfg.fields.map(function (f) { return item[f] == null ? '' : String(item[f]); });
   }));
