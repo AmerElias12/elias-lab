@@ -127,6 +127,32 @@
     var m = /\/object\/public\/lab-files\/(.+)$/.exec(f.data || '');
     return m ? decodeURIComponent(m[1]) : null;
   }
+  /* A column the table does not have.
+
+     PostgREST answers that with PGRST204 and a message naming the column, and
+     it means one thing: this project's database was created before the column
+     was added to supabase/schema.sql. Nothing is wrong with the app, and the
+     driver's own wording ("Could not find the 'body' column … in the schema
+     cache") reads like a fault to somebody who is mid-experiment and has just
+     lost a save.
+
+     So name the column, say the work is still on screen, and give the fix.
+     The fix is always the same and is always the whole file rather than one
+     ALTER: schema.sql is safe to re-run — every create is guarded with "if
+     not exists" and the only drops are of policies and triggers it recreates
+     on the next line — so running it repairs any drift, not just this one
+     column, and does not need whoever is helping to know which. */
+  function schemaDriftMessage(err) {
+    var m = /Could not find the '([^']+)' column of '([^']+)'/.exec((err && err.message) || '');
+    if (!m) return null;
+    return 'The lab database is missing the “' + m[1] + '” column on ' + m[2] + ', ' +
+      'so this cannot be saved yet.\n\n' +
+      'Nothing you typed is lost — leave this page open and ask a lab admin to fix it. ' +
+      'It takes one minute, once: in Supabase, SQL Editor → New query → paste all of ' +
+      'supabase/schema.sql → Run. It is safe to re-run.\n\n' +
+      'Then press Save again on this page.';
+  }
+
   function filesForDb(files) {
     return (files || []).map(function (f) {
       var p = filePath(f);
@@ -311,10 +337,7 @@
       var row = Object.assign({}, obj, { created_by: state.currentUser ? state.currentUser.id : null });
       if (row.files) row.files = filesForDb(row.files);
       var r = await sb.from(COLLECTIONS[collection]).upsert(row).select().single();
-      if (r.error && /'body' column/.test(r.error.message)) {
-        throw new Error('The database needs a one-time update for notebook pages. In Supabase, open SQL Editor and run:  alter table public.notebooks add column if not exists body text;');
-      }
-      if (r.error) throw new Error(r.error.message);
+      if (r.error) throw new Error(schemaDriftMessage(r.error) || r.error.message);
       await signFiles([r.data]);
       var arr2 = state[collection];
       var j = arr2.findIndex(function (x) { return x.id === r.data.id; });
@@ -345,7 +368,7 @@
       var data = Object.assign({}, item); delete data.id; delete data.addedBy;
       var row = { id: item.id, category: category, data: data, added_by: item.addedBy || null };
       var r = await sb.from('inventory_items').upsert(row).select().single();
-      if (r.error) throw new Error(r.error.message);
+      if (r.error) throw new Error(schemaDriftMessage(r.error) || r.error.message);
       var arr2 = state.inventory[category];
       var j = arr2.findIndex(function (x) { return x.id === item.id; });
       if (j >= 0) arr2[j] = item; else arr2.push(item);
@@ -370,7 +393,8 @@
           return { id: item.id, category: category, data: data, added_by: item.addedBy || null };
         });
         var r = await sb.from('inventory_items').insert(rows);
-        if (r.error) throw new Error((saved ? saved + ' items were saved before this error: ' : '') + r.error.message);
+        if (r.error) throw new Error((saved ? saved + ' items were saved before this error: ' : '') +
+          (schemaDriftMessage(r.error) || r.error.message));
         state.inventory[category] = state.inventory[category].concat(chunk);
         saved += chunk.length;
       }
