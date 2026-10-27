@@ -1549,6 +1549,64 @@ function invValuesFor(cat, field) {
     return invCollator ? invCollator.compare(a, b) : a.localeCompare(b, undefined, { numeric: true });
   });
 }
+/* Two names for one place.
+
+   A freezer location is free text, so one shelf can be written two ways and
+   the app has no way to know. The cost is not cosmetic: the two spellings
+   sort apart, the box map counts them as separate places, and a vial is
+   recorded somewhere it is not.
+
+   The signal is a location holding a single vial while another holds many.
+   Spelling on its own is not usable: labs number things in sequence, so
+   "Tank 1" and "Tank 5" differ by one character and are two real tanks, as
+   do "Rack A" and "Rack B". Flagging those would train everybody to ignore
+   the warning. A lone vial off on its own is the thing worth a look, and it
+   catches what spelling cannot — "Room 206" and "Liquid N₂ Tank 206" have
+   no characters in common to compare.
+
+   Where the two names are *also* near-identical, that is said, because it
+   turns a question into near-certainty.
+
+   None of it is proof, so this asks rather than asserts, and never edits.
+   Only somebody who knows the freezer can say which name is right. */
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > 2) return 99;   // nothing this far apart interests us
+  var prev = [], cur = [], i, j;
+  for (j = 0; j <= b.length; j++) prev[j] = j;
+  for (i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    for (j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur.slice();
+  }
+  return prev[b.length];
+}
+function locationClashes(cat, field) {
+  var counts = {}, raw = {};
+  (getInventory()[cat] || []).forEach(function (it) {
+    var v = String(it[field] == null ? '' : it[field]).trim();
+    if (!v) return;
+    var k = bulkKey(v);
+    counts[k] = (counts[k] || 0) + 1;
+    if (!raw[k]) raw[k] = v;
+  });
+  var keys = Object.keys(counts);
+  if (keys.length < 2) return [];
+  var busiest = keys.reduce(function (m, k) { return counts[k] > counts[m] ? k : m; }, keys[0]);
+  if (counts[busiest] < 3) return [];      // too few vials anywhere to call one of them odd
+  return keys.filter(function (k) {
+    return k !== busiest && counts[k] === 1;
+  }).map(function (k) {
+    return {
+      a: raw[k], aCount: counts[k],
+      b: raw[busiest], bCount: counts[busiest],
+      why: editDistance(k, busiest) <= 2 ? 'and they are spelled almost the same' : 'while the rest sit together'
+    };
+  });
+}
+
 function invDatalist(id, cat, field) {
   return '<datalist id="' + id + '">' + invValuesFor(cat, field).map(function (v) {
     return '<option value="' + esc(v) + '">';
@@ -1644,6 +1702,16 @@ function renderInventory(tab) {
         (names.length === 1 ? '' : 's') + ' down to the last vial:</strong> ' +
         names.map(esc).join(', ') + ' \u2014 expand before thawing the last one.</div>';
     }
+    // Locations that look like two names for one place. A question, not a
+    // verdict: the app cannot know, and nothing is changed on their behalf.
+    [['tank', 'tank'], ['rack', 'rack'], ['box', 'box']].forEach(function (f) {
+      locationClashes('cells', f[0]).forEach(function (c) {
+        banner += '<div class="ln-inv-alert soon">\u26a0 One vial is the only thing in ' + f[1] +
+          ' <strong>' + esc(c.a) + '</strong>, ' + c.why + ' as <strong>' + esc(c.b) +
+          '</strong> (' + c.bCount + ' vials). Same place? Edit the odd one to match \u2014 ' +
+          'until then they are filed, sorted and mapped as two.</div>';
+      });
+    });
   }
 
   var count = q ? '<div class="ln-inv-count">' + items.length + ' of ' + all.length + ' shown</div>' : '';

@@ -188,4 +188,97 @@ check('a vial with no position yet clashes with nothing', () => {
   assert.equal(ctx.slotKey('cells', vial('X', '1', undefined)), null);
 });
 
+/* ---- two names for one place ---- */
+
+vm.runInContext(extract('editDistance', 'function'), ctx);
+vm.runInContext(extract('locationClashes', 'function'), ctx);
+
+// locationClashes reads the app's inventory; stand one in.
+let fakeInv = { cells: [] };
+ctx.getInventory = () => fakeInv;
+const withTanks = (...pairs) => {
+  fakeInv = { cells: pairs.map(([tank, rack], i) =>
+    ({ id: 'v' + i, name: 'X', tank, rack: rack || 'R1', box: '1', position: 'A' + (i + 1) })) };
+};
+const found = (field) => ctx.locationClashes('cells', field)
+  .map((c) => [c.a, c.b].sort().join(' ~ '));
+
+console.log('\nTwo names for one place');
+
+check('the lab\'s own case is caught, and named as a spelling near-miss', () => {
+  // 3 (Grey) on most vials, 3 (Gray) on one.
+  withTanks(['T', '3 (Grey)'], ['T', '3 (Grey)'], ['T', '3 (Grey)'], ['T', '3 (Gray)']);
+  const hits = ctx.locationClashes('cells', 'rack');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].a, '3 (Gray)');
+  assert.equal(hits[0].b, '3 (Grey)');
+  assert.match(hits[0].why, /spelled almost the same/);
+});
+
+check('a lone vial is raised even when the names share nothing', () => {
+  // "Room 206" and "Liquid N₂ Tank 206" have no characters to compare, so
+  // spelling could never find this one. Standing apart from a crowd can.
+  withTanks(['Liquid N2 Tank 206'], ['Liquid N2 Tank 206'], ['Liquid N2 Tank 206'], ['Room 206']);
+  const hits = ctx.locationClashes('cells', 'tank');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].a, 'Room 206');
+  assert.equal(hits[0].aCount, 1);
+  assert.equal(hits[0].bCount, 3);
+  assert.match(hits[0].why, /rest sit together/);
+});
+
+check('counts say which way to correct it', () => {
+  withTanks(['Liquid N2 Tank 206'], ['Liquid N2 Tank 206'], ['Liquid N2 Tank 206'], ['Room 206']);
+  const hit = ctx.locationClashes('cells', 'tank')[0];
+  assert.ok(hit.bCount > hit.aCount, 'the busy name is the one to keep');
+});
+
+check('one name used by everything raises nothing', () => {
+  withTanks(['Tank 206'], ['Tank 206'], ['Tank 206'], ['Tank 206']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 0);
+});
+
+check('sequentially numbered places are not called typos', () => {
+  // Tank 1 and Tank 5 differ by one character and are two real tanks. This
+  // is why spelling alone cannot be the test.
+  withTanks(['Tank 1'], ['Tank 1'], ['Tank 5'], ['Tank 5'], ['Tank 9'], ['Tank 9']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 0);
+});
+
+check('lettered racks are not called typos either', () => {
+  // Rack A and Rack B are also one character apart, and also both real.
+  withTanks(['T', 'Rack A'], ['T', 'Rack A'], ['T', 'Rack B'], ['T', 'Rack B']);
+  assert.equal(ctx.locationClashes('cells', 'rack').length, 0);
+});
+
+check('it says nothing until there is a crowd to stand apart from', () => {
+  // Two vials in one tank and one in another is a lab still filling up, not
+  // a mistake worth a warning.
+  withTanks(['Tank 1'], ['Tank 1'], ['Tank 2']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 0);
+});
+
+check('a new tank with its first vial is raised once, not once per tank', () => {
+  withTanks(['Tank 1'], ['Tank 1'], ['Tank 1'], ['Tank 2']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 1);
+});
+
+check('case and punctuation alone are already one place', () => {
+  // bulkKey collapses these, so they count as the same value and nothing is
+  // raised — the sort and the box map already agree about them.
+  withTanks(['Tank 206'], ['tank-206'], ['TANK 206']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 0);
+});
+
+check('blank locations are not a place to compare against', () => {
+  withTanks(['Tank 206'], ['Tank 206'], ['Tank 206'], ['']);
+  assert.equal(ctx.locationClashes('cells', 'tank').length, 0);
+});
+
+check('edit distance is bounded so long names do not all look alike', () => {
+  assert.equal(ctx.editDistance('grey', 'gray'), 1);
+  assert.equal(ctx.editDistance('tank1', 'tank2'), 1);
+  assert.ok(ctx.editDistance('liquidn2tank206', 'room206') > 2);
+});
+
 console.log(`\n${pass} checks passed`);
