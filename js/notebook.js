@@ -1444,7 +1444,7 @@ var INV_CONFIG = {
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'location', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
-  cells: { cols: ['Cell Line', 'Passage', 'Source', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Added by'], fields: ['name', 'passage', 'source', 'tank', 'rack', 'box', 'position', 'addedBy'] },
+  cells: { cols: ['Cell Line', 'Passage', 'Cells / Vial', 'Source', 'Growth Media', 'Banking Media', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
 };
 // E. coli strains the lab keeps glycerol stocks in; offered as suggestions, others can be typed.
@@ -1504,11 +1504,58 @@ function invCompare(a, b, key) {
   if (!x) return 0;
   return invCollator ? invCollator.compare(x, y) : x.localeCompare(y, undefined, { numeric: true });
 }
+
+/* Which fields decide the order, in priority order.
+
+   Tissue culture is read off a freezer box, not off a list of names, so it
+   sorts the way the vials are physically arranged: tank, then rack, then box,
+   then position — A1, A2 … B1, B2. Position alone would not do, because A1
+   exists in every box in the lab and sorting on it would interleave them.
+
+   Everything else sorts by the field that names it, which is fields[0]. */
+var INV_SORT = { cells: ['tank', 'rack', 'box', 'position'] };
+function invSortKeys(cat, cfg) { return INV_SORT[cat] || [cfg.fields[0]]; }
+
+/* What makes one slot in a freezer different from another.
+
+   The whole location, not the box name alone: a lab that numbers its boxes
+   within each rack has a "Box 1" in every rack, and matching on the name
+   would call two different physical boxes the same one and refuse a position
+   that is genuinely free. */
+var INV_SLOT = {
+  cells: ['tank', 'rack', 'box', 'position'],
+  stocks: ['freezer', 'shelf', 'box', 'position'],
+  plasmids: ['freezer', 'box', 'position']
+};
+function slotKey(cat, item) {
+  var keys = INV_SLOT[cat];
+  if (!keys) return null;
+  var parts = keys.map(function (k) { return bulkKey(item[k]); });
+  // No position means it has not been given a slot yet, so it clashes with
+  // nothing — a vial can be recorded before anybody decides where it goes.
+  return parts[parts.length - 1] ? parts.join('|') : null;
+}
+/* The item already sitting where this one wants to go, if there is one. */
+function slotTakenBy(cat, item) {
+  var key = slotKey(cat, item);
+  if (!key) return null;
+  return (getInventory()[cat] || []).filter(function (x) {
+    return x.id !== item.id && slotKey(cat, x) === key;
+  })[0] || null;
+}
+
 /* A copy, not a sort in place: `items` is the app's own array, and drawing a
    table should not quietly reorder the state that the CSV export, the box
    maps and the dashboard all read. */
-function sortInventory(items, cfg) {
-  return items.slice().sort(function (a, b) { return invCompare(a, b, cfg.fields[0]); });
+function sortInventory(items, cfg, cat) {
+  var keys = invSortKeys(cat || currentInvTab, cfg);
+  return items.slice().sort(function (a, b) {
+    for (var i = 0; i < keys.length; i++) {
+      var d = invCompare(a, b, keys[i]);
+      if (d) return d;
+    }
+    return 0;
+  });
 }
 
 function renderInventory(tab) {
@@ -1549,6 +1596,28 @@ function renderInventory(tab) {
     }
   }
 
+  /* Tissue culture: the lines that are down to their last vial.
+     Counted across the whole category, not the filtered view \u2014 a search for
+     "HEK" must not make a line look like its last vial because the others
+     are hidden. Thawing the only vial of a line is how a line leaves the lab,
+     so it is said at the top and marked on the row. */
+  var lastVials = {};
+  if (currentInvTab === 'cells') {
+    var byLine = {};
+    all.forEach(function (item) {
+      var k = bulkKey(item.name);
+      if (k) (byLine[k] = byLine[k] || []).push(item);
+    });
+    Object.keys(byLine).forEach(function (k) { if (byLine[k].length === 1) lastVials[k] = true; });
+    var names = Object.keys(byLine).filter(function (k) { return lastVials[k]; })
+      .map(function (k) { return byLine[k][0].name; }).sort();
+    if (names.length) {
+      banner = '<div class="ln-inv-alert expired">\u26a0 <strong>' + names.length + ' cell line' +
+        (names.length === 1 ? '' : 's') + ' down to the last vial:</strong> ' +
+        names.map(esc).join(', ') + ' \u2014 expand before thawing the last one.</div>';
+    }
+  }
+
   var count = q ? '<div class="ln-inv-count">' + items.length + ' of ' + all.length + ' shown</div>' : '';
 
   el.innerHTML = banner + count + '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
@@ -1565,6 +1634,10 @@ function renderInventory(tab) {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
         }
+        // The only vial of its line, marked where the line is named.
+        if (f === 'name' && currentInvTab === 'cells' && lastVials[bulkKey(item.name)]) {
+          val += ' <span class="ln-exp expired">last vial</span>';
+        }
         // A box name opens that box's map.
         if (f === 'box' && item.box && BOX_CATS.indexOf(currentInvTab) >= 0) {
           val = '<a href="#" class="ln-box-link" data-box="' + esc(item.box) + '" onclick="openBoxByName(this.dataset.box,\'' + currentInvTab + '\');return false;" title="Open box map">' + esc(item.box) + ' ▦</a>';
@@ -1578,6 +1651,10 @@ function renderInventory(tab) {
       }).join('') +
       '<td class="ln-row-actions">' +
         (currentInvTab === 'plasmids' ? '<button class="ln-icon-btn" title="Open the plasmid page" onclick="openPlasmid(\'' + item.id + '\')">Open</button>' : '') +
+        // Four vials of the same freeze differ only in where they sit, and
+        // typing the other eight fields out four times is how they end up
+        // disagreeing with each other.
+        (currentInvTab === 'cells' ? '<button class="ln-icon-btn" title="Copy this vial to another position" onclick="copyInvItem(\'' + item.id + '\')">\u29c9</button>' : '') +
         '<button class="ln-icon-btn" title="Edit" onclick="openInventoryModal(\'' + item.id + '\')">\u270e</button>' +
         '<button class="ln-icon-btn danger" title="Remove" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">\u2715</button>' +
       '</td></tr>';
@@ -1590,7 +1667,7 @@ function exportInventoryCSV(cat) {
   if (!items.length) { alert('There is nothing in ' + INV_LABELS[cat].many + ' to export yet.'); return; }
   // In the same order as the page. A spreadsheet handed to somebody for an
   // order or an audit should not arrive shuffled by when each row was typed.
-  items = sortInventory(items, cfg);
+  items = sortInventory(items, cfg, cat);
   var rows = [cfg.cols].concat(items.map(function (item) {
     return cfg.fields.map(function (f) { return item[f] == null ? '' : String(item[f]); });
   }));
@@ -1839,6 +1916,21 @@ function boxCellPanel(b) {
     }).join('') + '</div>';
 }
 function editVial(cat, id) { currentInvTab = cat; openInventoryModal(id); }
+
+/* Another vial from the same freeze: everything carried over except where it
+   sits, which is the one thing that differs and the one thing to fill in. */
+function copyInvItem(id) {
+  var src = (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0];
+  if (!src) return;
+  var prefill = {};
+  INV_CONFIG[currentInvTab].fields.forEach(function (f) {
+    if (f === 'position' || f === 'addedBy') return;
+    if (src[f]) prefill[f] = src[f];
+  });
+  openInventoryModal(null, prefill);
+  var pos = document.getElementById('m-position');
+  if (pos) pos.focus();
+}
 function addVialAt(cat, key, pos) {
   var b = findBox(key);
   if (!b) return;
@@ -2318,7 +2410,18 @@ function openInventoryModal(id, prefill) {
   var forms = {
     enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div><div class="ln-form-row"><label>Storage Location</label><input id="m-storage" placeholder="e.g. -20°C Box 2A"></div>',
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
-    cells: '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div><div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div><div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div><div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div><div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div><div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div><div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>',
+    cells: '<div class="ln-note-tip">Before banking: look up the <strong>cells per vial</strong> and the <strong>banking medium</strong> recommended for this line — both differ by cell line, and a vial frozen at the wrong density or in the wrong medium usually does not come back.</div>' +
+      '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div>' +
+      '<div class="ln-form-row"><label>Passage Number</label><input id="m-passage" placeholder="e.g. P12"></div>' +
+      '<div class="ln-form-row"><label>Cells per vial</label><input id="m-amount" placeholder="e.g. 1×10⁶ in 1 mL"></div>' +
+      '<div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div>' +
+      '<div class="ln-form-row"><label>Growth medium</label><input id="m-growthMedia" placeholder="e.g. DMEM + 10% FBS + 1% P/S"></div>' +
+      '<div class="ln-form-row"><label>Banking medium</label><input id="m-bankMedia" placeholder="e.g. 90% FBS + 10% DMSO"></div>' +
+      '<div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div>' +
+      '<div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div>' +
+      '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div>' +
+      '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>' +
+      '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="Anything the next person should know before thawing this vial"></textarea></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
@@ -2356,7 +2459,22 @@ async function saveInvItem() {
     var clash = getInventory().stocks.filter(function (x) { return x.id !== item.id && bulkKey(x.serial) === bulkKey(item.serial); })[0];
     if (clash) { alert('Serial number ' + item.serial + ' is already used by another glycerol stock' + (clash.description ? ' (' + clash.description + ')' : '') + '.'); return; }
   }
-  else if (tab === 'cells') Object.assign(item, { name: g('m-name'), passage: g('m-passage'), source: g('m-source'), tank: g('m-tank'), rack: g('m-rack'), box: g('m-box'), position: g('m-position') });
+  else if (tab === 'cells') {
+    Object.assign(item, { name: g('m-name'), passage: g('m-passage'), amount: g('m-amount'),
+      source: g('m-source'), growthMedia: g('m-growthMedia'), bankMedia: g('m-bankMedia'),
+      tank: g('m-tank'), rack: g('m-rack'), box: g('m-box'), position: g('m-position'), notes: g('m-notes') });
+    // One vial per position. Filing a second vial where one already sits is
+    // how a tank ends up disagreeing with its own records, and it used to be
+    // allowed silently.
+    var sitting = slotTakenBy('cells', item);
+    if (sitting) {
+      alert('Position ' + item.position + ' in box ' + (item.box || '—') +
+        ' already holds ' + (sitting.name || 'a vial') +
+        (sitting.passage ? ' (' + sitting.passage + ')' : '') +
+        '.\n\nUse a free position, or edit that vial if this is the same one.');
+      return;
+    }
+  }
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);

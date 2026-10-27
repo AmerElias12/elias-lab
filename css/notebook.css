@@ -175,6 +175,14 @@ button.ln-dash-row:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
 .ln-inv-alert{padding:.6rem .9rem;border-radius:10px;font-size:13px;margin-bottom:1rem;border:1px solid;}
 .ln-inv-alert.expired{background:rgba(193,58,58,.08);border-color:rgba(193,58,58,.3);color:#8f2a2a;}
 .ln-inv-alert.soon{background:rgba(168,106,18,.08);border-color:rgba(168,106,18,.3);color:#7a4e0d;}
+
+/* Standing advice at the head of a section, and in the form that acts on it.
+   Quieter than an alert: it is always true, so it must not read as an alarm
+   that has just gone off. */
+.ln-note-tip{background:rgba(12,74,68,.05);border:1px solid rgba(12,74,68,.18);border-radius:10px;
+  padding:.65rem .9rem;font-size:13px;line-height:1.55;color:#2c4a42;margin-bottom:1.2rem;}
+.ln-note-tip strong{color:#0c4a44;}
+#ln-modal-content .ln-note-tip{margin-bottom:1rem;}
 /* Inventory bulk upload */
 .ln-modal-save:disabled{opacity:.45;cursor:not-allowed;transform:none;}
 .ln-bulk-intro{font-size:13px;color:#555;line-height:1.6;margin-bottom:1.2rem;}

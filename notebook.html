@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=22">
+    <link rel="stylesheet" href="css/notebook.css?v=23">
     <link rel="stylesheet" href="css/plasmid.css?v=28">
 </head>
 <body>
@@ -150,6 +150,15 @@
         </div>
         <div id="ln-inv-cells" class="ln-section">
           <div class="ln-section-header"><div><h2>Tissue Culture</h2><p>Cell lines in liquid nitrogen — passage, source and exactly which position they sit in</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cells')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Cell Line</button></div></div>
+          <!-- Said once, at the top, because both answers are per cell line
+               and neither is something to guess at the bench. -->
+          <div class="ln-note-tip">
+            <strong>Before you bank a line, look it up.</strong> The number of cells to freeze per
+            1 mL vial and the banking medium to use are <em>both specific to the cell line</em> —
+            check the repository's datasheet (ATCC, ECACC, DSMZ) or the supplier's page for the
+            line you are freezing. A vial banked at the wrong density, or in the wrong medium,
+            usually will not come back.
+          </div>
           <input class="ln-search" id="ln-invsearch-cells" placeholder="🔍 Search cell lines..." oninput="renderInventory('cells')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-cells"></div>
         </div>
@@ -192,6 +201,6 @@
   <script src="js/plasmid-ui.js?v=28"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=21"></script>
-  <script src="js/notebook.js?v=24"></script>
+  <script src="js/notebook.js?v=25"></script>
 </body>
 </html>

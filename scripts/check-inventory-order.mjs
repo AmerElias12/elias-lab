@@ -33,14 +33,27 @@ function extract(name, kind) {
   return src.slice(start, end);
 }
 
-const ctx = { Intl };
+// currentInvTab is a module-level var in the app; sortInventory falls back to
+// it when a caller does not name the category.
+const ctx = { Intl, currentInvTab: 'stocks' };
 vm.createContext(ctx);
+
+function runStatement(startsWith) {
+  const at = src.indexOf(startsWith);
+  assert.ok(at >= 0, 'could not find ' + startsWith);
+  vm.runInContext(src.slice(at, src.indexOf('};', at) + 2), ctx);
+}
 // invCollator is an IIFE assigned to a var; take the whole statement.
 const collStart = src.indexOf('var invCollator =');
 const collEnd = src.indexOf('})();', collStart) + 5;
 assert.ok(collStart >= 0 && collEnd > collStart, 'could not find invCollator');
 vm.runInContext(src.slice(collStart, collEnd), ctx);
 vm.runInContext(extract('invCompare', 'function'), ctx);
+runStatement('var INV_SORT =');
+runStatement('var INV_SLOT =');
+vm.runInContext(extract('invSortKeys', 'function'), ctx);
+vm.runInContext(extract('slotKey', 'function'), ctx);
+vm.runInContext(extract('bulkKey', 'function'), ctx);
 vm.runInContext(extract('sortInventory', 'function'), ctx);
 
 const stocksCfg = { fields: ['serial', 'description'] };
@@ -116,6 +129,63 @@ check('equal identifiers do not throw or drop rows', () => {
   const out = ctx.sortInventory(rows, stocksCfg);
   assert.equal(out.length, 3);
   assert.equal(out[0].serial, '4');
+});
+
+/* ---- tissue culture: location order, and the occupied-slot guard ---- */
+
+const cellsCfg = { fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] };
+const vial = (name, box, position, extra) =>
+  Object.assign({ name: name, tank: 'Tank 206', rack: '3 (Grey)', box: box, position: position }, extra || {});
+
+console.log('\nTissue culture');
+
+check('vials are ordered by where they sit, not by cell line', () => {
+  // The reported screenshot was grouped by name, so B1-B4 and C1-C2 came
+  // before A1-A7. A freezer box is read in box order.
+  const rows = [
+    vial('HEK293', '1', 'B1'), vial('HEK293', '1', 'B2'), vial('HEK293', '1', 'C1'),
+    vial('HEK293 FlpIn', '1', 'E1'),
+    vial('HEK293 FT', '1', 'A1'), vial('HEK293 FT', '1', 'A2'), vial('HEK293 FT', '1', 'A10')
+  ];
+  const out = ctx.sortInventory(rows, cellsCfg, 'cells').map((v) => v.position).join(',');
+  assert.equal(out, 'A1,A2,A10,B1,B2,C1,E1');
+});
+
+check('a box is kept whole, and A10 follows A2', () => {
+  // Position alone would interleave boxes: every box in the lab has an A1.
+  const rows = [vial('X', '2', 'A1'), vial('X', '1', 'A2'), vial('X', '1', 'A1'), vial('X', '2', 'A2')];
+  const out = ctx.sortInventory(rows, cellsCfg, 'cells').map((v) => v.box + v.position).join(',');
+  assert.equal(out, '1A1,1A2,2A1,2A2');
+});
+
+check('tanks and racks are kept whole above boxes', () => {
+  const rows = [
+    vial('X', '1', 'A1', { tank: 'Tank 9', rack: '1' }),
+    vial('X', '1', 'A1', { tank: 'Tank 1', rack: '2' }),
+    vial('X', '1', 'A1', { tank: 'Tank 1', rack: '1' })
+  ];
+  const out = ctx.sortInventory(rows, cellsCfg, 'cells').map((v) => v.tank + '/' + v.rack).join(',');
+  assert.equal(out, 'Tank 1/1,Tank 1/2,Tank 9/1');
+});
+
+check('two vials in one position collide; different boxes do not', () => {
+  const a = vial('HEK293', '1', 'A1'), b = vial('HEK293 FT', '1', 'A1');
+  assert.equal(ctx.slotKey('cells', a), ctx.slotKey('cells', b), 'same box and position is one slot');
+  assert.notEqual(ctx.slotKey('cells', a), ctx.slotKey('cells', vial('HEK293', '2', 'A1')),
+    'box 1 and box 2 are different boxes');
+  // This lab numbers its boxes inside each rack, so the rack has to count too.
+  assert.notEqual(ctx.slotKey('cells', a), ctx.slotKey('cells', vial('HEK293', '1', 'A1', { rack: '4 (Blue)' })));
+});
+
+check('position is matched loosely enough to catch real duplicates', () => {
+  assert.equal(ctx.slotKey('cells', vial('X', '1', 'a1')), ctx.slotKey('cells', vial('X', '1', 'A1')));
+  assert.equal(ctx.slotKey('cells', vial('X', 'Box 1', 'A1')), ctx.slotKey('cells', vial('X', 'box-1', 'A1')));
+});
+
+check('a vial with no position yet clashes with nothing', () => {
+  // Recording a vial before deciding where it goes has to stay possible.
+  assert.equal(ctx.slotKey('cells', vial('X', '1', '')), null);
+  assert.equal(ctx.slotKey('cells', vial('X', '1', undefined)), null);
 });
 
 console.log(`\n${pass} checks passed`);
