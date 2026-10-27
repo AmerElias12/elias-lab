@@ -1527,6 +1527,34 @@ var INV_SLOT = {
   stocks: ['freezer', 'shelf', 'box', 'position'],
   plasmids: ['freezer', 'box', 'position']
 };
+/* The values already in use for a field, to offer while somebody types.
+
+   Box had this; Tank and Rack did not, and the cost showed. One vial ended
+   up filed under "Room 206" / "3 (Gray)" while every other vial in the same
+   physical rack said "Liquid N₂ Tank 206" / "3 (Grey)". Neither entry is
+   wrong on its own, but nothing tells the app they mean the same shelf, so
+   it sorts them apart and counts them as different places.
+
+   Deduplicated the same way a clash is detected, so "3 (Grey)" and
+   "3 grey" collapse to one suggestion rather than offering both. */
+function invValuesFor(cat, field) {
+  var seen = {}, out = [];
+  (getInventory()[cat] || []).forEach(function (it) {
+    var v = String(it[field] == null ? '' : it[field]).trim();
+    if (!v || seen[bulkKey(v)]) return;
+    seen[bulkKey(v)] = true;
+    out.push(v);
+  });
+  return out.sort(function (a, b) {
+    return invCollator ? invCollator.compare(a, b) : a.localeCompare(b, undefined, { numeric: true });
+  });
+}
+function invDatalist(id, cat, field) {
+  return '<datalist id="' + id + '">' + invValuesFor(cat, field).map(function (v) {
+    return '<option value="' + esc(v) + '">';
+  }).join('') + '</datalist>';
+}
+
 function slotKey(cat, item) {
   var keys = INV_SLOT[cat];
   if (!keys) return null;
@@ -2417,8 +2445,8 @@ function openInventoryModal(id, prefill) {
       '<div class="ln-form-row"><label>Source</label><input id="m-source" placeholder="e.g. ATCC CRL-3216, or a collaborator"></div>' +
       '<div class="ln-form-row"><label>Growth medium</label><input id="m-growthMedia" placeholder="e.g. DMEM + 10% FBS + 1% P/S"></div>' +
       '<div class="ln-form-row"><label>Banking medium</label><input id="m-bankMedia" placeholder="e.g. 90% FBS + 10% DMSO"></div>' +
-      '<div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" placeholder="e.g. LN2 Tank 1"></div>' +
-      '<div class="ln-form-row"><label>Rack</label><input id="m-rack" placeholder="e.g. Rack 3"></div>' +
+      '<div class="ln-form-row"><label>Liquid N₂ Tank</label><input id="m-tank" list="ln-tank-list" placeholder="e.g. LN2 Tank 1"></div>' +
+      '<div class="ln-form-row"><label>Rack</label><input id="m-rack" list="ln-rack-list" placeholder="e.g. Rack 3"></div>' +
       '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div>' +
       '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>' +
       '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="Anything the next person should know before thawing this vial"></textarea></div>',
@@ -2429,6 +2457,11 @@ function openInventoryModal(id, prefill) {
   var credit = editing ? (editingInvItem.addedBy || editingInvItem.owner || '') : (user ? user.name : '');
   mc.innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (editing ? 'Edit ' : 'Add ') + tabLabel + '</h3>' + forms[currentInvTab] +
     '<datalist id="ln-box-list">' + boxIndex().filter(function (b) { return !b.cat || b.cat === currentInvTab; }).map(function (b) { return '<option value="' + esc(b.name) + '">'; }).join('') + '</datalist>' +
+    // Offer the tanks and racks already in use, so one shelf does not end up
+    // recorded under two spellings and sorted into two places.
+    (currentInvTab === 'cells'
+      ? invDatalist('ln-tank-list', 'cells', 'tank') + invDatalist('ln-rack-list', 'cells', 'rack')
+      : '') +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
   // Pre-fill from the item being edited; fields without an input are skipped.
