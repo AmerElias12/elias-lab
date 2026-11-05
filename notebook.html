@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=25">
+    <link rel="stylesheet" href="css/notebook.css?v=26">
     <link rel="stylesheet" href="css/plasmid.css?v=28">
 </head>
 <body>
@@ -72,6 +72,7 @@
         <div class="ln-nav-item" onclick="lnShow('inv-genes')"><span class="ni">🧬</span><span>Genes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-stocks')"><span class="ni">🧊</span><span>Glycerol Stocks</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-cells')"><span class="ni">🧫</span><span>Tissue Culture</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-requests')"><span class="ni">🛒</span><span>Order Requests</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-kits')"><span class="ni">📦</span><span>Kits &amp; Reagents</span></div>
         <div id="ln-admin-nav" style="display:none;">
           <div class="ln-nav-section">Admin</div>
@@ -179,6 +180,13 @@
           <input class="ln-search" id="ln-invsearch-cells" placeholder="🔍 Search cell lines..." oninput="renderInventory('cells')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-cells"></div>
         </div>
+        <!-- What the lab needs ordered. A small workflow, not a shelf. -->
+        <div id="ln-inv-requests" class="ln-section">
+          <div class="ln-section-header"><div><h2>Order Requests</h2><p>Materials, kits and reagents the lab needs — ask here, and the PI orders from this list</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('requests')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Request something</button></div></div>
+          <input class="ln-search" id="ln-invsearch-requests" placeholder="🔍 Search requests..." oninput="renderInventory('requests')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-requests"></div>
+        </div>
+
         <div id="ln-inv-kits" class="ln-section">
           <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
           <input class="ln-search" id="ln-invsearch-kits" placeholder="🔍 Search kits and reagents..." oninput="renderInventory('kits')" style="margin-bottom:1.5rem;">
@@ -218,6 +226,6 @@
   <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=21"></script>
-  <script src="js/notebook.js?v=28"></script>
+  <script src="js/notebook.js?v=29"></script>
 </body>
 </html>

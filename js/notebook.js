@@ -1497,6 +1497,7 @@ var INV_LABELS = {
   enzymes:  { one: 'Restriction Enzyme', many: 'restriction enzymes' },
   primers:  { one: 'Primer',             many: 'primers' },
   plasmids: { one: 'Plasmid',            many: 'plasmids' },
+  requests: { one: 'Request',            many: 'requests' },
   cdnas:    { one: 'cDNA',               many: 'cDNAs' },
   genes:    { one: 'Gene',               many: 'genes' },
   stocks:   { one: 'Glycerol Stock',     many: 'glycerol stocks' },
@@ -1507,6 +1508,7 @@ var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'location', 'addedBy'] },
+  requests: { cols: ['Status', 'Item', 'What for', 'Supplier', 'Catalog #', 'Qty', 'Est. cost', 'Urgency', 'Requested by', 'Needed by', 'Notes'], fields: ['status', 'name', 'purpose', 'supplier', 'catalog', 'qty', 'cost', 'urgency', 'addedBy', 'needBy', 'notes'] },
   // Same store as plasmids; different things are worth a column.
   cdnas: { cols: ['Name', 'Gene / insert', 'Species', 'Accession', 'In vector', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Added by'], fields: ['name', 'insert', 'species', 'accession', 'backbone', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'addedBy'] },
   genes: { cols: ['Gene', 'Species', 'Accession', 'Locus', 'Size (bp)', 'Source', 'Owner', 'Notes', 'Added by'], fields: ['name', 'species', 'accession', 'locus', 'len', 'source', 'owner', 'notes', 'addedBy'] },
@@ -1608,6 +1610,27 @@ function invItems(tab) {
   var want = INV_KIND[tab];
   if (!want || !INV_STORE[tab] && tab !== 'plasmids') return all;
   return all.filter(function (x) { return kindOf(x) === want; });
+}
+
+/* ---- ordering requests ----
+
+   A request is a small workflow, not a thing on a shelf: somebody asks, the
+   PI orders, it arrives. The states are deliberately four and no more — any
+   more and people stop updating them, and a status nobody maintains is worse
+   than none because it reads as true.
+
+   Open requests sort to the top, urgent first, so the page opens on what
+   needs doing rather than on the history. */
+var REQ_STATES = ['requested', 'ordered', 'arrived', 'declined'];
+var REQ_LABEL = { requested: 'Requested', ordered: 'Ordered', arrived: 'Arrived', declined: 'Declined' };
+var REQ_OPEN = { requested: true, ordered: true };
+var REQ_URGENCY = ['', 'routine', 'soon', 'urgent'];
+function reqRank(item) {
+  var s = item.status || 'requested';
+  var open = REQ_OPEN[s] ? 0 : 1;
+  var urgency = { urgent: 0, soon: 1, routine: 2 }[item.urgency] != null
+    ? { urgent: 0, soon: 1, routine: 2 }[item.urgency] : 3;
+  return open + '' + urgency + (s === 'requested' ? '0' : '1');
 }
 
 var INV_SORT = { cells: ['tank', 'rack', 'box', 'position'] };
@@ -1731,6 +1754,13 @@ function slotTakenBy(cat, item) {
    table should not quietly reorder the state that the CSV export, the box
    maps and the dashboard all read. */
 function sortInventory(items, cfg, cat) {
+  // Requests sort by what still needs doing, not alphabetically.
+  if ((cat || currentInvTab) === 'requests') {
+    return items.slice().sort(function (a, b) {
+      var d = reqRank(a).localeCompare(reqRank(b));
+      return d || invCompare(a, b, 'name');
+    });
+  }
   var keys = invSortKeys(cat || currentInvTab, cfg);
   return items.slice().sort(function (a, b) {
     for (var i = 0; i < keys.length; i++) {
@@ -1776,6 +1806,20 @@ function renderInventory(tab) {
       if (expired) parts.push('<strong>' + expired + '</strong> expired');
       if (soon) parts.push('<strong>' + soon + '</strong> expiring within 30 days');
       banner = '<div class="ln-inv-alert ' + (expired ? 'expired' : 'soon') + '">\u26a0 ' + parts.join(' \u00b7 ') + '</div>';
+    }
+  }
+
+  // What is still waiting on somebody, said at the top so the PI can see the
+  // queue without reading the table.
+  if (currentInvTab === 'requests') {
+    var waiting = all.filter(function (r) { return REQ_OPEN[r.status || 'requested']; });
+    var urgent = waiting.filter(function (r) { return r.urgency === 'urgent'; }).length;
+    if (waiting.length) {
+      banner = '<div class="ln-inv-alert ' + (urgent ? 'expired' : 'soon') + '">' +
+        '<strong>' + waiting.length + '</strong> open request' + (waiting.length === 1 ? '' : 's') +
+        (urgent ? ' · <strong>' + urgent + '</strong> marked urgent' : '') +
+        ' · ' + all.filter(function (r) { return (r.status || 'requested') === 'requested'; }).length +
+        ' not yet ordered</div>';
     }
   }
 
@@ -1826,6 +1870,18 @@ function renderInventory(tab) {
         if (f === 'expiry') {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
+        }
+        // A request's status is the thing you change most, so it is a control
+        // in the row rather than a trip through the edit form.
+        if (f === 'status' && currentInvTab === 'requests') {
+          var st = item.status || 'requested';
+          val = '<select class="ln-req-status ' + esc(st) + '" onchange="setRequestStatus(\'' + esc(item.id) + '\',this.value)">' +
+            REQ_STATES.map(function (s) {
+              return '<option value="' + s + '"' + (s === st ? ' selected' : '') + '>' + REQ_LABEL[s] + '</option>';
+            }).join('') + '</select>';
+        }
+        if (f === 'urgency' && currentInvTab === 'requests' && item.urgency) {
+          val = '<span class="ln-req-urgency ' + esc(item.urgency) + '">' + esc(item.urgency) + '</span>';
         }
         // The only vial of its line, marked where the line is named.
         if (f === 'name' && currentInvTab === 'cells' && lastVials[bulkKey(item.name)]) {
@@ -1878,6 +1934,24 @@ function csvCell(v) {
   if (/^[=+\-@]/.test(v)) v = "'" + v;
   return '"' + v.replace(/"/g, '""') + '"';
 }
+/* Moving a request along. Anybody can do it: the person who asked knows when
+   it arrived, and the PI knows when it was ordered. */
+async function setRequestStatus(id, status) {
+  var item = (getInventory().requests || []).filter(function (x) { return x.id === id; })[0];
+  if (!item || REQ_STATES.indexOf(status) < 0) return;
+  var next = Object.assign({}, item, { status: status });
+  // Stamp who moved it and when, so "ordered" is answerable later.
+  var user = currentUser();
+  next[status + 'By'] = user ? user.name : 'Unknown';
+  next[status + 'On'] = new Date().toISOString().slice(0, 10);
+  try {
+    await DB.upsertInventory('requests', next);
+  } catch (e) {
+    alert('Could not update the request: ' + e.message);
+  }
+  renderInventory('requests');
+}
+
 async function deleteInvItem(tab, id) {
   if (!confirm('Remove this item?')) return;
   await DB.removeInventory(invStore(tab), id); renderInventory(tab);
@@ -2620,6 +2694,22 @@ function openInventoryModal(id, prefill) {
       '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box B"></div>' +
       '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A4"></div>' +
       '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="Anything the next person should know before thawing this vial"></textarea></div>',
+    requests: '<div class="ln-note-tip">Ask for anything the lab needs to order. The PI sees open requests first, with the urgent ones at the top.</div>' +
+      '<div class="ln-form-row"><label>What do you need?</label><input id="m-name" placeholder="e.g. Q5 High-Fidelity polymerase"></div>' +
+      '<div class="ln-form-row"><label>What is it for?</label><input id="m-purpose" placeholder="e.g. cloning the ATP7B constructs"></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div>' +
+        '<div class="ln-form-row"><label>Catalog #</label><input id="m-catalog" placeholder="e.g. M0491S"></div>' +
+      '</div><div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 2 \u00d7 500 U"></div>' +
+        '<div class="ln-form-row"><label>Estimated cost</label><input id="m-cost" placeholder="e.g. 1200"></div>' +
+      '</div><div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Urgency</label><select id="m-urgency">' +
+          REQ_URGENCY.map(function (u) { return '<option value="' + u + '">' + (u ? u.charAt(0).toUpperCase() + u.slice(1) : '\u2014') + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="ln-form-row"><label>Needed by</label><input type="date" id="m-needBy"></div>' +
+      '</div>' +
+      '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="A link, a size, or an alternative that would do"></textarea></div>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   var tabLabel = INV_LABELS[currentInvTab].one;
@@ -2679,6 +2769,14 @@ async function saveInvItem() {
     }
   }
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
+  else if (tab === 'requests') {
+    Object.assign(item, { name: g('m-name'), purpose: g('m-purpose'), supplier: g('m-supplier'),
+      catalog: g('m-catalog'), qty: g('m-qty'), cost: g('m-cost'), urgency: g('m-urgency'),
+      needBy: g('m-needBy'), notes: g('m-notes') });
+    // A new request starts as requested; editing one never resets where it
+    // has got to.
+    if (!item.status) item.status = 'requested';
+  }
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(invStore(tab), item); editingInvItem = null; closeModal(); renderInventory(tab);
   if (lnCurrentSection === 'boxes') renderBoxes();

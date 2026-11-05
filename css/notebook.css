@@ -532,3 +532,15 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 /* A sub-heading inside a sidebar group: Molecular Cloning's three pages sit
    under it, indented so the grouping reads without a second nesting level. */
 .ln-nav-section.sub{margin-top:.9rem;font-size:9.5px;opacity:.75;}
+
+/* ── Order requests ── */
+.ln-req-status{font:inherit;font-size:11.5px;font-weight:600;padding:.2rem .4rem;border-radius:100px;
+  border:1px solid rgba(22,36,31,.18);background:#fff;cursor:pointer;}
+.ln-req-status.requested{background:rgba(168,106,18,.12);color:#7a4e0d;border-color:rgba(168,106,18,.3);}
+.ln-req-status.ordered{background:rgba(29,95,212,.1);color:#17418f;border-color:rgba(29,95,212,.3);}
+.ln-req-status.arrived{background:rgba(16,176,126,.14);color:#0a6d4e;border-color:rgba(16,176,126,.35);}
+.ln-req-status.declined{background:rgba(22,36,31,.07);color:#7a877f;}
+.ln-req-urgency{font-size:11px;font-weight:600;padding:.08rem .45rem;border-radius:100px;text-transform:capitalize;}
+.ln-req-urgency.urgent{background:rgba(193,58,58,.12);color:#8f2a2a;}
+.ln-req-urgency.soon{background:rgba(168,106,18,.12);color:#7a4e0d;}
+.ln-req-urgency.routine{background:rgba(22,36,31,.07);color:#5d6b63;}
