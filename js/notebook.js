@@ -565,7 +565,7 @@ function entryCapture() {
     });
   var main = document.querySelector('.ln-main');
   return { values: values, body: body.innerHTML, dirty: entryDirty,
-    scroll: main ? main.scrollTop : 0 };
+    protocols: entryProtocols.slice(), scroll: main ? main.scrollTop : 0 };
 }
 function entryRestore(st) {
   Object.keys(st.values || {}).forEach(function (id) {
@@ -578,6 +578,7 @@ function entryRestore(st) {
     blockHydrate(body);
     hydrateEntryFiles(body);
   }
+  if (Array.isArray(st.protocols)) { entryProtocols = st.protocols.slice(); entryProtocolsRefresh(); }
   document.querySelectorAll('#ln-paper textarea').forEach(autoGrow);
   if (st.dirty) markEntryDirty();
   var main = document.querySelector('.ln-main');
@@ -597,6 +598,62 @@ function markEntryDirty() {
   if (window.LabTabs) LabTabs.refresh();   // the tab gets its unsaved dot
 }
 function autoGrow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+
+/* ---- the protocols an entry followed ----
+
+   Kept as ids on the entry, never as titles: a protocol that gets renamed or
+   revised should read correctly in every experiment that cited it, and a
+   title copied into prose stops being a link the moment it is edited.
+
+   The list lives under Materials & Methods because that is where somebody
+   repeating the work looks first. It is the same set of protocols the @
+   search offers; this is the version you can see at a glance without reading
+   the page. */
+var entryProtocols = [];
+
+function entryProtocolsHtml(n) {
+  entryProtocols = Array.isArray(n && n.protocols) ? n.protocols.slice() : [];
+  return '<div class="ln-proto-used" id="e-protocols">' + entryProtocolsInner() + '</div>';
+}
+function entryProtocolsInner() {
+  var all = (typeof getProtocols === 'function' && getProtocols()) || [];
+  var chips = entryProtocols.map(function (pid) {
+    var p = all.filter(function (x) { return x.id === pid; })[0];
+    return '<span class="ln-proto-chip' + (p ? '' : ' gone') + '">' +
+      (p ? '<button type="button" class="ln-proto-open" onclick="viewProtocol(\'' + esc(pid) + '\')">' +
+             esc(p.title || 'Untitled protocol') + '</button>'
+         : '<span>No longer in the lab’s protocols</span>') +
+      '<button type="button" class="ln-proto-x" title="Remove" onclick="entryDropProtocol(\'' + esc(pid) + '\')">×</button>' +
+      '</span>';
+  }).join('');
+  return '<div class="ln-proto-label">Protocols used</div>' +
+    '<div class="ln-proto-chips">' + (chips ||
+      '<span class="hint">None linked yet — add the protocol you followed.</span>') + '</div>' +
+    (all.length
+      ? '<select class="ln-proto-add" onchange="entryAddProtocol(this.value);this.value=\'\'">' +
+          '<option value="">+ Link a protocol…</option>' +
+          all.filter(function (p) { return entryProtocols.indexOf(p.id) < 0; })
+             .map(function (p) {
+               return '<option value="' + esc(p.id) + '">' + esc(p.title || 'Untitled') +
+                 (p.category ? ' — ' + esc(p.category) : '') + '</option>';
+             }).join('') + '</select>'
+      : '<span class="hint">No protocols in the notebook yet.</span>');
+}
+function entryProtocolsRefresh() {
+  var el = document.getElementById('e-protocols');
+  if (el) el.innerHTML = entryProtocolsInner();
+}
+function entryAddProtocol(id) {
+  if (!id || entryProtocols.indexOf(id) >= 0) return;
+  entryProtocols.push(id);
+  entryProtocolsRefresh();
+  markEntryDirty();
+}
+function entryDropProtocol(id) {
+  entryProtocols = entryProtocols.filter(function (x) { return x !== id; });
+  entryProtocolsRefresh();
+  markEntryDirty();
+}
 
 function renderEntry(id) {
   var el = document.getElementById('ln-entry-body');
@@ -627,7 +684,11 @@ function renderEntry(id) {
         (n.archived ? '<span class="ln-badge archived">Archived</span>' : '') +
       '</div>' +
       ENTRY_FIELDS.map(function (f) {
-        return '<section class="ln-paper-field"><h3>' + esc(f[1]) + '</h3><textarea id="e-' + f[0] + '" rows="2" placeholder="' + esc(f[2]) + '">' + esc(n[f[0]] || '') + '</textarea></section>';
+        // Which protocols were followed belongs with the methods, not buried
+        // in the prose: it is the first thing somebody repeating the work
+        // looks for, and a named protocol is a link rather than a sentence.
+        var after = f[0] === 'methods' ? entryProtocolsHtml(n) : '';
+        return '<section class="ln-paper-field"><h3>' + esc(f[1]) + '</h3><textarea id="e-' + f[0] + '" rows="2" placeholder="' + esc(f[2]) + '">' + esc(n[f[0]] || '') + '</textarea>' + after + '</section>';
       }).join('') +
       '<section class="ln-paper-field ln-paper-tables"><h3>Data Tables</h3><div id="ln-tables-editor"></div><button class="tbl-btn" onclick="addTableToEditor()">+ Add Table</button></section>' +
       '<section class="ln-paper-field"><h3>Attachments</h3><div id="e-attachments">' + (renderAttachments(n.files) || '<div class="ln-paper-none">No attachments yet.</div>') + '</div>' +
@@ -723,7 +784,8 @@ async function saveEntry() {
     var obj = {
       id: entryId || undefined, title: title, researcher: getSelectOrManual('e-researcher'), date: g('e-date'),
       tables: serializeTables().map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }),
-      files: (ex.files || []).concat(newFiles), archived: ex.archived || false, body: entryBodyForSave()
+      files: (ex.files || []).concat(newFiles), archived: ex.archived || false, body: entryBodyForSave(),
+      protocols: entryProtocols.slice()
     };
     ENTRY_FIELDS.forEach(function (f) { obj[f[0]] = document.getElementById('e-' + f[0]).value; });
     var saved = await DB.upsert('notebooks', obj);

@@ -32,7 +32,11 @@
     { kind: 'enzyme',  cat: 'enzymes',  label: 'Enzyme',         section: 'inv-enzymes',   name: 'name' },
     { kind: 'kit',     cat: 'kits',     label: 'Kit / reagent',  section: 'inv-kits',      name: 'name' },
     { kind: 'stock',   cat: 'stocks',   label: 'Glycerol stock', section: 'inv-stocks',    name: 'serial' },
-    { kind: 'cell',    cat: 'cells',    label: 'Tissue culture', section: 'inv-cells',     name: 'name' }
+    { kind: 'cell',    cat: 'cells',    label: 'Tissue culture', section: 'inv-cells',     name: 'name' },
+    // Not inventory: protocols are their own collection, so they are read
+    // from getProtocols() rather than from a category. Everything else about
+    // a mention works the same, which is the point of listing them here.
+    { kind: 'protocol', cat: null,      label: 'Protocol',       section: 'protocols',     name: 'title' }
   ];
   var BY_KIND = {};
   KINDS.forEach(function (k) { BY_KIND[k.kind] = k; });
@@ -61,13 +65,27 @@
     if (kind === 'kit') return [item.supplier, item.catalog].filter(Boolean).join(' · ');
     if (kind === 'stock') return [item.description, item.hostStrain].filter(Boolean).join(' · ');
     if (kind === 'cell') return [item.source, item.passage ? 'p' + item.passage : ''].filter(Boolean).join(' · ');
+    if (kind === 'protocol') return [item.category, item.author].filter(Boolean).join(' · ');
     return '';
   }
 
+  /* Where a kind's records live. Inventory categories come out of one object;
+     protocols are a collection of their own. */
+  function recordsOf(k) {
+    if (k.cat) {
+      var inv = (typeof getInventory === 'function' && getInventory()) || {};
+      return inv[k.cat] || [];
+    }
+    if (k.kind === 'protocol') {
+      return (typeof getProtocols === 'function' && getProtocols()) || [];
+    }
+    return [];
+  }
+
   function entities() {
-    var out = [], inv = (typeof getInventory === 'function' && getInventory()) || {};
+    var out = [];
     KINDS.forEach(function (k) {
-      (inv[k.cat] || []).forEach(function (item) {
+      recordsOf(k).forEach(function (item) {
         var label = labelOf(k.kind, item);
         if (!item.id || !label) return;
         out.push({ kind: k.kind, id: item.id, label: label, meta: metaOf(k.kind, item), group: k.label });
@@ -108,8 +126,7 @@
     }
     var k = BY_KIND[kind];
     if (!k) return null;
-    var inv = (typeof getInventory === 'function' && getInventory()) || {};
-    return (inv[k.cat] || []).filter(function (x) { return x.id === id; })[0] || null;
+    return recordsOf(k).filter(function (x) { return x.id === id; })[0] || null;
   }
 
   // ---------- the chip ----------
@@ -142,6 +159,9 @@
     if (!rec) { alert('That is no longer in the inventory.'); return; }
     if (kind === 'user') { showPerson(rec); return; }
     if (kind === 'plasmid') { if (window.openPlasmid) openPlasmid(id); return; }
+    // A protocol opens in full, because the point of citing one mid-experiment
+    // is to read the steps, not to be shown where it is filed.
+    if (kind === 'protocol') { if (window.viewProtocol) viewProtocol(id); return; }
     var section = BY_KIND[kind] && BY_KIND[kind].section;
     if (!section || !window.lnShow) return;
     lnShow(section);

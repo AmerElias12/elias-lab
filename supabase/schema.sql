@@ -113,11 +113,15 @@ create table if not exists public.notebooks (
   files jsonb default '[]'::jsonb,
   archived boolean default false,
   body text,                              -- the free-form notebook page (sanitised HTML)
+  protocols jsonb default '[]'::jsonb,    -- ids of the protocols this experiment followed
   created_by uuid references auth.users(id),
   created_at timestamptz not null default now()
 );
 -- Added after the first release: projects created earlier get the column here.
 alter table public.notebooks add column if not exists body text;
+-- The protocols an experiment followed, as ids. Ids rather than titles so a
+-- renamed protocol still reads correctly in every entry that cited it.
+alter table public.notebooks add column if not exists protocols jsonb default '[]'::jsonb;
 
 create table if not exists public.presentations (
   id uuid primary key default gen_random_uuid(),
