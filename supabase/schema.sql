@@ -190,3 +190,59 @@ create policy lab_files_write on storage.objects
 drop policy if exists lab_files_delete on storage.objects;
 create policy lab_files_delete on storage.objects
   for delete to authenticated using (bucket_id = 'lab-files' and public.is_approved());
+
+-- ============================================================
+-- lab_photos  (the gallery under Team on the public site)
+-- ============================================================
+-- Two halves, and the split is deliberate. The images go in a PUBLIC bucket
+-- so the marketing page can show them with a plain <img src>; the captions
+-- go in a table that anyone may read, so that page needs one small fetch and
+-- not the whole Supabase client.
+--
+-- PUBLIC means public: anybody with the URL can open these images, whether
+-- or not they came from the site. Only put up photos everybody in them is
+-- happy to have on the open internet.
+create table if not exists public.lab_photos (
+  id uuid primary key default gen_random_uuid(),
+  path text not null,                     -- object path inside the lab-photos bucket
+  caption text,
+  category text default 'daily',          -- daily | occasions | conferences
+  taken_on text,                          -- plain YYYY-MM-DD, as typed
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now()
+);
+alter table public.lab_photos enable row level security;
+
+-- Anyone may read: this is what the public site renders.
+drop policy if exists lab_photos_read on public.lab_photos;
+create policy lab_photos_read on public.lab_photos
+  for select to anon, authenticated using (true);
+
+-- Only approved members may add or remove.
+drop policy if exists lab_photos_write on public.lab_photos;
+create policy lab_photos_write on public.lab_photos
+  for insert to authenticated with check (public.is_approved());
+
+drop policy if exists lab_photos_update on public.lab_photos;
+create policy lab_photos_update on public.lab_photos
+  for update to authenticated using (public.is_approved()) with check (public.is_approved());
+
+drop policy if exists lab_photos_delete on public.lab_photos;
+create policy lab_photos_delete on public.lab_photos
+  for delete to authenticated using (public.is_approved());
+
+insert into storage.buckets (id, name, public)
+values ('lab-photos','lab-photos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists lab_photos_obj_read on storage.objects;
+create policy lab_photos_obj_read on storage.objects
+  for select to anon, authenticated using (bucket_id = 'lab-photos');
+
+drop policy if exists lab_photos_obj_write on storage.objects;
+create policy lab_photos_obj_write on storage.objects
+  for insert to authenticated with check (bucket_id = 'lab-photos' and public.is_approved());
+
+drop policy if exists lab_photos_obj_delete on storage.objects;
+create policy lab_photos_obj_delete on storage.objects
+  for delete to authenticated using (bucket_id = 'lab-photos' and public.is_approved());

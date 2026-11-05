@@ -488,6 +488,50 @@
       return out;
     },
 
+    /* ---- the public photo gallery ----
+
+       A different bucket from lab-files, and a public one: these are shown
+       on the marketing page by plain URL, with no signed link and no expiry.
+       Kept apart so nothing private can be put in the public place by
+       accident — the two never share a path.
+
+       Local mode has no gallery. There is no public site to show it on, and
+       a data URL in localStorage would not reach one. */
+    listPhotos: async function () {
+      if (this.mode !== 'supabase') return [];
+      var r = await sb.from('lab_photos').select('*').order('taken_on', { ascending: false });
+      if (r.error) throw new Error(schemaDriftMessage(r.error) || r.error.message);
+      return r.data || [];
+    },
+    addPhoto: async function (file, meta) {
+      if (this.mode !== 'supabase') throw new Error('The gallery needs the shared database. It is off in local mode.');
+      if (!/^image\//.test(file.type)) throw new Error('"' + file.name + '" is not an image.');
+      if (file.size > 10 * 1024 * 1024) throw new Error('"' + file.name + '" is over 10 MB. Resize it first — the public page has to load it.');
+      var path = (state.currentUser ? state.currentUser.id : 'anon') + '/' +
+        Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      var up = await sb.storage.from('lab-photos').upload(path, file, { upsert: false });
+      if (up.error) throw new Error(up.error.message);
+      var row = { path: path, caption: meta.caption || '', category: meta.category || 'daily',
+        taken_on: meta.taken_on || null, created_by: state.currentUser ? state.currentUser.id : null };
+      var r = await sb.from('lab_photos').insert(row).select().single();
+      if (r.error) {
+        // Do not leave the image behind with no row pointing at it.
+        try { await sb.storage.from('lab-photos').remove([path]); } catch (e) { /* best effort */ }
+        throw new Error(schemaDriftMessage(r.error) || r.error.message);
+      }
+      return r.data;
+    },
+    removePhoto: async function (photo) {
+      if (this.mode !== 'supabase') return;
+      var r = await sb.from('lab_photos').delete().eq('id', photo.id);
+      if (r.error) throw new Error(r.error.message);
+      try { await sb.storage.from('lab-photos').remove([photo.path]); } catch (e) { /* the row is gone; the object is orphaned at worst */ }
+    },
+    photoUrl: function (path) {
+      if (this.mode !== 'supabase') return '';
+      return sb.storage.from('lab-photos').getPublicUrl(path).data.publicUrl;
+    },
+
     /* Best-effort migration: push this browser's localStorage data
        into Supabase (admin only). Returns a summary string. */
     importLocalData: async function () {

@@ -25,7 +25,7 @@
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=5">
-    <link rel="stylesheet" href="css/site.css?v=5">
+    <link rel="stylesheet" href="css/site.css?v=6">
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -248,6 +248,13 @@
         <h2>The Team</h2>
         <div class="team-pi" id="team-pi"></div>
         <div class="team-grid" id="team-grid"></div>
+    
+        <!-- Lab life. Hidden until there is something in it, so an empty
+             gallery never appears on the public page. -->
+        <div id="lab-gallery-section" hidden>
+          <h3 class="gallery-heading">Life in the lab</h3>
+          <div id="lab-gallery"></div>
+        </div>
     </section>
 
     <section class="collaborations full-bleed" id="collaborations">
@@ -339,10 +346,12 @@
     </footer>
 
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
+    <script src="js/config.js?v=20"></script>
     <script src="js/site.js?v=5"></script>
     <script src="js/scan-widget.js?v=5"></script>
     <!-- team-data.js holds the lab members; team.js renders them -->
     <script src="js/team-data.js?v=5"></script>
     <script src="js/team.js?v=5"></script>
+    <script src="js/gallery.js?v=1"></script>
 </body>
 </html>

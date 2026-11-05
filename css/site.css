@@ -335,3 +335,20 @@ footer a{color:var(--emerald-bright);}
   body{font-size:16px;}
   .hero-stat .n{font-size:1.6rem;}
 }
+
+/* ---- Life in the lab: the photo gallery under Team ---- */
+.gallery-heading{text-align:center;font-size:1.4rem;margin:3.5rem 0 1.2rem;color:var(--teal,#0c4a44);}
+.gallery-tabs{display:flex;justify-content:center;flex-wrap:wrap;gap:.4rem;margin-bottom:1.4rem;}
+.gallery-tab{font:inherit;font-size:13px;padding:.35rem .9rem;border-radius:100px;cursor:pointer;
+  border:1px solid rgba(22,36,31,.16);background:transparent;color:#4a5a52;transition:all .2s;}
+.gallery-tab:hover{border-color:rgba(12,74,68,.4);color:#0c4a44;}
+.gallery-tab.on{background:#0c4a44;border-color:#0c4a44;color:#f4f1e8;}
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1rem;}
+.gallery-item{margin:0;border-radius:14px;overflow:hidden;background:#fbfaf5;
+  border:1px solid rgba(22,36,31,.1);box-shadow:0 10px 24px -18px rgba(7,46,42,.5);}
+/* A fixed ratio so a mix of portrait and landscape photos still makes rows. */
+.gallery-item img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;}
+.gallery-item figcaption{padding:.6rem .8rem;font-size:12.5px;color:#4a5a52;line-height:1.5;
+  display:flex;flex-direction:column;gap:.15rem;}
+.gallery-item figcaption span{font-size:11px;color:#8a978f;}
+@media (max-width:520px){ .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));} }

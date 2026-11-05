@@ -195,6 +195,7 @@ function lnShow(section) {
   else if (section === 'webapps') renderWebapps();
   else if (section.indexOf('inv-') === 0) showInventoryPage(section.slice(4));
   else if (section === 'boxes') renderBoxes();
+  else if (section === 'photos') renderPhotos();
   else if (section === 'finances') renderFinances();
   else if (section === 'admin') { renderAdmin(); refreshAdmin(); }
 }
@@ -2781,6 +2782,113 @@ async function saveInvItem() {
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(invStore(tab), item); editingInvItem = null; closeModal(); renderInventory(tab);
   if (lnCurrentSection === 'boxes') renderBoxes();
+}
+
+// ── LAB PHOTOS ─────────────────────────────────────────────
+/* Uploads for the gallery under Team on the public site.
+
+   Everything here is said plainly about one thing: these go on the open
+   internet. The bucket is public, so an image is readable by anyone with
+   its URL whether or not they came through the website. Anybody in a photo
+   should be happy with that before it goes up, and the page says so rather
+   than leaving it to be discovered. */
+var PHOTO_CATS = [
+  { key: 'daily', label: 'Day to day' },
+  { key: 'occasions', label: 'Occasions' },
+  { key: 'conferences', label: 'Conferences' }
+];
+var photoList = [];
+
+async function renderPhotos() {
+  var el = document.getElementById('ln-photos-body');
+  if (!el) return;
+  if (DB.mode !== 'supabase') {
+    el.innerHTML = '<div class="ln-empty">The gallery needs the shared database. ' +
+      'In local mode there is no public site for it to appear on.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="ln-empty">Loading…</div>';
+  try {
+    photoList = await DB.listPhotos();
+  } catch (e) {
+    el.innerHTML = '<div class="ln-inv-alert expired">' + esc(e.message) + '</div>';
+    return;
+  }
+  var byCat = {};
+  photoList.forEach(function (p) { (byCat[p.category || 'daily'] = byCat[p.category || 'daily'] || []).push(p); });
+  el.innerHTML =
+    '<div class="ln-note-tip"><strong>These are public.</strong> Anything here appears under Team on the lab’s ' +
+      'website and can be opened by anyone with the link — the images are not behind the notebook’s login. ' +
+      'Check that everybody in a photo is happy with that.</div>' +
+    (photoList.length
+      ? PHOTO_CATS.filter(function (c) { return byCat[c.key]; }).map(function (c) {
+          return '<div class="ln-form-section">' + esc(c.label) + ' · ' + byCat[c.key].length + '</div>' +
+            '<div class="ln-photo-grid">' + byCat[c.key].map(function (p) {
+              return '<figure class="ln-photo">' +
+                '<img src="' + esc(DB.photoUrl(p.path)) + '" alt="' + esc(p.caption || '') + '" loading="lazy">' +
+                '<figcaption>' + esc(p.caption || 'No caption') +
+                  (p.taken_on ? '<span>' + esc(p.taken_on) + '</span>' : '') + '</figcaption>' +
+                '<button type="button" class="ln-photo-x" title="Remove from the website" ' +
+                  'onclick="removePhoto(\'' + esc(p.id) + '\')">✕</button>' +
+                '</figure>';
+            }).join('') + '</div>';
+        }).join('')
+      : '<div class="ln-empty">No photos yet. The gallery stays off the website until there is one.</div>');
+}
+
+function openPhotoModal() {
+  if (DB.mode !== 'supabase') { alert('The gallery needs the shared database.'); return; }
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Add photos</h3>' +
+    '<div class="ln-note-tip">They go on the public website, readable by anyone with the link.</div>' +
+    '<div class="ln-form-row"><label>Photos</label><input type="file" id="m-photo-files" accept="image/*" multiple></div>' +
+    '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Where these belong</label><select id="m-photo-cat">' +
+        PHOTO_CATS.map(function (c) { return '<option value="' + c.key + '">' + c.label + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div class="ln-form-row"><label>Taken on</label><input type="date" id="m-photo-date" value="' +
+        new Date().toISOString().slice(0, 10) + '"></div>' +
+    '</div>' +
+    '<div class="ln-form-row"><label>Caption</label><input id="m-photo-caption" placeholder="e.g. Lab retreat, Haifa"></div>' +
+    '<div class="hint">The caption and date apply to every file in this batch — upload separately if they need ' +
+      'different ones. Keep files under 10 MB; the public page has to load them.</div>' +
+    '<div id="ln-photo-progress"></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" id="ln-photo-save" onclick="savePhotos()">Upload</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+
+async function savePhotos() {
+  var input = document.getElementById('m-photo-files');
+  var files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+  if (!files.length) { alert('Choose at least one image.'); return; }
+  var btn = document.getElementById('ln-photo-save'), out = document.getElementById('ln-photo-progress');
+  var meta = { caption: g('m-photo-caption'), category: g('m-photo-cat'), taken_on: g('m-photo-date') };
+  btn.disabled = true;
+  var done = 0, failed = [];
+  for (var i = 0; i < files.length; i++) {
+    out.innerHTML = '<div class="hint">Uploading ' + (i + 1) + ' of ' + files.length + '…</div>';
+    try { await DB.addPhoto(files[i], meta); done++; }
+    catch (e) { failed.push(files[i].name + ': ' + e.message); }
+  }
+  btn.disabled = false;
+  // Partial success is the normal case with a bad file in the middle, so say
+  // exactly what went up and what did not rather than one verdict for all.
+  if (failed.length) {
+    out.innerHTML = '<div class="ln-inv-alert expired">' + done + ' uploaded. ' +
+      failed.length + ' did not:<br>' + failed.map(esc).join('<br>') + '</div>';
+  } else {
+    closeModal();
+  }
+  renderPhotos();
+}
+
+async function removePhoto(id) {
+  var p = photoList.filter(function (x) { return x.id === id; })[0];
+  if (!p) return;
+  if (!confirm('Take this photo off the website?')) return;
+  try { await DB.removePhoto(p); } catch (e) { alert('Could not remove it: ' + e.message); }
+  renderPhotos();
 }
 
 // ── LAB FINANCES ───────────────────────────────────────────

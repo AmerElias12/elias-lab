@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=27">
+    <link rel="stylesheet" href="css/notebook.css?v=28">
     <link rel="stylesheet" href="css/plasmid.css?v=28">
 </head>
 <body>
@@ -59,6 +59,7 @@
         <div class="ln-nav-item" onclick="lnShow('protocols')"><span class="ni">📋</span><span>Protocols</span></div>
         <div class="ln-nav-item" onclick="lnShow('notebooks')"><span class="ni">📓</span><span>Experiment Notebooks</span></div>
         <div class="ln-nav-item" onclick="lnShow('presentations')"><span class="ni">🖥️</span><span>Presentations</span></div>
+        <div class="ln-nav-item" onclick="lnShow('photos')"><span class="ni">📷</span><span>Lab Photos</span></div>
         <div class="ln-nav-item" onclick="lnShow('webapps')"><span class="ni">🌐</span><span>Webapps &amp; Tools</span></div>
         <div class="ln-nav-section">Inventory</div>
         <div class="ln-nav-item" onclick="boxView=null;boxSelected=null;lnShow('boxes')"><span class="ni">🗃️</span><span>Storage Boxes</span></div>
@@ -121,6 +122,12 @@
           <div id="ln-presentations-list"></div>
         </div>
         <!-- WEBAPPS -->
+        <!-- Uploads for the gallery on the public site. -->
+        <div id="ln-photos" class="ln-section">
+          <div class="ln-section-header"><div><h2>Lab Photos</h2><p>Day-to-day, occasions and conferences — these appear under Team on the public website</p></div><div class="ln-header-actions"><button class="ln-add-btn" onclick="openPhotoModal()">+ Add photos</button></div></div>
+          <div id="ln-photos-body"></div>
+        </div>
+
         <div id="ln-webapps" class="ln-section">
           <div class="ln-section-header"><div><h2>Webapps &amp; Tools</h2><p>Curated bioinformatics tools and custom lab applications</p></div></div>
           <h3 class="ln-webapp-sub">🔬 Custom Elias Lab Tools</h3>
@@ -232,7 +239,7 @@
   <script src="js/mentions.js?v=2"></script>
   <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
-  <script src="js/data.js?v=22"></script>
-  <script src="js/notebook.js?v=30"></script>
+  <script src="js/data.js?v=23"></script>
+  <script src="js/notebook.js?v=32"></script>
 </body>
 </html>
