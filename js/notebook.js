@@ -1497,6 +1497,8 @@ var INV_LABELS = {
   enzymes:  { one: 'Restriction Enzyme', many: 'restriction enzymes' },
   primers:  { one: 'Primer',             many: 'primers' },
   plasmids: { one: 'Plasmid',            many: 'plasmids' },
+  cdnas:    { one: 'cDNA',               many: 'cDNAs' },
+  genes:    { one: 'Gene',               many: 'genes' },
   stocks:   { one: 'Glycerol Stock',     many: 'glycerol stocks' },
   cells:    { one: 'Cell Line',           many: 'cell lines' },
   kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
@@ -1505,6 +1507,9 @@ var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'location', 'addedBy'] },
+  // Same store as plasmids; different things are worth a column.
+  cdnas: { cols: ['Name', 'Gene / insert', 'Species', 'Accession', 'In vector', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Added by'], fields: ['name', 'insert', 'species', 'accession', 'backbone', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'addedBy'] },
+  genes: { cols: ['Gene', 'Species', 'Accession', 'Locus', 'Size (bp)', 'Source', 'Owner', 'Notes', 'Added by'], fields: ['name', 'species', 'accession', 'locus', 'len', 'source', 'owner', 'notes', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Cells / Vial', 'Source', 'Growth Media', 'Banking Media', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
@@ -1575,6 +1580,36 @@ function invCompare(a, b, key) {
    exists in every box in the lab and sorting on it would interleave them.
 
    Everything else sorts by the field that names it, which is fields[0]. */
+/* ---- Molecular Cloning: three views, one store ----
+
+   Plasmids, cDNAs and genes are all sequence records. They differ in what is
+   worth writing down beside the sequence — a plasmid has a backbone and a
+   resistance, a gene has a species and an accession — but not in what you do
+   with them: the map, the digest, the PCR and the cloning tools apply to all
+   three.
+
+   So they share the `plasmids` store and differ by a `kind` field, and the
+   three pages are three filtered views of it. The alternative, three real
+   categories, would mean teaching the sequence page, the #plasmid/<id>
+   route, the tab bar, @-mentions and the box maps about all three — a large
+   change to the most complicated page in the notebook, for a distinction
+   that is only ever about which columns to show.
+
+   A record with no kind is a plasmid: that is what every record was before
+   this existed, so nothing needs migrating. */
+var INV_STORE = { cdnas: 'plasmids', genes: 'plasmids' };
+var INV_KIND = { plasmids: 'plasmid', cdnas: 'cdna', genes: 'gene' };
+var CLONING_TABS = ['plasmids', 'cdnas', 'genes'];
+function invStore(tab) { return INV_STORE[tab] || tab; }
+function kindOf(item) { return (item && item.kind) || 'plasmid'; }
+/* The records a view shows: its store, narrowed to its kind. */
+function invItems(tab) {
+  var all = getInventory()[invStore(tab)] || [];
+  var want = INV_KIND[tab];
+  if (!want || !INV_STORE[tab] && tab !== 'plasmids') return all;
+  return all.filter(function (x) { return kindOf(x) === want; });
+}
+
 var INV_SORT = { cells: ['tank', 'rack', 'box', 'position'] };
 function invSortKeys(cat, cfg) { return INV_SORT[cat] || [cfg.fields[0]]; }
 
@@ -1711,7 +1746,7 @@ function renderInventory(tab) {
   var cfg = INV_CONFIG[currentInvTab];
   var el = document.getElementById('ln-invtable-' + currentInvTab);
   if (!el || !cfg) return;
-  var all = getInventory()[currentInvTab] || [];
+  var all = invItems(currentInvTab);
 
   // The search box is the single source of truth, so a filter survives
   // leaving the page and coming back.
@@ -1821,7 +1856,7 @@ function renderInventory(tab) {
 
 /* Download one category as CSV, for ordering lists and audits. */
 function exportInventoryCSV(cat) {
-  var cfg = INV_CONFIG[cat], items = getInventory()[cat] || [];
+  var cfg = INV_CONFIG[cat], items = invItems(cat);
   if (!items.length) { alert('There is nothing in ' + INV_LABELS[cat].many + ' to export yet.'); return; }
   // In the same order as the page. A spreadsheet handed to somebody for an
   // order or an audit should not arrive shuffled by when each row was typed.
@@ -1845,7 +1880,7 @@ function csvCell(v) {
 }
 async function deleteInvItem(tab, id) {
   if (!confirm('Remove this item?')) return;
-  await DB.removeInventory(tab, id); renderInventory(tab);
+  await DB.removeInventory(invStore(tab), id); renderInventory(tab);
   if (lnCurrentSection === 'boxes') renderBoxes();
 }
 
@@ -2078,7 +2113,7 @@ function editVial(cat, id) { currentInvTab = cat; openInventoryModal(id); }
 /* Another vial from the same freeze: everything carried over except where it
    sits, which is the one thing that differs and the one thing to fill in. */
 function copyInvItem(id) {
-  var src = (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0];
+  var src = invItems(currentInvTab).filter(function (x) { return x.id === id; })[0];
   if (!src) return;
   var prefill = {};
   INV_CONFIG[currentInvTab].fields.forEach(function (f) {
@@ -2561,8 +2596,13 @@ function nextStockSerial() {
 var editingInvItem = null;
 function openInventoryModal(id, prefill) {
   // Plasmids have a page of their own: maps, sequence and the molecular tools.
-  if (currentInvTab === 'plasmids') { if (id) openPlasmid(id); else newPlasmid(); return; }
-  editingInvItem = id ? (getInventory()[currentInvTab] || []).filter(function (x) { return x.id === id; })[0] || null : null;
+  // All three Molecular Cloning pages open the sequence page, which is where
+  // a sequence record is actually edited.
+  if (CLONING_TABS.indexOf(currentInvTab) >= 0) {
+    if (id) openPlasmid(id); else newPlasmid(INV_KIND[currentInvTab]);
+    return;
+  }
+  editingInvItem = id ? invItems(currentInvTab).filter(function (x) { return x.id === id; })[0] || null : null;
   var bg = document.getElementById('ln-modal-bg'), mc = document.getElementById('ln-modal-content');
   var user = currentUser(), today = new Date().toISOString().split('T')[0];
   var forms = {
@@ -2640,7 +2680,7 @@ async function saveInvItem() {
   }
   else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
-  await DB.upsertInventory(tab, item); editingInvItem = null; closeModal(); renderInventory(tab);
+  await DB.upsertInventory(invStore(tab), item); editingInvItem = null; closeModal(); renderInventory(tab);
   if (lnCurrentSection === 'boxes') renderBoxes();
 }
 

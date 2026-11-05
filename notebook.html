@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=24">
+    <link rel="stylesheet" href="css/notebook.css?v=25">
     <link rel="stylesheet" href="css/plasmid.css?v=28">
 </head>
 <body>
@@ -64,7 +64,12 @@
         <div class="ln-nav-item" onclick="boxView=null;boxSelected=null;lnShow('boxes')"><span class="ni">🗃️</span><span>Storage Boxes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-enzymes')"><span class="ni">✂️</span><span>Restriction Enzymes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-primers')"><span class="ni">🧬</span><span>Primers</span></div>
+        <!-- Molecular Cloning: three kinds of sequence record. One store and
+             one sequence page behind all three. -->
+        <div class="ln-nav-section sub">Molecular Cloning</div>
         <div class="ln-nav-item" onclick="lnShow('inv-plasmids')"><span class="ni">⭕</span><span>Plasmids</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-cdnas')"><span class="ni">〰️</span><span>cDNAs</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-genes')"><span class="ni">🧬</span><span>Genes</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-stocks')"><span class="ni">🧊</span><span>Glycerol Stocks</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-cells')"><span class="ni">🧫</span><span>Tissue Culture</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-kits')"><span class="ni">📦</span><span>Kits &amp; Reagents</span></div>
@@ -143,6 +148,18 @@
           <input class="ln-search" id="ln-invsearch-plasmids" placeholder="🔍 Search plasmids..." oninput="renderInventory('plasmids')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-plasmids"></div>
         </div>
+
+        <div id="ln-inv-cdnas" class="ln-section">
+          <div class="ln-section-header"><div><h2>cDNAs</h2><p>Coding sequences, with the vector they arrived in — open one for its full map and the molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cdnas')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('cdna')">+ New cDNA</button></div></div>
+          <input class="ln-search" id="ln-invsearch-cdnas" placeholder="🔍 Search cDNAs..." oninput="renderInventory('cdnas')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-cdnas"></div>
+        </div>
+
+        <div id="ln-inv-genes" class="ln-section">
+          <div class="ln-section-header"><div><h2>Genes</h2><p>Full genes and genomic loci — the reference sequence the lab works against</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('genes')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('gene')">+ New Gene</button></div></div>
+          <input class="ln-search" id="ln-invsearch-genes" placeholder="🔍 Search genes..." oninput="renderInventory('genes')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-genes"></div>
+        </div>
         <div id="ln-inv-stocks" class="ln-section">
           <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Bacterial glycerol stocks — what is in them, sequencing QC, and exactly where they are stored at -80°C</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
           <input class="ln-search" id="ln-invsearch-stocks" placeholder="🔍 Search glycerol stocks..." oninput="renderInventory('stocks')" style="margin-bottom:1.5rem;">
@@ -198,7 +215,7 @@
   <script src="js/tabs.js?v=2"></script>
   <script src="js/plates.js?v=1"></script>
   <script src="js/mentions.js?v=2"></script>
-  <script src="js/plasmid-ui.js?v=28"></script>
+  <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=21"></script>
   <script src="js/notebook.js?v=28"></script>

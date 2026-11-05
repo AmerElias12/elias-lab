@@ -334,12 +334,34 @@
       return '<div class="ln-form-row"><label>' + label + '</label><input id="' + id + '" value="' + esc(value || '') + '"' +
         (hint ? ' placeholder="' + esc(hint) + '"' : '') + '></div>';
     }
+    /* The same page serves plasmids, cDNAs and genes. Only the identity
+       block differs: a gene has a species and an accession where a plasmid
+       has a backbone and a resistance. Everything below — preparation,
+       storage, the maps, the tools — is the same question whatever the
+       record is. */
+    var kind = it.kind || 'plasmid';
+    var identity;
+    if (kind === 'gene') {
+      identity = row('pl-name', 'Gene', it.name, 'e.g. ATP7B') +
+        '<div class="ln-form-grid">' + row('pl-species', 'Species', it.species, 'e.g. Homo sapiens') +
+          row('pl-accession', 'Accession', it.accession, 'e.g. NM_000053.4') + '</div>' +
+        '<div class="ln-form-grid">' + row('pl-locus', 'Locus', it.locus, 'e.g. 13q14.3') +
+          row('pl-source', 'Source', it.source, 'e.g. Ensembl, or a collaborator') + '</div>';
+    } else if (kind === 'cdna') {
+      identity = row('pl-name', 'cDNA name', it.name, 'e.g. ATP7B cDNA') +
+        '<div class="ln-form-grid">' + row('pl-insert', 'Gene / insert', it.insert, 'e.g. ATP7B CDS') +
+          row('pl-species', 'Species', it.species, 'e.g. Homo sapiens') + '</div>' +
+        '<div class="ln-form-grid">' + row('pl-accession', 'Accession', it.accession, 'e.g. NM_000053.4') +
+          row('pl-backbone', 'In vector', it.backbone, 'e.g. pDONR221') + '</div>';
+    } else {
+      identity = row('pl-name', 'Plasmid name', it.name, 'e.g. pLenti-CMV-GFP') +
+        '<div class="ln-form-grid">' + row('pl-backbone', 'Backbone', it.backbone, 'e.g. pUC19') +
+          row('pl-insert', 'Insert', it.insert, 'e.g. HK022 integrase CDS') + '</div>';
+    }
     return '<div class="ln-pl-meta">' +
-      '<div class="ln-form-section">Identity</div>' +
-      row('pl-name', 'Plasmid name', it.name, 'e.g. pLenti-CMV-GFP') +
-      '<div class="ln-form-grid">' + row('pl-backbone', 'Backbone', it.backbone, 'e.g. pUC19') +
-        row('pl-insert', 'Insert', it.insert, 'e.g. HK022 integrase CDS') + '</div>' +
-      '<div class="ln-form-grid">' + row('pl-resistance', 'Resistance', it.resistance, 'e.g. AmpR') +
+      '<div class="ln-form-section">Identity</div>' + identity +
+      '<div class="ln-form-grid">' +
+        (kind === 'plasmid' ? row('pl-resistance', 'Resistance', it.resistance, 'e.g. AmpR') : '') +
         '<div class="ln-form-row"><label>Topology</label><select id="pl-topology">' +
           ['circular', 'linear'].map(function (t) { return '<option value="' + t + '"' + (it.topology === t || (t === 'circular' && !it.topology) ? ' selected' : '') + '>' + t.charAt(0).toUpperCase() + t.slice(1) + '</option>'; }).join('') +
         '</select></div></div>' +
@@ -2351,8 +2373,19 @@
     if (!name) { alert('Please give the plasmid a name.'); document.getElementById('pl-name').focus(); return; }
     var btn = document.getElementById('ln-pl-save'), st = document.getElementById('ln-pl-status');
     btn.disabled = true; btn.textContent = 'Saving…';
+    /* Only fields the form actually drew. The identity block differs by kind,
+       so reading a missing input would write an empty string over a value
+       this page never showed — a gene's page would silently clear the
+       resistance of a record that used to be a plasmid. */
+    function kept(id, was) {
+      var el = document.getElementById(id);
+      return el ? el.value : (was || '');
+    }
     var item = Object.assign({}, it, {
-      name: name, backbone: g('pl-backbone'), insert: g('pl-insert'), resistance: g('pl-resistance'),
+      name: name, backbone: kept('pl-backbone', it.backbone), insert: kept('pl-insert', it.insert),
+      resistance: kept('pl-resistance', it.resistance),
+      species: kept('pl-species', it.species), accession: kept('pl-accession', it.accession),
+      locus: kept('pl-locus', it.locus), source: kept('pl-source', it.source),
       topology: g('pl-topology') === 'linear' ? 'linear' : 'circular',
       conc: g('pl-conc'), kit: g('pl-kit'), stock: g('pl-stock'), owner: getSelectOrManual('pl-owner'),
       freezer: g('pl-freezer'), box: g('pl-box'), position: g('pl-position'), location: g('pl-location'),
@@ -2624,11 +2657,18 @@
   });
 
   // ---------- opening a plasmid from the inventory list ----------
-  function newPlasmid() {
+  /* `kind` says which of the three Molecular Cloning pages the record belongs
+     to; the page it is created from decides, and a cDNA or a gene is linear
+     by default because that is what you are handed. All three open the same
+     sequence page: the tools do not care which it is. */
+  function newPlasmid(kind) {
     var me = currentUser() ? currentUser().name : 'Unknown';
-    var item = { id: uid(), name: '', seq: '', topology: 'circular', features: [], owner: me, addedBy: me };
+    kind = kind || 'plasmid';
+    var item = { id: uid(), name: '', seq: '', kind: kind,
+      topology: kind === 'plasmid' ? 'circular' : 'linear',
+      features: [], owner: me, addedBy: me };
     DB.upsertInventory('plasmids', item).then(function () {
-      renderInventory('plasmids');
+      renderInventory(kind === 'plasmid' ? 'plasmids' : kind === 'cdna' ? 'cdnas' : 'genes');
       openPlasmid(item.id);
       setTimeout(function () { var n = document.getElementById('pl-name'); if (n) n.focus(); }, 80);
     }, function (e) { alert('Could not create the plasmid: ' + e.message); });
