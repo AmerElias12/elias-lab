@@ -231,6 +231,14 @@ drop policy if exists lab_photos_delete on public.lab_photos;
 create policy lab_photos_delete on public.lab_photos
   for delete to authenticated using (public.is_approved());
 
+-- Postgres checks the table grant BEFORE any policy, so a table with
+-- policies and no grant answers "permission denied for table lab_photos"
+-- however well the policy fits. This is the one table anon may read — that
+-- is the whole point of it — and the policies above are what keep anon to
+-- reading. Everything else stays revoked from anon, further up this file.
+grant select on public.lab_photos to anon;
+grant select, insert, update, delete on public.lab_photos to authenticated;
+
 insert into storage.buckets (id, name, public)
 values ('lab-photos','lab-photos', true)
 on conflict (id) do update set public = true;

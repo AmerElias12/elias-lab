@@ -54,6 +54,7 @@ runStatement('var INV_SLOT =');
 vm.runInContext(extract('invSortKeys', 'function'), ctx);
 vm.runInContext(extract('slotKey', 'function'), ctx);
 vm.runInContext(extract('bulkKey', 'function'), ctx);
+vm.runInContext(extract('sameSlot', 'function'), ctx);
 vm.runInContext(extract('sortInventory', 'function'), ctx);
 
 const stocksCfg = { fields: ['serial', 'description'] };
@@ -180,6 +181,33 @@ check('two vials in one position collide; different boxes do not', () => {
 check('position is matched loosely enough to catch real duplicates', () => {
   assert.equal(ctx.slotKey('cells', vial('X', '1', 'a1')), ctx.slotKey('cells', vial('X', '1', 'A1')));
   assert.equal(ctx.slotKey('cells', vial('X', 'Box 1', 'A1')), ctx.slotKey('cells', vial('X', 'box-1', 'A1')));
+});
+
+check('an unrecorded shelf is not a different shelf', () => {
+  /* A vial added from a box map carries the box and the position and often
+     nothing above them. Comparing the whole location as one string made it
+     differ from every vial that did record a shelf, so it could be filed on
+     top of one — from the very page that draws the clash in red. */
+  const onMap = { serial: 'GS-0002', box: 'Box G1', position: 'B2', freezer: 'Freezer A', shelf: '' };
+  const filed = { serial: 'GS-0001', box: 'Box G1', position: 'B2', freezer: 'Freezer A', shelf: 'R2_S3' };
+  assert.ok(ctx.sameSlot('stocks', onMap, filed), 'these are the same square of the same box');
+  assert.notEqual(ctx.slotKey('stocks', onMap), ctx.slotKey('stocks', filed),
+    'the whole-location key still differs — which is why sameSlot exists');
+});
+
+check('a stated different freezer or rack still separates two vials', () => {
+  const a = { box: 'Box 1', position: 'A1', freezer: 'Freezer A', shelf: 'R1' };
+  assert.ok(!ctx.sameSlot('stocks', a, { box: 'Box 1', position: 'A1', freezer: 'Freezer B', shelf: 'R1' }));
+  assert.ok(!ctx.sameSlot('cells', vial('X', '1', 'A1'), vial('X', '1', 'A1', { rack: '4 (Blue)' })));
+  // and a different box or position is never the same slot
+  assert.ok(!ctx.sameSlot('stocks', a, { box: 'Box 2', position: 'A1', freezer: 'Freezer A' }));
+  assert.ok(!ctx.sameSlot('stocks', a, { box: 'Box 1', position: 'A2', freezer: 'Freezer A' }));
+});
+
+check('no box, or no position, is no slot to share', () => {
+  // Two vials recorded before anybody decided where they go are not stacked.
+  assert.ok(!ctx.sameSlot('stocks', { box: '', position: 'A1' }, { box: '', position: 'A1' }));
+  assert.ok(!ctx.sameSlot('stocks', { box: 'Box 1', position: '' }, { box: 'Box 1', position: '' }));
 });
 
 check('a vial with no position yet clashes with nothing', () => {

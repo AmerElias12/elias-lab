@@ -76,8 +76,20 @@ check('no other table was opened up to anonymous readers', () => {
   // The notebook's own tables are revoked from anon and granted only to
   // signed-in users. Adding the gallery must not have loosened that.
   assert.match(sql, /revoke all on public\.profiles, public\.protocols, public\.notebooks,\s*\n\s*public\.presentations, public\.inventory_items from anon/);
-  const anonGrants = (sql.match(/grant[^;]*to anon[^;]*/gi) || []);
-  assert.equal(anonGrants.length, 0, 'something is granted to anon: ' + anonGrants.join(' | '));
+  // lab_photos is the one table anon may touch, and only to read it.
+  // Statements only: the word "grant" turns up in the comments too.
+  const bare = sql.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n');
+  const anonGrants = (bare.match(/grant[^;]*to anon[^;]*/gi) || []).map((g) => g.replace(/\s+/g, ' ').trim());
+  assert.deepEqual(anonGrants, ['grant select on public.lab_photos to anon'],
+    'something else is granted to anon: ' + anonGrants.join(' | '));
+});
+
+check('lab_photos is granted at all — a policy alone is not access', () => {
+  // Postgres checks the grant before the policy, so a table with policies
+  // and no grant answers "permission denied for table lab_photos". It did,
+  // to everyone, until this line existed.
+  assert.match(sql, /grant select, insert, update, delete on public\.lab_photos to authenticated/);
+  assert.match(sql, /grant select on public\.lab_photos to anon/);
 });
 
 check('attachments and photos never share a path in the app', () => {

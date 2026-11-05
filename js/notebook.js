@@ -1751,12 +1751,37 @@ function slotIsNew(cat, item) {
   if (!editingInvItem) return true;
   return slotKey(cat, item) !== slotKey(cat, editingInvItem);
 }
+/* Whether two records are in the same physical place.
+
+   The box and the position have to be filled in on both and agree: that is
+   what a box map draws, and two vials it draws on one square are in one
+   square whatever else their rows say. Everything above the box — the
+   freezer, the tank, the rack — only separates them when both records state
+   it and the two differ. A blank is not a disagreement: a vial added from a
+   box map knows its box and its position but not which shelf the box sits
+   on, and an unrecorded shelf is no evidence of a different shelf. Treating
+   it as one let a vial be filed on top of another from the map, which is
+   the one place the clash would have been visible. */
+function sameSlot(cat, a, b) {
+  var keys = INV_SLOT[cat];
+  if (!keys) return false;
+  var pos = keys[keys.length - 1];
+  var must = [pos, 'box'];
+  for (var i = 0; i < must.length; i++) {
+    var m = bulkKey(a[must[i]]);
+    if (!m || m !== bulkKey(b[must[i]])) return false;
+  }
+  for (var j = 0; j < keys.length; j++) {
+    var x = bulkKey(a[keys[j]]), y = bulkKey(b[keys[j]]);
+    if (x && y && x !== y) return false;
+  }
+  return true;
+}
 /* The item already sitting where this one wants to go, if there is one. */
 function slotTakenBy(cat, item) {
-  var key = slotKey(cat, item);
-  if (!key) return null;
+  if (!slotKey(cat, item)) return null;
   return (getInventory()[cat] || []).filter(function (x) {
-    return x.id !== item.id && slotKey(cat, x) === key;
+    return x.id !== item.id && sameSlot(cat, item, x);
   })[0] || null;
 }
 

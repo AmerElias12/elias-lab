@@ -85,10 +85,12 @@
     if (kind === 'enzyme') return [item.cutsite, item.supplier].filter(Boolean).join(' · ');
     if (kind === 'kit') return [item.supplier, item.catalog].filter(Boolean).join(' · ');
     if (kind === 'stock') return [item.description, item.hostStrain].filter(Boolean).join(' · ');
-    if (kind === 'cell') return [item.source, item.passage ? 'p' + item.passage : ''].filter(Boolean).join(' · ');
+    // Passages are typed either "P12" or "12"; don't print "pP12".
+    if (kind === 'cell') return [item.source, item.passage ? String(item.passage).replace(/^p?/i, 'p') : ''].filter(Boolean).join(' · ');
     if (kind === 'box') {
+      var n = (item.vials && item.vials.length) || 0;
       return [BOX_OF[item.cat] || 'Box', item.where,
-        item.vials && item.vials.length ? item.vials.length + ' vials' : 'empty'].filter(Boolean).join(' · ');
+        n ? n + (n === 1 ? ' vial' : ' vials') : 'empty'].filter(Boolean).join(' · ');
     }
     if (kind === 'protocol') return [item.category, item.author].filter(Boolean).join(' · ');
     // An archived experiment is still a real one, but say so: citing it
@@ -216,7 +218,9 @@
     if (CLONING.indexOf(kind) >= 0) { if (window.openPlasmid) openPlasmid(id); return; }
     if (kind === 'protocol') { if (window.viewProtocol) viewProtocol(id); return; }
     if (kind === 'experiment') { if (window.openEntry) openEntry(id); return; }
-    if (kind === 'box') { if (window.openBox) openBox(rec.key); return; }
+    // window.openBox, spelled out: this file has an openBox of its own for
+    // the popup, and the bare name would reach that one instead.
+    if (kind === 'box') { if (window.openBox) window.openBox(rec.key); return; }
     var section = BY_KIND[kind] && BY_KIND[kind].section;
     if (!section || !window.lnShow) return;
     lnShow(section);
