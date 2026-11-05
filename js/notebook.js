@@ -195,6 +195,7 @@ function lnShow(section) {
   else if (section === 'webapps') renderWebapps();
   else if (section.indexOf('inv-') === 0) showInventoryPage(section.slice(4));
   else if (section === 'boxes') renderBoxes();
+  else if (section === 'finances') renderFinances();
   else if (section === 'admin') { renderAdmin(); refreshAdmin(); }
 }
 // pull fresh user list (catches new sign-ups), then re-render
@@ -2780,6 +2781,199 @@ async function saveInvItem() {
   if (tab !== 'stocks' && !item.name) { alert('Please fill in the item name.'); return; }
   await DB.upsertInventory(invStore(tab), item); editingInvItem = null; closeModal(); renderInventory(tab);
   if (lnCurrentSection === 'boxes') renderBoxes();
+}
+
+// ── LAB FINANCES ───────────────────────────────────────────
+/* Grants and what has been spent against them.
+
+   Two records: a grant (what was awarded) and an expense (what went out,
+   charged to one grant). Both live in the inventory store as their own
+   categories, so they need no new table.
+
+   The one rule worth stating: money is never added across currencies. A
+   grant carries its own, an expense inherits the grant's, and totals are
+   per grant. Where a figure covers several grants it is shown per currency
+   rather than converted — there is no rate in here, and a converted number
+   would look exact while being a guess. */
+var MONEY_CURRENCIES = ['₪', '$', '€', '£'];
+
+function money(n) {
+  var v = Math.round((Number(n) || 0) * 100) / 100;
+  return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+/* Amounts are typed by people, so "1,200", "₪1200" and "1200.50" all arrive.
+   Anything that is not a number reads as zero rather than NaN, which would
+   poison every total it touched. */
+function amount(v) {
+  var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+function grants() { return getInventory().grants || []; }
+function expenses() { return getInventory().expenses || []; }
+
+function grantSummary() {
+  return grants().map(function (gr) {
+    var spent = expenses().filter(function (e) { return e.grant === gr.id; })
+      .reduce(function (t, e) { return t + amount(e.cost); }, 0);
+    var awarded = amount(gr.awarded);
+    return { grant: gr, cur: gr.currency || '₪', awarded: awarded, spent: spent,
+      left: awarded - spent, pct: awarded > 0 ? Math.min(100, spent / awarded * 100) : 0 };
+  });
+}
+
+function renderFinances() {
+  var el = document.getElementById('ln-finances-body');
+  if (!el) return;
+  var rows = grantSummary();
+  var loose = expenses().filter(function (e) { return !e.grant || !grants().some(function (gr) { return gr.id === e.grant; }); });
+
+  // Unassigned expenses have no currency of their own to trust, so they are
+  // counted and shown, never folded into a grant's figures.
+  var cards = rows.length ? rows.map(function (r) {
+    var over = r.left < 0;
+    return '<div class="ln-fin-card' + (over ? ' over' : '') + '">' +
+      '<div class="ln-fin-name">' + esc(r.grant.name || 'Untitled grant') +
+        (r.grant.agency ? '<span>' + esc(r.grant.agency) + '</span>' : '') + '</div>' +
+      '<div class="ln-fin-left">' + esc(r.cur) + money(r.left) + ' <em>left</em></div>' +
+      '<div class="ln-fin-bar"><span style="width:' + r.pct.toFixed(1) + '%"></span></div>' +
+      '<div class="ln-fin-meta">' + esc(r.cur) + money(r.spent) + ' spent of ' + esc(r.cur) + money(r.awarded) +
+        (over ? ' · <strong>over by ' + esc(r.cur) + money(-r.left) + '</strong>' : '') + '</div>' +
+      '<div class="ln-fin-acts"><button class="ln-icon-btn" onclick="openGrantModal(\'' + esc(r.grant.id) + '\')">✎</button>' +
+        '<button class="ln-icon-btn danger" onclick="deleteFinance(\'grants\',\'' + esc(r.grant.id) + '\')">✕</button></div>' +
+      '</div>';
+  }).join('') : '<div class="ln-empty">No grants yet. Add one, then record expenses against it.</div>';
+
+  var exp = expenses().slice().sort(function (a, b) {
+    return String(b.date || '').localeCompare(String(a.date || ''));
+  });
+  var byId = {};
+  grants().forEach(function (gr) { byId[gr.id] = gr; });
+
+  el.innerHTML =
+    '<div class="ln-fin-cards">' + cards + '</div>' +
+    (loose.length ? '<div class="ln-inv-alert soon">⚠ <strong>' + loose.length + '</strong> expense' +
+      (loose.length === 1 ? ' is' : 's are') + ' not charged to any grant, so ' +
+      (loose.length === 1 ? 'it is' : 'they are') + ' in no total above.</div>' : '') +
+    '<div class="ln-form-section">Expenses</div>' +
+    (exp.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
+      '<th>Date</th><th>What</th><th>Grant</th><th>Category</th><th class="ln-nowrap">Amount</th><th>Recorded by</th><th class="ln-row-actions">Actions</th>' +
+      '</tr></thead><tbody>' + exp.map(function (e) {
+        var gr = byId[e.grant];
+        return '<tr><td class="ln-nowrap">' + esc(e.date || '—') + '</td>' +
+          '<td>' + esc(e.name || '—') + '</td>' +
+          '<td>' + (gr ? esc(gr.name) : '<span class="ln-req-urgency urgent">unassigned</span>') + '</td>' +
+          '<td>' + esc(e.category || '—') + '</td>' +
+          // amount() first: a typed "1,200" is NaN to Number(), and would
+          // print as 0 beside a total that counted it correctly.
+          '<td class="ln-nowrap"><strong>' + esc(gr ? (gr.currency || '₪') : '') + money(amount(e.cost)) + '</strong></td>' +
+          '<td>' + esc(e.addedBy || '—') + '</td>' +
+          '<td class="ln-row-actions"><button class="ln-icon-btn" onclick="openExpenseModal(\'' + esc(e.id) + '\')">✎</button>' +
+            '<button class="ln-icon-btn danger" onclick="deleteFinance(\'expenses\',\'' + esc(e.id) + '\')">✕</button></td></tr>';
+      }).join('') + '</tbody></table></div>'
+      : '<div class="ln-empty">Nothing recorded yet.</div>');
+}
+
+function openGrantModal(id) {
+  var gr = id ? grants().filter(function (x) { return x.id === id; })[0] : null;
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (gr ? 'Edit grant' : 'Add grant') + '</h3>' +
+    '<div class="ln-form-row"><label>Grant name</label><input id="m-gname" value="' + esc(gr && gr.name || '') + '" placeholder="e.g. ISF 1234/26"></div>' +
+    '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Agency</label><input id="m-gagency" value="' + esc(gr && gr.agency || '') + '" placeholder="e.g. Israel Science Foundation"></div>' +
+      '<div class="ln-form-row"><label>Reference</label><input id="m-gref" value="' + esc(gr && gr.ref || '') + '" placeholder="grant number"></div>' +
+    '</div><div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Amount awarded</label><input id="m-gawarded" value="' + esc(gr && gr.awarded || '') + '" placeholder="e.g. 750000"></div>' +
+      '<div class="ln-form-row"><label>Currency</label><select id="m-gcur">' +
+        MONEY_CURRENCIES.map(function (c) { return '<option value="' + c + '"' + ((gr && gr.currency || '₪') === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') +
+      '</select></div>' +
+    '</div><div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Starts</label><input type="date" id="m-gstart" value="' + esc(gr && gr.start || '') + '"></div>' +
+      '<div class="ln-form-row"><label>Ends</label><input type="date" id="m-gend" value="' + esc(gr && gr.end || '') + '"></div>' +
+    '</div>' +
+    '<div class="ln-form-row"><label>Notes</label><textarea id="m-gnotes" rows="2">' + esc(gr && gr.notes || '') + '</textarea></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="saveGrant(' + (id ? '\'' + esc(id) + '\'' : '') + ')">Save</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+async function saveGrant(id) {
+  var was = id ? grants().filter(function (x) { return x.id === id; })[0] : null;
+  var user = currentUser();
+  var name = g('m-gname');
+  if (!name) { alert('Please give the grant a name.'); return; }
+  var item = Object.assign({}, was || { id: uid(), addedBy: user ? user.name : 'Unknown' }, {
+    name: name, agency: g('m-gagency'), ref: g('m-gref'),
+    awarded: g('m-gawarded'), currency: g('m-gcur'),
+    start: g('m-gstart'), end: g('m-gend'), notes: g('m-gnotes')
+  });
+  try { await DB.upsertInventory('grants', item); } catch (e) { alert('Could not save: ' + e.message); return; }
+  closeModal(); renderFinances();
+}
+
+function openExpenseModal(id) {
+  var e = id ? expenses().filter(function (x) { return x.id === id; })[0] : null;
+  var gs = grants();
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (e ? 'Edit expense' : 'Record expense') + '</h3>' +
+    (gs.length ? '' : '<div class="ln-note-tip">Add a grant first, so the expense has something to come out of.</div>') +
+    '<div class="ln-form-row"><label>What was bought</label><input id="m-ename" value="' + esc(e && e.name || '') + '" placeholder="e.g. Q5 polymerase"></div>' +
+    '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Charged to</label><select id="m-egrant">' +
+        '<option value="">— not assigned —</option>' +
+        gs.map(function (gr) { return '<option value="' + esc(gr.id) + '"' + (e && e.grant === gr.id ? ' selected' : '') + '>' + esc(gr.name) + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div class="ln-form-row"><label>Amount</label><input id="m-ecost" value="' + esc(e && e.cost || '') + '" placeholder="e.g. 1200"></div>' +
+    '</div><div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Date</label><input type="date" id="m-edate" value="' + esc(e && e.date || new Date().toISOString().slice(0, 10)) + '"></div>' +
+      '<div class="ln-form-row"><label>Category</label><input id="m-ecategory" list="ln-exp-cats" value="' + esc(e && e.category || '') + '" placeholder="e.g. Consumables">' +
+        '<datalist id="ln-exp-cats"><option value="Consumables"><option value="Equipment"><option value="Reagents"><option value="Sequencing"><option value="Travel"><option value="Publication"><option value="Salary"></datalist></div>' +
+    '</div>' +
+    '<div class="ln-form-row"><label>Notes</label><textarea id="m-enotes" rows="2">' + esc(e && e.notes || '') + '</textarea></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="saveExpense(' + (id ? '\'' + esc(id) + '\'' : '') + ')">Save</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+async function saveExpense(id) {
+  var was = id ? expenses().filter(function (x) { return x.id === id; })[0] : null;
+  var user = currentUser();
+  var name = g('m-ename');
+  if (!name) { alert('Please say what was bought.'); return; }
+  var item = Object.assign({}, was || { id: uid(), addedBy: user ? user.name : 'Unknown' }, {
+    name: name, grant: g('m-egrant'), cost: g('m-ecost'),
+    date: g('m-edate'), category: g('m-ecategory'), notes: g('m-enotes')
+  });
+  try { await DB.upsertInventory('expenses', item); } catch (err) { alert('Could not save: ' + err.message); return; }
+  closeModal(); renderFinances();
+}
+
+async function deleteFinance(cat, id) {
+  if (!confirm(cat === 'grants'
+    ? 'Remove this grant? Expenses charged to it stay, but become unassigned.'
+    : 'Remove this expense?')) return;
+  try { await DB.removeInventory(cat, id); } catch (e) { alert('Could not remove: ' + e.message); return; }
+  renderFinances();
+}
+
+/* One row per expense, with the grant and currency spelled out, because a
+   column of bare numbers from two grants in two currencies is not a column
+   anybody should add up. */
+function exportFinancesCSV() {
+  var byId = {};
+  grants().forEach(function (gr) { byId[gr.id] = gr; });
+  var rows = [['Date', 'What', 'Grant', 'Agency', 'Category', 'Currency', 'Amount', 'Recorded by', 'Notes']];
+  expenses().slice().sort(function (a, b) { return String(a.date || '').localeCompare(String(b.date || '')); })
+    .forEach(function (e) {
+      var gr = byId[e.grant];
+      rows.push([e.date || '', e.name || '', gr ? gr.name : 'unassigned', gr ? (gr.agency || '') : '',
+        e.category || '', gr ? (gr.currency || '₪') : '', String(amount(e.cost)), e.addedBy || '', e.notes || '']);
+    });
+  if (rows.length === 1) { alert('No expenses recorded yet.'); return; }
+  var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'elias-lab-finances-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
 }
 
 // ── BOOT ───────────────────────────────────────────────────

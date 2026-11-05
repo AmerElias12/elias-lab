@@ -24,7 +24,12 @@
     inventory: { enzymes: [], primers: [], plasmids: [], stocks: [], cells: [], kits: [], boxes: [] }
   };
   // 'boxes' holds storage box set-ups (name, layout, freezer); the rest are vials and reagents.
-  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes'];
+  /* Every category the inventory table holds. cDNAs and genes are not here:
+     they live in `plasmids` and differ by a `kind`, because they are the same
+     record with different columns. requests, grants and expenses are their
+     own, because they are not. */
+  var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes',
+    'requests', 'grants', 'expenses'];
 
   /* An inventory saved before a category existed has no array for it, so
      adding the first item of a new category would throw. Fill in whatever is

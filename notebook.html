@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=26">
+    <link rel="stylesheet" href="css/notebook.css?v=27">
     <link rel="stylesheet" href="css/plasmid.css?v=28">
 </head>
 <body>
@@ -76,6 +76,7 @@
         <div class="ln-nav-item" onclick="lnShow('inv-kits')"><span class="ni">📦</span><span>Kits &amp; Reagents</span></div>
         <div id="ln-admin-nav" style="display:none;">
           <div class="ln-nav-section">Admin</div>
+          <div class="ln-nav-item" onclick="lnShow('finances')"><span class="ni">₪</span><span>Lab Finances</span></div>
           <div class="ln-nav-item" onclick="lnShow('admin')"><span class="ni">⚙️</span><span>User Management</span></div>
         </div>
         <div class="ln-sidebar-footer">
@@ -193,6 +194,12 @@
           <div id="ln-invtable-kits"></div>
         </div>
         <!-- ADMIN -->
+        <!-- Grants and what has been spent against them. Admin only. -->
+        <div id="ln-finances" class="ln-section">
+          <div class="ln-section-header"><div><h2>Lab Finances</h2><p>Grants, expenses, and what is left on each</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportFinancesCSV()">↓ CSV</button><button class="ln-add-btn ghost" onclick="openGrantModal()">+ Add grant</button><button class="ln-add-btn" onclick="openExpenseModal()">+ Record expense</button></div></div>
+          <div id="ln-finances-body"></div>
+        </div>
+
         <div id="ln-admin" class="ln-section">
           <div class="ln-section-header">
             <div><h2>User Management</h2><p>Approve, manage and remove lab members</p></div>
@@ -225,7 +232,7 @@
   <script src="js/mentions.js?v=2"></script>
   <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
-  <script src="js/data.js?v=21"></script>
-  <script src="js/notebook.js?v=29"></script>
+  <script src="js/data.js?v=22"></script>
+  <script src="js/notebook.js?v=30"></script>
 </body>
 </html>
