@@ -345,7 +345,7 @@ function renderProtocols(filter) {
   var el = document.getElementById('ln-protocols-list');
   if (!protos.length) { el.innerHTML = '<div class="ln-empty">No protocols yet. Click "+ Add Protocol" to get started.</div>'; return; }
   el.innerHTML = protos.slice().reverse().map(function (p) {
-    return '<div class="ln-card"><div class="ln-card-header"><div><div class="ln-card-title">' + esc(p.title) + '</div>' +
+    return '<div class="ln-card" data-item-id="' + esc(p.id || '') + '"><div class="ln-card-header"><div><div class="ln-card-title">' + esc(p.title) + '</div>' +
       '<div class="ln-card-meta">📁 ' + esc(p.category) + ' · 👤 ' + esc(p.author) + ' · 📅 ' + esc(p.date) + (p.link ? ' · <a href="' + esc(p.link) + '" target="_blank" style="color:#0d6efd;">External Link ↗</a>' : '') + '</div></div>' +
       '<div class="ln-card-actions"><span class="ln-badge ' + catColor(p.category) + '">' + esc(p.category) + '</span>' +
       '<button class="ln-icon-btn" onclick="viewProtocol(\'' + p.id + '\')">View</button>' +
@@ -1442,7 +1442,7 @@ function renderPresentations() {
   var el = document.getElementById('ln-presentations-list');
   if (!ps.length) { el.innerHTML = '<div class="ln-empty">No presentations yet.</div>'; return; }
   el.innerHTML = ps.map(function (p) {
-    return '<div class="ln-card"><div class="ln-card-header"><div><div class="ln-card-title">' + esc(p.title) + '</div>' +
+    return '<div class="ln-card" data-item-id="' + esc(p.id || '') + '"><div class="ln-card-header"><div><div class="ln-card-title">' + esc(p.title) + '</div>' +
       '<div class="ln-card-meta">👤 ' + esc(p.presenter) + ' · 📅 ' + esc(p.date) + ' · 🏷️ ' + esc(p.venue) + '</div></div>' +
       '<div class="ln-card-actions">' + (p.link ? '<a href="' + esc(p.link) + '" target="_blank" class="ln-icon-btn">Open ↗</a>' : '') +
       '<button class="ln-icon-btn danger" onclick="deletePresentation(\'' + p.id + '\')">✕</button></div></div>' +
@@ -1742,6 +1742,14 @@ function slotKey(cat, item) {
   // No position means it has not been given a slot yet, so it clashes with
   // nothing — a vial can be recorded before anybody decides where it goes.
   return parts[parts.length - 1] ? parts.join('|') : null;
+}
+/* Whether this save is what puts the item in that position: a new vial, or
+   one being moved. Editing a vial that already sat in a shared position must
+   not be refused — the clash is older than the edit, and blocking the save
+   would make it harder to correct rather than easier. */
+function slotIsNew(cat, item) {
+  if (!editingInvItem) return true;
+  return slotKey(cat, item) !== slotKey(cat, editingInvItem);
 }
 /* The item already sitting where this one wants to go, if there is one. */
 function slotTakenBy(cat, item) {
@@ -2712,8 +2720,39 @@ function openInventoryModal(id, prefill) {
         '<div class="ln-form-row"><label>Needed by</label><input type="date" id="m-needBy"></div>' +
       '</div>' +
       '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="A link, a size, or an alternative that would do"></textarea></div>',
+    /* Glycerol stocks are filed by serial number, so the serial comes first
+       and is the one field that must be there. The freezer, shelf and box
+       offer what is already in use: one shelf written two ways is one shelf
+       that sorts into two places and is searched for twice. */
+    stocks: '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Serial #</label><input id="m-serial" placeholder="e.g. GS-0001"></div>' +
+      '<div class="ln-form-row"><label>Strain</label><input id="m-hostStrain" list="ln-strain-list" placeholder="e.g. ' + STOCK_STRAINS[0] + '"></div></div>' +
+      '<div class="ln-form-row"><label>Description</label><input id="m-description" placeholder="e.g. pUC19-HK022 attB, clone 3"></div>' +
+      '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Resistance</label><input id="m-resistance" list="ln-resistance-list" placeholder="e.g. AmpR"></div>' +
+      '<div class="ln-form-row"><label>Owner</label><input id="m-owner"></div></div>' +
+      '<div class="ln-form-row"><label>Sequenced (QC)</label><input id="m-qc" placeholder="Primers used, e.g. M13F + M13R, sequence correct"></div>' +
+      '<div class="ln-form-section">Location</div><div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Freezer (-80°C)</label><input id="m-freezer" list="ln-freezer-list" placeholder="e.g. Freezer A"></div>' +
+      '<div class="ln-form-row"><label>Rack_Shelf</label><input id="m-shelf" list="ln-shelf-list" placeholder="e.g. R2_S3"></div>' +
+      '<div class="ln-form-row"><label>Position on Drawer</label><input id="m-shelfPlace" placeholder="e.g. Left, front"></div>' +
+      '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Box G1"></div>' +
+      '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3"></div></div>' +
+      '<div class="ln-form-row"><label>Map Link</label><input id="m-mapLink" type="url" placeholder="https://… (Benchling, SnapGene, Drive)"></div>' +
+      '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2"></textarea></div>' +
+      '<datalist id="ln-strain-list">' + STOCK_STRAINS.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>' +
+      '<datalist id="ln-resistance-list">' + RESISTANCES.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>',
     kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
+  /* A category with no form here cannot be filled in, and the modal would
+     open empty or not at all. That happened once: the glycerol stock form
+     was deleted with the plasmid form it sat next to, and adding a stock
+     stayed broken until somebody tried the box map. Say so instead. */
+  if (!forms[currentInvTab]) {
+    alert('There is no form for ' + (INV_LABELS[currentInvTab] ? INV_LABELS[currentInvTab].many : currentInvTab) +
+      ' in this version of the notebook. Please report this — nothing is wrong with your data.');
+    return;
+  }
   var tabLabel = INV_LABELS[currentInvTab].one;
   var editing = !!editingInvItem;
   var credit = editing ? (editingInvItem.addedBy || editingInvItem.owner || '') : (user ? user.name : '');
@@ -2723,6 +2762,9 @@ function openInventoryModal(id, prefill) {
     // recorded under two spellings and sorted into two places.
     (currentInvTab === 'cells'
       ? invDatalist('ln-tank-list', 'cells', 'tank') + invDatalist('ln-rack-list', 'cells', 'rack')
+      : '') +
+    (currentInvTab === 'stocks'
+      ? invDatalist('ln-freezer-list', 'stocks', 'freezer') + invDatalist('ln-shelf-list', 'stocks', 'shelf')
       : '') +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
@@ -2753,6 +2795,15 @@ async function saveInvItem() {
     if (!item.serial) { alert('Please fill in the serial number.'); return; }
     var clash = getInventory().stocks.filter(function (x) { return x.id !== item.id && bulkKey(x.serial) === bulkKey(item.serial); })[0];
     if (clash) { alert('Serial number ' + item.serial + ' is already used by another glycerol stock' + (clash.description ? ' (' + clash.description + ')' : '') + '.'); return; }
+    // One vial per position here too. The box map already paints two vials
+    // in one position red; it should not have been possible to make one.
+    var there = slotIsNew('stocks', item) && slotTakenBy('stocks', item);
+    if (there) {
+      alert('Position ' + item.position + ' in box ' + (item.box || '—') +
+        ' already holds ' + (there.serial || there.description || 'a vial') + '.' +
+        '\n\nUse a free position, or edit that vial if this is the same one.');
+      return;
+    }
   }
   else if (tab === 'cells') {
     Object.assign(item, { name: g('m-name'), passage: g('m-passage'), amount: g('m-amount'),
@@ -2761,7 +2812,7 @@ async function saveInvItem() {
     // One vial per position. Filing a second vial where one already sits is
     // how a tank ends up disagreeing with its own records, and it used to be
     // allowed silently.
-    var sitting = slotTakenBy('cells', item);
+    var sitting = slotIsNew('cells', item) && slotTakenBy('cells', item);
     if (sitting) {
       alert('Position ' + item.position + ' in box ' + (item.box || '—') +
         ' already holds ' + (sitting.name || 'a vial') +
@@ -2939,7 +2990,7 @@ function renderFinances() {
   // counted and shown, never folded into a grant's figures.
   var cards = rows.length ? rows.map(function (r) {
     var over = r.left < 0;
-    return '<div class="ln-fin-card' + (over ? ' over' : '') + '">' +
+    return '<div class="ln-fin-card' + (over ? ' over' : '') + '" data-item-id="' + esc(r.grant.id || '') + '">' +
       '<div class="ln-fin-name">' + esc(r.grant.name || 'Untitled grant') +
         (r.grant.agency ? '<span>' + esc(r.grant.agency) + '</span>' : '') + '</div>' +
       '<div class="ln-fin-left">' + esc(r.cur) + money(r.left) + ' <em>left</em></div>' +
@@ -2967,7 +3018,7 @@ function renderFinances() {
       '<th>Date</th><th>What</th><th>Grant</th><th>Category</th><th class="ln-nowrap">Amount</th><th>Recorded by</th><th class="ln-row-actions">Actions</th>' +
       '</tr></thead><tbody>' + exp.map(function (e) {
         var gr = byId[e.grant];
-        return '<tr><td class="ln-nowrap">' + esc(e.date || '—') + '</td>' +
+        return '<tr data-item-id="' + esc(e.id || '') + '"><td class="ln-nowrap">' + esc(e.date || '—') + '</td>' +
           '<td>' + esc(e.name || '—') + '</td>' +
           '<td>' + (gr ? esc(gr.name) : '<span class="ln-req-urgency urgent">unassigned</span>') + '</td>' +
           '<td>' + esc(e.category || '—') + '</td>' +

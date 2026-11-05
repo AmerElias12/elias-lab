@@ -23,26 +23,45 @@
 (function () {
   'use strict';
 
-  /* Inventory categories, in the order they are offered. `label` is what the
-     lab calls them; `name` is the field that holds a human name, because a
-     glycerol stock is filed by serial number and has no `name` at all. */
+  /* Everything the notebook holds, in the order it is offered when you type a
+     bare @. One table, because a mention should work the same whatever it
+     names, and the only differences between these are three fields:
+
+       cat      the inventory category the records live in
+       invKind  narrows one store to one sort of record — plasmids, cDNAs and
+                genes share a store and are told apart by a `kind` field
+       coll     a collection of its own, read through its getter
+       boxes    storage boxes, which are not rows at all but are worked out
+                from the vials that name them
+
+     `name` is the field holding a human name, because a glycerol stock is
+     filed by serial number and has no `name` at all. */
   var KINDS = [
-    { kind: 'plasmid', cat: 'plasmids', label: 'Plasmid',        section: null,            name: 'name' },
-    { kind: 'primer',  cat: 'primers',  label: 'Primer',         section: 'inv-primers',   name: 'name' },
-    { kind: 'enzyme',  cat: 'enzymes',  label: 'Enzyme',         section: 'inv-enzymes',   name: 'name' },
-    { kind: 'kit',     cat: 'kits',     label: 'Kit / reagent',  section: 'inv-kits',      name: 'name' },
-    { kind: 'stock',   cat: 'stocks',   label: 'Glycerol stock', section: 'inv-stocks',    name: 'serial' },
-    { kind: 'cell',    cat: 'cells',    label: 'Tissue culture', section: 'inv-cells',     name: 'name' },
-    // Not inventory: protocols are their own collection, so they are read
-    // from getProtocols() rather than from a category. Everything else about
-    // a mention works the same, which is the point of listing them here.
-    { kind: 'protocol', cat: null,      label: 'Protocol',       section: 'protocols',     name: 'title' }
+    { kind: 'plasmid',    cat: 'plasmids', invKind: 'plasmid', label: 'Plasmid',        name: 'name' },
+    { kind: 'cdna',       cat: 'plasmids', invKind: 'cdna',    label: 'cDNA',           name: 'name' },
+    { kind: 'gene',       cat: 'plasmids', invKind: 'gene',    label: 'Gene',           name: 'name' },
+    { kind: 'primer',     cat: 'primers',  label: 'Primer',         section: 'inv-primers',   name: 'name' },
+    { kind: 'enzyme',     cat: 'enzymes',  label: 'Enzyme',         section: 'inv-enzymes',   name: 'name' },
+    { kind: 'kit',        cat: 'kits',     label: 'Kit / reagent',  section: 'inv-kits',      name: 'name' },
+    { kind: 'stock',      cat: 'stocks',   label: 'Glycerol stock', section: 'inv-stocks',    name: 'serial' },
+    { kind: 'cell',       cat: 'cells',    label: 'Tissue culture', section: 'inv-cells',     name: 'name' },
+    { kind: 'box',        boxes: true,     label: 'Storage box',    section: 'boxes',         name: 'name' },
+    { kind: 'protocol',   coll: 'getProtocols',     label: 'Protocol',      section: 'protocols',     name: 'title' },
+    { kind: 'experiment', coll: 'getNotebooks',     label: 'Experiment',    section: 'notebooks',     name: 'title' },
+    { kind: 'talk',       coll: 'getPresentations', label: 'Presentation',  section: 'presentations', name: 'title' },
+    { kind: 'request',    cat: 'requests', label: 'Order request',  section: 'inv-requests',  name: 'name' },
+    { kind: 'grant',      cat: 'grants',   label: 'Grant',          section: 'finances',      name: 'name' },
+    { kind: 'expense',    cat: 'expenses', label: 'Expense',        section: 'finances',      name: 'name' }
   ];
+  // The three that share the plasmids store.
+  var CLONING = ['plasmid', 'cdna', 'gene'];
   var BY_KIND = {};
   KINDS.forEach(function (k) { BY_KIND[k.kind] = k; });
 
-  var ICONS = { plasmid: '⦿', primer: '→', enzyme: '✂', kit: '▧',
-    stock: '❄', cell: '◌', user: '●' };
+  var ICONS = { plasmid: '⦿', cdna: '〜', gene: '⌁', primer: '→', enzyme: '✂',
+    kit: '▧', stock: '❄', cell: '◌', box: '▦', protocol: '☰', experiment: '✎',
+    talk: '▭', request: '⊞', grant: '✦', expense: '⊗', user: '●' };
+  var BOX_OF = { plasmids: 'Plasmid box', stocks: 'Glycerol stock box', cells: 'Tissue culture box' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -60,35 +79,58 @@
      told apart without opening them. */
   function metaOf(kind, item) {
     if (kind === 'plasmid') return [item.backbone, item.resistance, item.len ? item.len + ' bp' : ''].filter(Boolean).join(' · ');
+    if (kind === 'cdna') return [item.insert, item.species, item.accession].filter(Boolean).join(' · ');
+    if (kind === 'gene') return [item.species, item.accession || item.locus].filter(Boolean).join(' · ');
     if (kind === 'primer') return [item.sequence ? String(item.sequence).slice(0, 24) : '', item.application].filter(Boolean).join(' · ');
     if (kind === 'enzyme') return [item.cutsite, item.supplier].filter(Boolean).join(' · ');
     if (kind === 'kit') return [item.supplier, item.catalog].filter(Boolean).join(' · ');
     if (kind === 'stock') return [item.description, item.hostStrain].filter(Boolean).join(' · ');
     if (kind === 'cell') return [item.source, item.passage ? 'p' + item.passage : ''].filter(Boolean).join(' · ');
+    if (kind === 'box') {
+      return [BOX_OF[item.cat] || 'Box', item.where,
+        item.vials && item.vials.length ? item.vials.length + ' vials' : 'empty'].filter(Boolean).join(' · ');
+    }
     if (kind === 'protocol') return [item.category, item.author].filter(Boolean).join(' · ');
+    // An archived experiment is still a real one, but say so: citing it
+    // without knowing it was archived would be a surprise later.
+    if (kind === 'experiment') return [item.researcher, item.date, item.archived ? 'archived' : ''].filter(Boolean).join(' · ');
+    if (kind === 'talk') return [item.presenter, item.venue, item.date].filter(Boolean).join(' · ');
+    if (kind === 'request') return [item.status, item.supplier, item.urgency].filter(Boolean).join(' · ');
+    if (kind === 'grant') return [item.agency, item.ref].filter(Boolean).join(' · ');
+    if (kind === 'expense') return [item.date, item.cost ? (item.cost + '') : '', item.category].filter(Boolean).join(' · ');
     return '';
   }
 
-  /* Where a kind's records live. Inventory categories come out of one object;
-     protocols are a collection of their own. */
+  /* Where a kind's records live. Inventory categories come out of one object,
+     collections through their getter, and boxes are built from the vials in
+     them rather than stored as rows. */
   function recordsOf(k) {
+    if (k.boxes) return (typeof boxIndex === 'function' && boxIndex()) || [];
+    if (k.coll) return (typeof window[k.coll] === 'function' && window[k.coll]()) || [];
     if (k.cat) {
       var inv = (typeof getInventory === 'function' && getInventory()) || {};
-      return inv[k.cat] || [];
-    }
-    if (k.kind === 'protocol') {
-      return (typeof getProtocols === 'function' && getProtocols()) || [];
+      var rows = inv[k.cat] || [];
+      if (!k.invKind) return rows;
+      return rows.filter(function (x) { return ((x && x.kind) || 'plasmid') === k.invKind; });
     }
     return [];
+  }
+
+  /* What a mention stores. A box that has been set up has a row with an id,
+     which survives renaming; a box known only from the vials filed in it has
+     no row, so its key — type plus name — is all there is to point at. */
+  function idOf(k, item) {
+    if (k.boxes) return (item.def && item.def.id) || item.key;
+    return item.id;
   }
 
   function entities() {
     var out = [];
     KINDS.forEach(function (k) {
       recordsOf(k).forEach(function (item) {
-        var label = labelOf(k.kind, item);
-        if (!item.id || !label) return;
-        out.push({ kind: k.kind, id: item.id, label: label, meta: metaOf(k.kind, item), group: k.label });
+        var label = labelOf(k.kind, item), id = idOf(k, item);
+        if (!id || !label) return;
+        out.push({ kind: k.kind, id: id, label: label, meta: metaOf(k.kind, item), group: k.label });
       });
     });
     var users = (typeof getUsers === 'function' && getUsers()) || [];
@@ -126,7 +168,18 @@
     }
     var k = BY_KIND[kind];
     if (!k) return null;
-    return recordsOf(k).filter(function (x) { return x.id === id; })[0] || null;
+    if (k.boxes) {
+      return recordsOf(k).filter(function (b) { return (b.def && b.def.id === id) || b.key === id; })[0] || null;
+    }
+    var hit = recordsOf(k).filter(function (x) { return x.id === id; })[0];
+    /* Plasmids, cDNAs and genes share a store. A chip written before the
+       three were told apart, or one naming a record whose kind has since
+       been changed, should still resolve rather than read as removed. */
+    if (!hit && CLONING.indexOf(kind) >= 0) {
+      var inv = (typeof getInventory === 'function' && getInventory()) || {};
+      hit = (inv.plasmids || []).filter(function (x) { return x.id === id; })[0];
+    }
+    return hit || null;
   }
 
   // ---------- the chip ----------
@@ -156,12 +209,14 @@
   // ---------- opening what a mention names ----------
   function open(kind, id) {
     var rec = lookup(kind, id);
-    if (!rec) { alert('That is no longer in the inventory.'); return; }
+    if (!rec) { alert('That is no longer in the lab notebook.'); return; }
     if (kind === 'user') { showPerson(rec); return; }
-    if (kind === 'plasmid') { if (window.openPlasmid) openPlasmid(id); return; }
-    // A protocol opens in full, because the point of citing one mid-experiment
-    // is to read the steps, not to be shown where it is filed.
+    // Things with a page of their own open on it. The point of citing one
+    // mid-experiment is to read it, not to be shown where it is filed.
+    if (CLONING.indexOf(kind) >= 0) { if (window.openPlasmid) openPlasmid(id); return; }
     if (kind === 'protocol') { if (window.viewProtocol) viewProtocol(id); return; }
+    if (kind === 'experiment') { if (window.openEntry) openEntry(id); return; }
+    if (kind === 'box') { if (window.openBox) openBox(rec.key); return; }
     var section = BY_KIND[kind] && BY_KIND[kind].section;
     if (!section || !window.lnShow) return;
     lnShow(section);
@@ -169,8 +224,10 @@
     // ours to point at — opening the page is as far as this goes.
     setTimeout(function () { flashRow(id); }, 60);
   }
+  /* Any element carrying the id, not only a table row: presentations are
+     cards and a grant is a card too. */
   function flashRow(id) {
-    var row = document.querySelector('tr[data-item-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+    var row = document.querySelector('[data-item-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
     if (!row) return;
     row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     row.classList.add('ln-row-flash');
