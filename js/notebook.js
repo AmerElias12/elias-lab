@@ -3134,9 +3134,21 @@ function categoriesHtml() {
     '</tr></tfoot></table></div>';
 }
 
+/* Finances are the PI's. The database decides it — the policy on
+   inventory_items hands a member no grant or expense rows at all — and this
+   is the app agreeing with it out loud. Without this a member who reached
+   the page some other way would see an empty page and conclude the lab has
+   no grants, rather than that this is not theirs to look at. */
+function financesAllowed() { return DB.isAdmin(); }
+
 function renderFinances() {
   var el = document.getElementById('ln-finances-body');
   if (!el) return;
+  if (!financesAllowed()) {
+    el.innerHTML = '<div class="ln-empty">Lab finances are visible to the PI only. ' +
+      'The grants and expenses are not sent to this page for anybody else.</div>';
+    return;
+  }
   var rows = grantSummary();
   var loose = expenses().filter(function (e) { return !e.grant || !grants().some(function (gr) { return gr.id === e.grant; }); });
 
@@ -3188,6 +3200,7 @@ function renderFinances() {
 }
 
 function openGrantModal(id) {
+  if (!financesAllowed()) { alert('Lab finances are the PI\u2019s to edit.'); return; }
   var gr = id ? grants().filter(function (x) { return x.id === id; })[0] : null;
   document.getElementById('ln-modal-content').innerHTML =
     '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (gr ? 'Edit grant' : 'Add grant') + '</h3>' +
@@ -3224,6 +3237,7 @@ async function saveGrant(id) {
 }
 
 function openExpenseModal(id) {
+  if (!financesAllowed()) { alert('Lab finances are the PI\u2019s to edit.'); return; }
   var e = id ? expenses().filter(function (x) { return x.id === id; })[0] : null;
   var gs = grants();
   document.getElementById('ln-modal-content').innerHTML =
@@ -3396,6 +3410,7 @@ function buildExpensePlan(XLSX, wb) {
 
 var expensePlan = null;
 function openExpenseImportModal() {
+  if (!financesAllowed()) { alert('Lab finances are the PI\u2019s to edit.'); return; }
   expensePlan = null;
   var gs = grants();
   document.getElementById('ln-modal-content').innerHTML =

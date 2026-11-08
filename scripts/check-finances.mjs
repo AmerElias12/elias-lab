@@ -321,6 +321,50 @@ check('every imported expense is credited to whoever imported it', () => {
   assert.ok(plan.items[0].id, 'every row needs an id of its own');
 });
 
+console.log('\nWho can see the money');
+
+const sql = fs.readFileSync(path.join(root, 'supabase', 'schema.sql'), 'utf8');
+
+check('grants and expenses are admin-only in the database, not just in the menu', () => {
+  // A member's own query must come back without those rows. Hiding the
+  // menu item hides the menu item and nothing else.
+  const pol = sql.slice(sql.indexOf('drop policy if exists inventory_items_rw'));
+  assert.ok(pol, 'there is no inventory_items policy of its own');
+  const stmt = pol.slice(0, pol.indexOf(';', pol.indexOf('with check')) + 1);
+  assert.match(stmt, /category not in \('grants', 'expenses'\) or public\.is_admin\(\)/);
+  // both halves: reading them and writing them
+  assert.equal((stmt.match(/is_admin\(\)/g) || []).length, 2,
+    'using and with check must both be restricted, or a member could still write them');
+  assert.match(stmt, /using \(/);
+  assert.match(stmt, /with check \(/);
+});
+
+check('the stricter policy is applied after the blanket one, not before', () => {
+  // The loop above creates inventory_items_rw for every content table; if
+  // the strict one came first the loop would replace it and nobody would
+  // notice until a student read the budget.
+  const loop = sql.indexOf("foreach t in array array['protocols'");
+  const strict = sql.indexOf('drop policy if exists inventory_items_rw');
+  assert.ok(loop >= 0 && strict > loop, 'the admin-only policy must come after the loop that creates the generic one');
+});
+
+check('being approved is still required as well as being admin', () => {
+  const pol = sql.slice(sql.indexOf('drop policy if exists inventory_items_rw'));
+  const stmt = pol.slice(0, pol.indexOf(';', pol.indexOf('with check')) + 1);
+  assert.equal((stmt.match(/is_approved\(\)/g) || []).length, 2,
+    'a disabled admin should not keep access');
+});
+
+check('the app agrees with the database rather than showing an empty page', () => {
+  assert.match(src, /function financesAllowed\(\) \{ return DB\.isAdmin\(\); \}/);
+  const render = fn('renderFinances');
+  assert.match(render, /if \(!financesAllowed\(\)\)/);
+  assert.match(render, /visible to the PI only/);
+  ['openGrantModal', 'openExpenseModal', 'openExpenseImportModal'].forEach((name) => {
+    assert.match(fn(name), /if \(!financesAllowed\(\)\)/, name + ' is not guarded');
+  });
+});
+
 console.log('\nWiring');
 
 check('the Import button is on the Finances page', () => {

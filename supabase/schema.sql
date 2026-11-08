@@ -152,6 +152,35 @@ begin
   end loop;
 end $$;
 
+-- ------------------------------------------------------------
+-- Finances are admin-only
+-- ------------------------------------------------------------
+-- Grants and expenses are rows of inventory_items like everything else, so
+-- the blanket "any approved member" policy just above would let any member
+-- read the lab's budget straight from the API. The Finances menu being
+-- hidden for members is only the menu; this is the part that decides.
+--
+-- Written as a policy rather than by moving the rows into a table of their
+-- own: the rows stay where the app already reads and writes them, so there
+-- is no migration to get wrong and no second place to keep in step. A
+-- member's query simply does not return them — not an error, just absent,
+-- which is what RLS is for.
+--
+-- `category not in (...)` is false when category is NULL, so a row with no
+-- category would become admin-only too. category is `not null`, so there
+-- are none; stated here because it is the kind of thing that changes.
+drop policy if exists inventory_items_rw on public.inventory_items;
+create policy inventory_items_rw on public.inventory_items
+  for all to authenticated
+  using (
+    public.is_approved()
+    and (category not in ('grants', 'expenses') or public.is_admin())
+  )
+  with check (
+    public.is_approved()
+    and (category not in ('grants', 'expenses') or public.is_admin())
+  );
+
 -- ============================================================
 -- Data API access
 -- ------------------------------------------------------------
