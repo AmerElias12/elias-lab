@@ -3102,14 +3102,34 @@ function categoriesHtml() {
     }).reduce(function (t, e) { return t + amount(e.cost); }, 0);
   }
 
+  var byId = {};
+  gs.forEach(function (gr) { byId[gr.id] = gr; });
+  // What this grant allows under this heading, or null when it is not capped.
+  function allowed(row, col) {
+    if (!row.match || col.loose) return null;
+    var v = grantBudget(byId[col.id])[row.match.key];
+    return String(v == null ? '' : v).trim() === '' ? null : amount(v);
+  }
+
   var body = rows.map(function (row) {
     var vals = cols.map(function (col) { return cell(row, col); });
-    if (!vals.some(function (v) { return v; })) return '';   // nothing under this heading yet
+    var caps = cols.map(function (col) { return allowed(row, col); });
+    // A heading with an allowance is worth a row even before anything is
+    // spent against it: nothing spent of ₪40,000 is the useful fact.
+    if (!vals.some(function (v) { return v; }) && !caps.some(function (c) { return c != null; })) return '';
     var total = vals.reduce(function (a, b) { return a + b; }, 0);
     return '<tr><td dir="auto"><strong>' + esc(row.label) + '</strong>' +
       (row.match ? '' : ' <span class="ln-cat-flag">not a lab heading</span>') + '</td>' +
       vals.map(function (v, i) {
-        return '<td class="ln-nowrap">' + (v ? esc(cols[i].cur) + money(v) : '<span class="muted">—</span>') + '</td>';
+        var cap = caps[i], over = cap != null && v > cap;
+        if (!v && cap == null) return '<td class="ln-nowrap"><span class="muted">—</span></td>';
+        return '<td class="ln-nowrap' + (over ? ' over' : '') + '">' +
+          esc(cols[i].cur) + money(v) +
+          (cap == null ? ''
+            : '<span class="ln-cat-cap">' + (over
+                ? 'over by ' + esc(cols[i].cur) + money(v - cap)
+                : esc(cols[i].cur) + money(cap - v) + ' left of ' + esc(cols[i].cur) + money(cap)) + '</span>') +
+          '</td>';
       }).join('') +
       (sameCur ? '<td class="ln-nowrap"><strong>' + esc(sameCur) + money(total) + '</strong></td>' : '') +
       '</tr>';
@@ -3163,6 +3183,18 @@ function renderFinances() {
       '<div class="ln-fin-bar"><span style="width:' + r.pct.toFixed(1) + '%"></span></div>' +
       '<div class="ln-fin-meta">' + esc(r.cur) + money(r.spent) + ' spent of ' + esc(r.cur) + money(r.awarded) +
         (over ? ' · <strong>over by ' + esc(r.cur) + money(-r.left) + '</strong>' : '') + '</div>' +
+      // Whether the award has been broken down by heading, and how much of
+      // it has not been. Only once there is a breakdown to talk about.
+      (function () {
+        if (!hasBudget(r.grant)) return '';
+        var b = grantBudget(r.grant), alloc = 0;
+        EXPENSE_CATS.forEach(function (c) { if (b[c.key]) alloc += amount(b[c.key]); });
+        var spare = r.awarded - alloc;
+        return '<div class="ln-fin-meta">' + esc(r.cur) + money(alloc) + ' allocated by category' +
+          (!r.awarded ? '' : spare > 0 ? ' · ' + esc(r.cur) + money(spare) + ' not under a heading'
+            : spare < 0 ? ' · <strong>' + esc(r.cur) + money(-spare) + ' more than the award</strong>' : '') +
+          '</div>';
+      })() +
       '<div class="ln-fin-acts"><button class="ln-icon-btn" onclick="openGrantModal(\'' + esc(r.grant.id) + '\')">✎</button>' +
         '<button class="ln-icon-btn danger" onclick="deleteFinance(\'grants\',\'' + esc(r.grant.id) + '\')">✕</button></div>' +
       '</div>';
@@ -3199,6 +3231,41 @@ function renderFinances() {
       : '<div class="ln-empty">Nothing recorded yet.</div>');
 }
 
+/* A grant's allowance per heading, keyed by the category's stable key
+   rather than its Hebrew: this map lives inside the record and is never a
+   column heading anybody reads, so there is nothing to gain from storing
+   the words, and a label edited later would strand every figure under it.
+   Grants saved before this existed have none, which reads as untracked. */
+function grantBudget(gr) {
+  return (gr && gr.budget && typeof gr.budget === 'object') ? gr.budget : {};
+}
+// Has this grant been given an allowance under at least one heading?
+function hasBudget(gr) {
+  var b = grantBudget(gr);
+  return EXPENSE_CATS.some(function (c) { return String(b[c.key] || '').trim() !== ''; });
+}
+/* Live under the inputs while the form is open: the headings together
+   against the award. Over the award is worth saying at once rather than
+   after saving; under it is perfectly normal and is just stated. */
+function grantBudgetTotal() {
+  var out = document.getElementById('ln-gbudget-sum');
+  if (!out) return;
+  var sum = 0, any = false;
+  EXPENSE_CATS.forEach(function (c) {
+    var el = document.getElementById('m-gb-' + c.key);
+    if (el && String(el.value).trim() !== '') { sum += amount(el.value); any = true; }
+  });
+  if (!any) { out.innerHTML = ''; out.className = 'hint'; return; }
+  var cur = (document.getElementById('m-gcur') || {}).value || '₪';
+  var awarded = amount((document.getElementById('m-gawarded') || {}).value);
+  var left = awarded - sum;
+  out.className = 'hint' + (awarded && left < 0 ? ' warn' : '');
+  out.innerHTML = esc(cur) + money(sum) + ' allocated' +
+    (!awarded ? '' : left > 0 ? ' · ' + esc(cur) + money(left) + ' of the award not yet under a heading'
+      : left < 0 ? ' · <strong>' + esc(cur) + money(-left) + ' more than the award</strong>'
+      : ' · the whole award');
+}
+
 function openGrantModal(id) {
   if (!financesAllowed()) { alert('Lab finances are the PI\u2019s to edit.'); return; }
   var gr = id ? grants().filter(function (x) { return x.id === id; })[0] : null;
@@ -3217,6 +3284,20 @@ function openGrantModal(id) {
       '<div class="ln-form-row"><label>Starts</label><input type="date" id="m-gstart" value="' + esc(gr && gr.start || '') + '"></div>' +
       '<div class="ln-form-row"><label>Ends</label><input type="date" id="m-gend" value="' + esc(gr && gr.end || '') + '"></div>' +
     '</div>' +
+    /* What the award allows under each heading. Optional, one at a time: a
+       grant that caps three headings and leaves the rest open is normal, and
+       a heading left blank is simply not tracked rather than tracked as
+       zero — which would read as "nothing may be spent here". */
+    '<div class="ln-form-section">Budget by category</div>' +
+    '<div class="hint">What this grant allows under each heading. Leave one blank if it is not capped. ' +
+      'The Finances page then shows what is left under each.</div>' +
+    '<div class="ln-gbudget">' +
+      EXPENSE_CATS.map(function (c) {
+        return '<div class="ln-gbudget-row"><label dir="auto" for="m-gb-' + c.key + '">' + esc(c.he) + '</label>' +
+          '<input id="m-gb-' + c.key + '" inputmode="decimal" oninput="grantBudgetTotal()" value="' +
+          esc(grantBudget(gr)[c.key] || '') + '" placeholder="—"></div>';
+      }).join('') +
+    '</div><div id="ln-gbudget-sum" class="hint"></div>' +
     '<div class="ln-form-row"><label>Notes</label><textarea id="m-gnotes" rows="2">' + esc(gr && gr.notes || '') + '</textarea></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" onclick="saveGrant(' + (id ? '\'' + esc(id) + '\'' : '') + ')">Save</button></div>';
@@ -3227,10 +3308,18 @@ async function saveGrant(id) {
   var user = currentUser();
   var name = g('m-gname');
   if (!name) { alert('Please give the grant a name.'); return; }
+  // Only headings that were actually given a figure are stored. A blank is
+  // "not capped", which is not the same as a cap of nothing.
+  var budget = {};
+  EXPENSE_CATS.forEach(function (c) {
+    var v = g('m-gb-' + c.key);
+    if (v !== '') budget[c.key] = v;
+  });
   var item = Object.assign({}, was || { id: uid(), addedBy: user ? user.name : 'Unknown' }, {
     name: name, agency: g('m-gagency'), ref: g('m-gref'),
     awarded: g('m-gawarded'), currency: g('m-gcur'),
-    start: g('m-gstart'), end: g('m-gend'), notes: g('m-gnotes')
+    start: g('m-gstart'), end: g('m-gend'), notes: g('m-gnotes'),
+    budget: budget
   });
   try { await DB.upsertInventory('grants', item); } catch (e) { alert('Could not save: ' + e.message); return; }
   closeModal(); renderFinances();

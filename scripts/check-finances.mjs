@@ -321,6 +321,57 @@ check('every imported expense is credited to whoever imported it', () => {
   assert.ok(plan.items[0].id, 'every row needs an id of its own');
 });
 
+console.log('\nA grant’s allowance per heading');
+
+vm.runInContext(fn('grantBudget'), ctx);
+vm.runInContext(fn('hasBudget'), ctx);
+
+check('a grant saved before budgets existed has none, and does not throw', () => {
+  assert.deepEqual(Object.keys(ctx.grantBudget({ id: 'g1', name: 'Old' })), []);
+  assert.deepEqual(Object.keys(ctx.grantBudget(null)), []);
+  assert.deepEqual(Object.keys(ctx.grantBudget({ budget: 'not an object' })), []);
+  assert.equal(ctx.hasBudget({ id: 'g1' }), false);
+});
+
+check('a heading left blank is untracked, not a cap of zero', () => {
+  // "Nothing may be spent here" and "nobody said" are different facts and
+  // the page shows them differently.
+  assert.equal(ctx.hasBudget({ budget: {} }), false);
+  assert.equal(ctx.hasBudget({ budget: { consumables: '' } }), false);
+  assert.equal(ctx.hasBudget({ budget: { consumables: '40000' } }), true);
+});
+
+check('the allowance is keyed by the stable key, not the Hebrew words', () => {
+  // The Hebrew is what an expense stores, because that is what is in the
+  // files people import. This map is internal, so renaming a label later
+  // must not strand the figures under it.
+  const modal = src.slice(src.indexOf('function openGrantModal'), src.indexOf('async function saveGrant'));
+  assert.match(modal, /id="m-gb-' \+ c\.key/);
+  const save = fn('saveGrant');
+  assert.match(save, /budget\[c\.key\] = v/);
+  assert.match(save, /if \(v !== ''\)/, 'a blank must not be stored as a cap');
+});
+
+check('spending is measured against the heading of the grant it came out of', () => {
+  // Not against the sum of every grant's allowance for that heading: the
+  // whole point is that each grant is followed separately.
+  const body = fn('categoriesHtml');
+  assert.match(body, /grantBudget\(byId\[col\.id\]\)\[row\.match\.key\]/);
+  assert.match(body, /col\.loose/, 'an unassigned expense has no grant and so no allowance');
+});
+
+check('a heading is shown once it has an allowance, before anything is spent', () => {
+  const body = fn('categoriesHtml');
+  assert.match(body, /!caps\.some\(function \(c\) \{ return c != null; \}\)/);
+});
+
+check('over the allowance is said, not hidden', () => {
+  const body = fn('categoriesHtml');
+  assert.match(body, /over by/);
+  assert.match(body, /left of/);
+  assert.match(body, /over \? ' over' : ''/);
+});
+
 console.log('\nWho can see the money');
 
 const sql = fs.readFileSync(path.join(root, 'supabase', 'schema.sql'), 'utf8');

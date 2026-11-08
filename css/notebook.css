@@ -573,6 +573,16 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .ln-cat-table tfoot td{border-top:2px solid rgba(22,36,31,.18);background:rgba(22,36,31,.03);}
 .ln-cat-table .muted{color:#7a877f;font-weight:400;}
 .ln-cat-table [dir="auto"]{unicode-bidi:isolate;}
+/* A grant's allowance per heading, in the grant dialog. */
+.ln-gbudget{display:flex;flex-direction:column;gap:.35rem;margin:.1rem 0 .5rem;}
+.ln-gbudget-row{display:grid;grid-template-columns:1fr 130px;gap:.6rem;align-items:center;}
+.ln-gbudget-row label{font-size:12.5px;color:#3c4a43;margin:0;text-align:right;}
+.ln-gbudget-row input{font-variant-numeric:tabular-nums;text-align:right;}
+.hint.warn{color:#8f2a2a;}
+/* Spent against the allowance, in the by-category table. */
+.ln-cat-cap{display:block;font-size:11px;font-weight:400;color:#7a877f;margin-top:.1rem;}
+.ln-cat-table td.over{color:#8f2a2a;}
+.ln-cat-table td.over .ln-cat-cap{color:#8f2a2a;font-weight:600;}
 .ln-cat-flag{font-size:11px;font-weight:600;padding:.08rem .45rem;border-radius:100px;
   background:rgba(22,36,31,.07);color:#5d6b63;white-space:nowrap;}
 
