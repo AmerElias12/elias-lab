@@ -563,6 +563,19 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .ln-fin-acts{position:absolute;top:.6rem;right:.6rem;display:flex;gap:.2rem;opacity:0;transition:opacity .15s;}
 .ln-fin-card:hover .ln-fin-acts{opacity:1;}
 
+/* ── Finances: spending by budget heading ──
+   The headings are Hebrew, so the cells that hold them carry dir="auto"
+   and the browser lays each one out in its own direction. The numbers stay
+   left-to-right and tabular so columns of money line up. */
+.ln-cat-table td:first-child, .ln-cat-table th:first-child{min-width:190px;}
+.ln-cat-table td, .ln-cat-table th{font-variant-numeric:tabular-nums;}
+.ln-cat-table td:not(:first-child), .ln-cat-table th:not(:first-child){text-align:right;}
+.ln-cat-table tfoot td{border-top:2px solid rgba(22,36,31,.18);background:rgba(22,36,31,.03);}
+.ln-cat-table .muted{color:#7a877f;font-weight:400;}
+.ln-cat-table [dir="auto"]{unicode-bidi:isolate;}
+.ln-cat-flag{font-size:11px;font-weight:600;padding:.08rem .45rem;border-radius:100px;
+  background:rgba(22,36,31,.07);color:#5d6b63;white-space:nowrap;}
+
 /* ── Lab photos (what the public gallery shows) ── */
 .ln-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.8rem;
   margin:.6rem 0 1.6rem;}

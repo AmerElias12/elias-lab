@@ -2981,6 +2981,55 @@ async function removePhoto(id) {
    would look exact while being a guess. */
 var MONEY_CURRENCIES = ['₪', '$', '€', '£'];
 
+/* The budget headings the lab reports its spending under.
+
+   In Hebrew, because that is what the funding bodies and the college's
+   finance office use: translating them here would mean translating them
+   back every time a report is filed, and a heading that has been through
+   two translations is no longer the heading anyone can look up.
+
+   The Hebrew text is what gets stored on the expense, not an internal
+   code. It is also what people will have in the spreadsheets they import,
+   so the file and the notebook speak the same words. `key` exists only for
+   CSS and for matching a few English spellings on import. */
+var EXPENSE_CATS = [
+  { key: 'scholarships', he: 'מלגות' },
+  { key: 'consumables', he: 'חומרים וציוד מתכלה' },
+  { key: 'other', he: 'הוצאות אחרות' },
+  { key: 'personnel', he: 'כח אדם (לא כולל סטודנט מתמחה)' },
+  { key: 'unrestricted', he: 'אין הגבלה' }
+];
+// English spellings accepted when a file is imported; the Hebrew is matched
+// on its own text. Everything here is compared through bulkKey().
+var EXPENSE_CAT_ALIASES = {
+  scholarships: ['scholarship', 'scholarships', 'stipend', 'stipends', 'fellowship', 'fellowships'],
+  consumables: ['consumables', 'consumable', 'materials', 'reagents', 'supplies', 'materialsandconsumables'],
+  other: ['other', 'otherexpenses', 'misc', 'miscellaneous'],
+  personnel: ['personnel', 'staff', 'salary', 'salaries', 'manpower', 'labour', 'labor'],
+  unrestricted: ['unrestricted', 'nolimit', 'unlimited']
+};
+/* Compare two pieces of text as the same words.
+
+   Not bulkKey(): that keeps only a-z0-9, which is right for inventory names
+   written in English but erases Hebrew completely — every one of the
+   headings above would reduce to the empty string, and so match each
+   other. This keeps letters and digits of any script and drops case,
+   spaces and punctuation, so "כח אדם (לא כולל סטודנט מתמחה)" survives and
+   still matches itself however it was spaced. */
+function textKey(s) {
+  return String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+/* The category an expense is filed under, as one of ours — or null when it
+   is something else. Expenses recorded before these headings existed keep
+   whatever was typed; they are shown as they are rather than guessed at. */
+function expenseCat(value) {
+  var k = textKey(value);
+  if (!k) return null;
+  return EXPENSE_CATS.filter(function (c) {
+    return textKey(c.he) === k || c.key === k || (EXPENSE_CAT_ALIASES[c.key] || []).indexOf(k) >= 0;
+  })[0] || null;
+}
+
 function money(n) {
   var v = Math.round((Number(n) || 0) * 100) / 100;
   return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -3003,6 +3052,86 @@ function grantSummary() {
     return { grant: gr, cur: gr.currency || '₪', awarded: awarded, spent: spent,
       left: awarded - spent, pct: awarded > 0 ? Math.min(100, spent / awarded * 100) : 0 };
   });
+}
+
+/* Spending by budget heading, split across the grants it was charged to.
+
+   One table rather than one per grant, because the question this answers is
+   nearly always comparative: how much of each heading has gone, and out of
+   which grant. Rows that are not one of the lab's headings are still listed
+   — an expense filed under something else is exactly what someone needs to
+   see, not something to leave out of the total.
+
+   Grants may be held in different currencies, so each column is totalled in
+   its own grant's currency and the row total is only shown when they all
+   agree. A column of numbers that silently adds shekels to dollars is worse
+   than no column. */
+function categoriesHtml() {
+  var gs = grants(), exp = expenses();
+  if (!exp.length) return '';
+  var cols = gs.map(function (gr) { return { id: gr.id, name: gr.name || 'Untitled grant', cur: gr.currency || '₪' }; });
+  var known = {};
+  gs.forEach(function (gr) { known[gr.id] = true; });
+  var hasLoose = exp.some(function (e) { return !e.grant || !known[e.grant]; });
+  var curs = {};
+  gs.forEach(function (gr) { curs[gr.currency || '₪'] = true; });
+  var oneCur = Object.keys(curs);
+  var sameCur = oneCur.length <= 1 ? (oneCur[0] || '₪') : null;
+  // An unassigned expense has no grant to take a currency from. When every
+  // grant is in one currency that is safe to assume; when they are not, the
+  // number is shown bare rather than labelled with a guess.
+  if (hasLoose) cols.push({ id: '', name: 'Not charged to a grant', cur: sameCur || '', loose: true });
+
+  // rows: the lab's headings first, in their own order, then anything else
+  var rows = EXPENSE_CATS.map(function (c) { return { label: c.he, key: c.key, match: c }; });
+  var extra = {};
+  exp.forEach(function (e) {
+    if (expenseCat(e.category)) return;
+    var label = String(e.category || '').trim() || '— no category —';
+    if (!extra[label]) extra[label] = { label: label, key: 'none', match: null, raw: label };
+  });
+  Object.keys(extra).forEach(function (k) { rows.push(extra[k]); });
+
+  function cell(row, col) {
+    return exp.filter(function (e) {
+      var inCol = col.loose ? (!e.grant || !known[e.grant]) : e.grant === col.id;
+      if (!inCol) return false;
+      var c = expenseCat(e.category);
+      return row.match ? c === row.match
+        : (!c && (String(e.category || '').trim() || '— no category —') === row.label);
+    }).reduce(function (t, e) { return t + amount(e.cost); }, 0);
+  }
+
+  var body = rows.map(function (row) {
+    var vals = cols.map(function (col) { return cell(row, col); });
+    if (!vals.some(function (v) { return v; })) return '';   // nothing under this heading yet
+    var total = vals.reduce(function (a, b) { return a + b; }, 0);
+    return '<tr><td dir="auto"><strong>' + esc(row.label) + '</strong>' +
+      (row.match ? '' : ' <span class="ln-cat-flag">not a lab heading</span>') + '</td>' +
+      vals.map(function (v, i) {
+        return '<td class="ln-nowrap">' + (v ? esc(cols[i].cur) + money(v) : '<span class="muted">—</span>') + '</td>';
+      }).join('') +
+      (sameCur ? '<td class="ln-nowrap"><strong>' + esc(sameCur) + money(total) + '</strong></td>' : '') +
+      '</tr>';
+  }).join('');
+  if (!body) return '';
+
+  var foot = cols.map(function (col) {
+    var t = rows.reduce(function (a, row) { return a + cell(row, col); }, 0);
+    return '<td class="ln-nowrap"><strong>' + esc(col.cur) + money(t) + '</strong></td>';
+  }).join('');
+  var grand = exp.reduce(function (t, e) { return t + amount(e.cost); }, 0);
+
+  return '<div class="ln-form-section">By category</div>' +
+    (sameCur ? '' : '<div class="hint">The grants are held in different currencies, so each column is totalled in its own. ' +
+      'There is no row total for that reason.</div>') +
+    '<div style="overflow-x:auto;"><table class="ln-table ln-cat-table"><thead><tr><th>Category</th>' +
+      cols.map(function (c) { return '<th dir="auto"' + (c.loose ? ' class="muted"' : '') + '>' + esc(c.name) + '</th>'; }).join('') +
+      (sameCur ? '<th>Total</th>' : '') +
+    '</tr></thead><tbody>' + body + '</tbody>' +
+    '<tfoot><tr><td><strong>Spent</strong></td>' + foot +
+      (sameCur ? '<td class="ln-nowrap"><strong>' + esc(sameCur) + money(grand) + '</strong></td>' : '') +
+    '</tr></tfoot></table></div>';
 }
 
 function renderFinances() {
@@ -3038,6 +3167,7 @@ function renderFinances() {
     (loose.length ? '<div class="ln-inv-alert soon">⚠ <strong>' + loose.length + '</strong> expense' +
       (loose.length === 1 ? ' is' : 's are') + ' not charged to any grant, so ' +
       (loose.length === 1 ? 'it is' : 'they are') + ' in no total above.</div>' : '') +
+    categoriesHtml() +
     '<div class="ln-form-section">Expenses</div>' +
     (exp.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
       '<th>Date</th><th>What</th><th>Grant</th><th>Category</th><th class="ln-nowrap">Amount</th><th>Recorded by</th><th class="ln-row-actions">Actions</th>' +
@@ -3046,7 +3176,7 @@ function renderFinances() {
         return '<tr data-item-id="' + esc(e.id || '') + '"><td class="ln-nowrap">' + esc(e.date || '—') + '</td>' +
           '<td>' + esc(e.name || '—') + '</td>' +
           '<td>' + (gr ? esc(gr.name) : '<span class="ln-req-urgency urgent">unassigned</span>') + '</td>' +
-          '<td>' + esc(e.category || '—') + '</td>' +
+          '<td dir="auto">' + esc(e.category || '—') + '</td>' +
           // amount() first: a typed "1,200" is NaN to Number(), and would
           // print as 0 beside a total that counted it correctly.
           '<td class="ln-nowrap"><strong>' + esc(gr ? (gr.currency || '₪') : '') + money(amount(e.cost)) + '</strong></td>' +
@@ -3108,9 +3238,20 @@ function openExpenseModal(id) {
       '<div class="ln-form-row"><label>Amount</label><input id="m-ecost" value="' + esc(e && e.cost || '') + '" placeholder="e.g. 1200"></div>' +
     '</div><div class="ln-form-grid">' +
       '<div class="ln-form-row"><label>Date</label><input type="date" id="m-edate" value="' + esc(e && e.date || new Date().toISOString().slice(0, 10)) + '"></div>' +
-      '<div class="ln-form-row"><label>Category</label><input id="m-ecategory" list="ln-exp-cats" value="' + esc(e && e.category || '') + '" placeholder="e.g. Consumables">' +
-        '<datalist id="ln-exp-cats"><option value="Consumables"><option value="Equipment"><option value="Reagents"><option value="Sequencing"><option value="Travel"><option value="Publication"><option value="Salary"></datalist></div>' +
+      // The budget heading. An expense recorded before these existed keeps
+      // whatever it had: it is offered as an extra option rather than being
+      // silently rewritten to one of ours on the next save.
+      '<div class="ln-form-row"><label>Category</label><select id="m-ecategory" dir="auto">' +
+        '<option value="">— none —</option>' +
+        EXPENSE_CATS.map(function (c) {
+          return '<option value="' + esc(c.he) + '"' + (e && expenseCat(e.category) === c ? ' selected' : '') + '>' + esc(c.he) + '</option>';
+        }).join('') +
+        (e && e.category && !expenseCat(e.category)
+          ? '<option value="' + esc(e.category) + '" selected>' + esc(e.category) + ' (as recorded)</option>' : '') +
+      '</select></div>' +
     '</div>' +
+    '<div class="hint">“Charged to” is what keeps each grant’s remaining balance separate — an expense left ' +
+      'unassigned is counted in no grant’s total.</div>' +
     '<div class="ln-form-row"><label>Notes</label><textarea id="m-enotes" rows="2">' + esc(e && e.notes || '') + '</textarea></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" onclick="saveExpense(' + (id ? '\'' + esc(id) + '\'' : '') + ')">Save</button></div>';
@@ -3140,6 +3281,221 @@ async function deleteFinance(cat, id) {
 /* One row per expense, with the grant and currency spelled out, because a
    column of bare numbers from two grants in two currencies is not a column
    anybody should add up. */
+/* ---- importing a file of expenses ----
+
+   A term's spending arrives as one spreadsheet from the finance office, not
+   as forty people typing forty rows, so it goes in as a file. The same
+   reader as the inventory upload (SheetJS, served from this site), and the
+   same shape: read, show exactly what will happen, save only on confirming.
+
+   Column headings are matched in English or Hebrew, because the file will
+   usually come in Hebrew. A grant is matched by its name or its reference
+   number; a row naming a grant that does not exist here is still imported,
+   left unassigned and listed, rather than dropped — an expense nobody can
+   see is worse than one filed in the wrong place. */
+var EXPENSE_IMPORT_COLS = [
+  { field: 'date', label: 'Date', alias: ['date', 'תאריך', 'תאריךהוצאה'] },
+  { field: 'name', label: 'What was bought', alias: ['what', 'whatwasbought', 'item', 'description', 'desc', 'details', 'פריט', 'תיאור', 'מה', 'פרטים'] },
+  { field: 'grant', label: 'Grant', alias: ['grant', 'chargedto', 'fund', 'budget', 'מענק', 'קרן', 'תקציב'] },
+  { field: 'category', label: 'Category', alias: ['category', 'heading', 'budgetheading', 'קטגוריה', 'סעיף', 'סעיףתקציבי'] },
+  { field: 'cost', label: 'Amount', alias: ['amount', 'cost', 'sum', 'price', 'total', 'סכום', 'עלות', 'מחיר'] },
+  { field: 'notes', label: 'Notes', alias: ['notes', 'note', 'comment', 'comments', 'הערות', 'הערה'] }
+];
+
+function expenseSignature(e) {
+  return [String(e.date || '').trim(), textKey(e.name), amount(e.cost).toFixed(2), String(e.grant || '')].join('\u0001');
+}
+
+function buildExpensePlan(XLSX, wb) {
+  var user = currentUser(), me = user ? user.name : 'Unknown';
+  var gs = grants(), byName = {};
+  gs.forEach(function (gr) {
+    if (gr.name) byName[textKey(gr.name)] = gr.id;
+    if (gr.ref) byName[textKey(gr.ref)] = gr.id;
+  });
+  var plan = { items: [], noAmount: [], noName: [], dupes: 0, unknownGrant: {}, unknownCat: {}, sheets: 0 };
+  var seen = {};
+  expenses().forEach(function (e) { seen[expenseSignature(e)] = true; });
+
+  var lookup = {};
+  EXPENSE_IMPORT_COLS.forEach(function (c) {
+    lookup[textKey(c.label)] = c.field;
+    c.alias.forEach(function (a) { if (!lookup[textKey(a)]) lookup[textKey(a)] = c.field; });
+  });
+
+  wb.SheetNames.forEach(function (sheetName) {
+    var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+    var h = 0;
+    while (h < rows.length && !rows[h].some(function (v) { return String(v).trim() !== ''; })) h++;
+    if (h >= rows.length) return;
+    var cols = {}, used = {};
+    rows[h].forEach(function (cell, i) {
+      var f = lookup[textKey(cell)];
+      if (f && !used[f]) { cols[i] = f; used[f] = true; }
+    });
+    // A sheet has to carry at least something to buy and something to pay.
+    if (!used.cost || !used.name) return;
+    plan.sheets++;
+
+    for (var r = h + 1; r < rows.length; r++) {
+      var raw = {}, any = false;
+      Object.keys(cols).forEach(function (i) {
+        var v = rows[r][i];
+        if (v == null || String(v).trim() === '') return;
+        raw[cols[i]] = v; any = true;
+      });
+      if (!any) continue;
+      var where = sheetName + ' row ' + (r + 1);
+
+      var date = '';
+      if (raw.date != null) {
+        if (typeof raw.date === 'number') {
+          var d = XLSX.SSF.parse_date_code(raw.date);
+          if (d && d.y) date = d.y + '-' + bulkPad(d.m) + '-' + bulkPad(d.d);
+        }
+        if (!date) {
+          var s = String(raw.date).trim();
+          var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+          // dd/mm/yyyy is how the finance office writes it
+          var dmy = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(s);
+          date = iso ? iso[1] + '-' + bulkPad(+iso[2]) + '-' + bulkPad(+iso[3])
+            : dmy ? dmy[3] + '-' + bulkPad(+dmy[2]) + '-' + bulkPad(+dmy[1]) : s;
+        }
+      }
+
+      var name = String(raw.name == null ? '' : raw.name).trim();
+      if (!name) { plan.noName.push(where); continue; }
+      if (amount(raw.cost) === 0) { plan.noAmount.push(where + ' (' + String(raw.cost == null ? '' : raw.cost) + ')'); continue; }
+
+      var grantId = '';
+      if (raw.grant != null && String(raw.grant).trim()) {
+        var g0 = String(raw.grant).trim();
+        grantId = byName[textKey(g0)] || '';
+        if (!grantId) plan.unknownGrant[g0] = (plan.unknownGrant[g0] || 0) + 1;
+      }
+
+      var catText = String(raw.category == null ? '' : raw.category).trim();
+      var cat = expenseCat(catText);
+      if (catText && !cat) plan.unknownCat[catText] = (plan.unknownCat[catText] || 0) + 1;
+
+      var item = {
+        id: uid(), name: name, grant: grantId,
+        cost: String(raw.cost).trim(), date: date,
+        category: cat ? cat.he : catText,
+        notes: String(raw.notes == null ? '' : raw.notes).trim(),
+        addedBy: me
+      };
+      var sig = expenseSignature(item);
+      if (seen[sig]) { plan.dupes++; continue; }
+      seen[sig] = true;
+      plan.items.push(item);
+    }
+  });
+  return plan;
+}
+
+var expensePlan = null;
+function openExpenseImportModal() {
+  expensePlan = null;
+  var gs = grants();
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Import expenses</h3>' +
+    '<p class="ln-bulk-intro">A whole file at once instead of one row at a time. Excel (.xlsx) or CSV, ' +
+      'with a heading row. Nothing is saved until you have seen what it will add.</p>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">1</span><div><strong>Start from the template</strong>' +
+      '<div class="hint">Columns: Date, What was bought, Grant, Category, Amount, Notes. Hebrew headings ' +
+        '(תאריך, פריט, מענק, קטגוריה, סכום, הערות) are understood too, and so is a CSV exported from this page.</div>' +
+      '<button class="ln-add-btn ghost" onclick="downloadExpenseTemplate()">↓ Download template (.csv)</button></div></div>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">2</span><div><strong>Upload the filled-in file</strong>' +
+      '<div class="hint">' + (gs.length
+        ? 'Write the grant’s name or reference in the Grant column and the expense is charged to it.'
+        : 'There are no grants yet, so everything will come in unassigned. You can add grants first and re-import.') +
+      '</div><input type="file" id="m-exp-file" accept=".xlsx,.xls,.csv" onchange="previewExpenseImport(this)"></div></div>' +
+    '<div id="ln-exp-preview"></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" id="ln-exp-save" disabled onclick="saveExpenseImport()">Add expenses</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+  loadXlsx().catch(function () { /* reported when a file is chosen */ });
+}
+
+function downloadExpenseTemplate() {
+  var gs = grants();
+  var rows = [EXPENSE_IMPORT_COLS.map(function (c) { return c.label; })];
+  // One filled row per heading, so the spelling of the categories is there
+  // to copy rather than to retype.
+  EXPENSE_CATS.forEach(function (c, i) {
+    rows.push([new Date().toISOString().slice(0, 10),
+      i === 0 ? 'e.g. PhD stipend, March' : '',
+      gs.length ? gs[0].name : '', c.he, '', '']);
+  });
+  var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  var a = document.createElement('a');
+  a.href = url; a.download = 'elias-lab-expenses-template.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+}
+
+async function previewExpenseImport(input) {
+  var out = document.getElementById('ln-exp-preview'), btn = document.getElementById('ln-exp-save');
+  expensePlan = null; btn.disabled = true; btn.textContent = 'Add expenses';
+  var file = input.files && input.files[0];
+  if (!file) { out.innerHTML = ''; return; }
+  out.innerHTML = '<div class="ln-bulk-note">Reading ' + esc(file.name) + '…</div>';
+  try {
+    var XLSX = await loadXlsx();
+    var isCsv = /\.csv$/i.test(file.name);
+    // As text for CSV so the Hebrew survives; raw so amounts stay as typed.
+    var wb = isCsv ? XLSX.read(await file.text(), { type: 'string', raw: true })
+                   : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    expensePlan = buildExpensePlan(XLSX, wb);
+  } catch (e) {
+    out.innerHTML = '<div class="ln-bulk-note error">Could not read this file: ' + esc(e.message) + '</div>';
+    return;
+  }
+  var p = expensePlan, notes = [];
+  if (!p.sheets) {
+    out.innerHTML = '<div class="ln-bulk-note error">No sheet here has both a “What was bought” and an “Amount” column. ' +
+      'Check the heading row against the template.</div>';
+    return;
+  }
+  var charged = p.items.filter(function (e) { return e.grant; }).length;
+  if (charged) notes.push(charged + ' charged to a grant, ' + (p.items.length - charged) + ' unassigned');
+  if (p.dupes) notes.push(p.dupes + ' already recorded, skipped');
+  if (p.noAmount.length) notes.push(p.noAmount.length + ' with no amount, skipped (' + esc(p.noAmount.slice(0, 4).join(', ')) + (p.noAmount.length > 4 ? '…' : '') + ')');
+  if (p.noName.length) notes.push(p.noName.length + ' with nothing in “What was bought”, skipped');
+  var ug = Object.keys(p.unknownGrant);
+  if (ug.length) notes.push('no grant here is called ' + esc(ug.slice(0, 4).map(function (n) { return '“' + n + '”'; }).join(', ')) +
+    (ug.length > 4 ? '…' : '') + ' — those rows come in unassigned');
+  var uc = Object.keys(p.unknownCat);
+  if (uc.length) notes.push('not one of the lab’s headings: ' + esc(uc.slice(0, 4).map(function (n) { return '“' + n + '”'; }).join(', ')) +
+    (uc.length > 4 ? '…' : '') + ' — kept exactly as written');
+  var sum = p.items.reduce(function (t, e) { return t + amount(e.cost); }, 0);
+
+  out.innerHTML = '<ul class="ln-bulk-list"><li><strong>' + p.items.length + ' new expense' +
+    (p.items.length === 1 ? '' : 's') + '</strong>' + (p.items.length ? ', ' + money(sum) + ' in all' : '') +
+    (notes.length ? '<div class="ln-bulk-sub">' + notes.join('<br>') + '</div>' : '') + '</li></ul>';
+  if (p.items.length) { btn.disabled = false; btn.textContent = 'Add ' + p.items.length + ' expense' + (p.items.length === 1 ? '' : 's'); }
+}
+
+async function saveExpenseImport() {
+  if (!expensePlan || !expensePlan.items.length) return;
+  var btn = document.getElementById('ln-exp-save'), out = document.getElementById('ln-exp-preview');
+  btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    var n = await DB.addInventoryMany('expenses', expensePlan.items);
+    out.innerHTML = '<div class="ln-bulk-note ok">Added ' + n + ' expense' + (n === 1 ? '' : 's') + '.</div>';
+  } catch (e) {
+    out.innerHTML = '<div class="ln-bulk-note error">Could not save: ' + esc(e.message) + '</div>';
+    btn.disabled = false; btn.textContent = 'Try again';
+    return;
+  }
+  expensePlan = null;
+  renderFinances();
+  btn.textContent = 'Done'; btn.disabled = false; btn.onclick = closeModal;
+  var f = document.getElementById('m-exp-file'); if (f) f.value = '';
+}
+
 function exportFinancesCSV() {
   var byId = {};
   grants().forEach(function (gr) { byId[gr.id] = gr; });
