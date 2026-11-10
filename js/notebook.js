@@ -2083,9 +2083,38 @@ var BOX_DEFAULT_LAYOUT = '9x9';
 var boxView = null;      // key of the open box, or null for the list of boxes
 var boxSelected = null;  // 'r,c' of the selected cell in the open box
 
+/* Only the three types above have a Box and a Position, so only they can sit
+   in a box map. A set-up saved with any other type is still a box somebody
+   made: it is listed, says what it is, and can be retyped or deleted.
+
+   It used to be built into the index and then rendered into no group at all,
+   because the list had one group per type and the types were a fixed three.
+   A box for restriction enzymes was therefore in the database, on no page,
+   with nothing said about it — it had simply disappeared. Nothing reaches
+   the page except through a group, so the list is grouped by the types the
+   boxes actually claim, and anything left over is shown rather than dropped. */
+function boxCanHold(cat) { return BOX_CATS.indexOf(cat) >= 0; }
+function boxCatOne(cat) { return (INV_LABELS[cat] && INV_LABELS[cat].one) || String(cat); }
+function boxCatMany(cat) { return (INV_LABELS[cat] && INV_LABELS[cat].many) || String(cat); }
+// A box has to be nameable to be opened, renamed or deleted.
+function boxLabel(b) { return b.name || 'Box with no name'; }
+function boxGroupName(cat) {
+  if (!cat) return 'Type not set';
+  return BOX_TYPE_NAMES[cat] || (boxCatOne(cat) + ' boxes — not a box type');
+}
+// The three box types first, then any other type a stored box claims.
+function boxGroupCats(shown) {
+  var seen = {}, extra = [];
+  shown.forEach(function (b) {
+    if (!b.cat || boxCanHold(b.cat) || seen[b.cat]) return;
+    seen[b.cat] = true; extra.push(b.cat);
+  });
+  return BOX_CATS.concat(extra.sort(), [null]);
+}
+
 function boxKey(cat, name) { return (cat || 'any') + ':' + bulkKey(name); }
 function boxDims(def) { return BOX_LAYOUTS[def && def.layout] || BOX_LAYOUTS[BOX_DEFAULT_LAYOUT]; }
-function boxTypeOne(cat) { return cat ? INV_LABELS[cat].one.toLowerCase() : 'any'; }
+function boxTypeOne(cat) { return cat ? boxCatOne(cat).toLowerCase() : 'any'; }
 function vialLabel(cat, it) {
   if (cat === 'stocks') return it.serial || it.description || 'Stock';
   return it.name || INV_LABELS[cat].one;
@@ -2109,7 +2138,10 @@ function boxIndex() {
     return boxes[k];
   }
   var defs = inv.boxes || [];
-  defs.forEach(function (d) { if (d.name && d.cat) get(d.cat, d.name).def = d; });
+  // A name is what vials match on, so a set-up without one holds nothing —
+  // but it is still shown, because a row nobody can see is a row nobody can
+  // delete either.
+  defs.forEach(function (d) { if (d.cat) get(d.cat, d.name || '').def = d; });
   BOX_CATS.forEach(function (cat) {
     (inv[cat] || []).forEach(function (it) { if (String(it.box || '').trim()) get(cat, it.box).vials.push({ cat: cat, item: it }); });
   });
@@ -2125,7 +2157,7 @@ function boxIndex() {
   });
   return order.map(function (k) {
     var b = boxes[k];
-    if (b.def) b.name = b.def.name;
+    if (b.def && b.def.name) b.name = b.def.name;
     b.dims = boxDims(b.def);
     b.cells = {}; b.unplaced = [];
     b.vials.forEach(function (v) {
@@ -2164,22 +2196,42 @@ function boxListHtml(all) {
 function boxListBody(all, q) {
   q = String(q || '').trim().toLowerCase();
   var shown = !q ? all : all.filter(function (b) { return (b.name + ' ' + b.where).toLowerCase().indexOf(q) >= 0; });
-  if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give a plasmid, glycerol stock or cell line a Box name and it appears here.</div>';
+  if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give a plasmid, glycerol stock or cell line a Box name and it appears here.</div>' + boxUnshownNote();
   if (!shown.length) return '<div class="ln-empty">No box matches “' + esc(q) + '”.</div>';
   // One group per type, so same-named boxes of different types sit apart.
-  return BOX_CATS.concat([null]).map(function (cat) {
+  var placed = {}, out = '';
+  boxGroupCats(shown).forEach(function (cat) {
     var group = shown.filter(function (b) { return b.cat === cat; });
-    if (!group.length) return '';
-    return '<h3 class="ln-box-group">' + (cat ? BOX_TYPE_NAMES[cat] : 'Type not set') + ' <span>' + group.length + '</span></h3>' +
+    if (!group.length) return;
+    group.forEach(function (b) { placed[b.key] = true; });
+    out += '<h3 class="ln-box-group">' + esc(boxGroupName(cat)) + ' <span>' + group.length + '</span></h3>' +
       '<div class="ln-box-grid-list">' + group.map(boxCardHtml).join('') + '</div>';
-  }).join('');
+  });
+  // A box in the list but in no group is a box the page would lose in
+  // silence, which is the one thing this list must not do.
+  var left = shown.filter(function (b) { return !placed[b.key]; });
+  if (left.length) out += '<h3 class="ln-box-group">Other boxes <span>' + left.length + '</span></h3>' +
+    '<div class="ln-box-grid-list">' + left.map(boxCardHtml).join('') + '</div>';
+  return out + boxUnshownNote();
+}
+/* A set-up with neither a name nor a type is not a box the page can draw:
+   nothing can refer to it and there is nothing to label it with. Say how
+   many there are instead of leaving them unseen in the database. */
+function boxUnshownNote() {
+  var n = (getInventory().boxes || []).filter(function (d) {
+    return d && !String(d.name == null ? '' : d.name).trim() && !d.cat;
+  }).length;
+  if (!n) return '';
+  return '<div class="ln-empty" style="margin-top:1.2rem;">' + n + ' saved box set-up' + (n === 1 ? '' : 's') +
+    ' cannot be shown: no name and no type, so nothing in the lab can refer to ' + (n === 1 ? 'it' : 'them') + '.</div>';
 }
 function boxCardHtml(b) {
   var total = b.dims.rows * b.dims.cols, n = b.vials.length;
   var content = !b.cat ? '<span class="ln-vchip">empty · type not set</span>'
+    : !boxCanHold(b.cat) ? '<span class="ln-vchip odd">' + esc(boxCatMany(b.cat)) + ' are not kept in boxes</span>'
     : '<span class="ln-vchip ' + b.cat + '">' + n + ' ' + (n === 1 ? INV_LABELS[b.cat].one.toLowerCase() : INV_LABELS[b.cat].many) + '</span>';
   return '<button type="button" class="ln-box-card" data-key="' + esc(b.key) + '" onclick="openBox(this.dataset.key)">' +
-    '<div class="ln-box-card-name">' + esc(b.name) + '</div>' +
+    '<div class="ln-box-card-name">' + esc(boxLabel(b)) + '</div>' +
     '<div class="ln-box-card-meta">' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'Layout not set') + (b.where ? ' · ' + esc(b.where) : '') + '</div>' +
     '<div class="ln-box-fill"><span style="width:' + Math.round(b.placed / total * 100) + '%"></span></div>' +
     '<div class="ln-box-card-count">' + b.placed + ' / ' + total + ' positions used' + (b.unplaced.length ? ' · <span class="warn">' + b.unplaced.length + ' without a position</span>' : '') + '</div>' +
@@ -2188,14 +2240,18 @@ function boxCardHtml(b) {
 
 function boxDetailHtml(b) {
   var d = b.dims, rowsHtml = '';
-  var type = b.cat ? INV_LABELS[b.cat].one + ' box' : 'Box (type not set)';
+  var odd = !!(b.cat && !boxCanHold(b.cat));
+  var type = !b.cat ? 'Box (type not set)' : boxCatOne(b.cat) + ' box' + (odd ? ' — not a box type' : '');
   var head = '<div class="ln-section-header"><div><a href="#" class="ln-back-link" onclick="openBoxesPage();return false;">← All boxes</a>' +
-    '<h2>' + esc(b.name) + '</h2><p>' + type + ' · ' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'layout not set (shown as 9×9)') +
+    '<h2>' + esc(boxLabel(b)) + '</h2><p>' + esc(type) + ' · ' + (b.def ? esc(b.def.layout || BOX_DEFAULT_LAYOUT).replace('x', '×') : 'layout not set (shown as 9×9)') +
     (b.where ? ' · ' + esc(b.where) : '') + ' · ' + b.placed + ' / ' + (d.rows * d.cols) + ' positions used</p></div>' +
     '<div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button>' +
       '<button class="ln-add-btn ghost" data-key="' + esc(b.key) + '" onclick="exportBoxCSV(this.dataset.key)">\u2193 CSV</button>' +
       '<button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-key="' + esc(b.key) + '" onclick="openBoxModal(this.dataset.key)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
-    (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '');
+    (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '') +
+    (odd ? '<div class="ln-inv-alert expired">This box is set to hold ' + esc(boxCatMany(b.cat)) +
+      ', which are not kept in boxes: only plasmids, glycerol stocks and cell lines have a Box and a Position to be placed by. ' +
+      'Nothing can go in it until you change the type under “Edit box” — or delete it if the box is gone.</div>' : '');
   rowsHtml += '<div class="ln-bm-corner"></div>';
   for (var c = 0; c < d.cols; c++) rowsHtml += '<div class="ln-bm-colh">' + (c + 1) + '</div>';
   for (var r = 0; r < d.rows; r++) {
@@ -2209,7 +2265,7 @@ function boxDetailHtml(b) {
         '<span class="ln-bm-label">' + esc(label) + '</span>' + (vs.length > 1 ? '<span class="ln-bm-badge">' + vs.length + '</span>' : '') + '</button>';
     }
   }
-  var legend = '<div class="ln-bm-legend">' + (b.cat ? '<span><i class="ln-bm-swatch ' + b.cat + '"></i>' + INV_LABELS[b.cat].one + '</span>' : '') +
+  var legend = '<div class="ln-bm-legend">' + (b.cat && boxCanHold(b.cat) ? '<span><i class="ln-bm-swatch ' + b.cat + '"></i>' + INV_LABELS[b.cat].one + '</span>' : '') +
     '<span><i class="ln-bm-swatch clash"></i>Two vials in one position</span></div>';
   var unplaced = b.unplaced.length ? '<div class="ln-bm-unplaced"><strong>' + b.unplaced.length + ' in this box without a usable position</strong>' +
     b.unplaced.map(function (v) {
@@ -2234,8 +2290,8 @@ function boxContentRows(b) {
 }
 function boxContentCols(b) {
   var cat = b.cat || (b.vials[0] && b.vials[0].cat);
-  if (!cat) return [];
-  var cfg = INV_CONFIG[cat];
+  var cfg = cat && INV_CONFIG[cat];
+  if (!cfg) return [];
   return cfg.fields.map(function (f, i) { return { f: f, label: cfg.cols[i] }; })
     .filter(function (c) { return c.f !== 'box' && c.f !== 'position' && c.f !== 'addedBy'; });
 }
@@ -2272,9 +2328,14 @@ function boxCellPanel(b) {
   var rc = boxSelected.split(','), pos = String.fromCharCode(65 + +rc[0]) + (+rc[1] + 1);
   var vs = b.cells[boxSelected];
   if (!vs) {
-    return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + ' · empty</div><div class="ln-bm-panel-add">Add here:' +
-      (b.cat ? [b.cat] : BOX_CATS).map(function (c) { return '<button type="button" class="ln-icon-btn" data-key="' + esc(b.key) + '" onclick="addVialAt(\'' + c + '\',this.dataset.key,\'' + pos + '\')">+ ' + INV_LABELS[c].one + '</button>'; }).join('') +
-      '</div></div>';
+    // Offering "+ Restriction Enzyme" here would open a form with nowhere to
+    // record the position, so a box that cannot hold anything says so.
+    var can = b.cat ? (boxCanHold(b.cat) ? [b.cat] : []) : BOX_CATS;
+    return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + ' · empty</div>' +
+      (can.length ? '<div class="ln-bm-panel-add">Add here:' +
+        can.map(function (c) { return '<button type="button" class="ln-icon-btn" data-key="' + esc(b.key) + '" onclick="addVialAt(\'' + c + '\',this.dataset.key,\'' + pos + '\')">+ ' + INV_LABELS[c].one + '</button>'; }).join('') + '</div>'
+        : '<div class="ln-bm-panel-add">Nothing can be placed here while this box is set to hold ' + esc(boxCatMany(b.cat)) + '.</div>') +
+      '</div>';
   }
   return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + (vs.length > 1 ? ' · <span class="warn">' + vs.length + ' vials share this position</span>' : '') + '</div>' +
     vs.map(function (v) {
@@ -2325,12 +2386,17 @@ function openBoxModal(key) {
   var layout = def.layout || BOX_DEFAULT_LAYOUT;
   var typeLocked = !!(b && b.vials.length);
   var cat = (b && b.cat) || 'stocks';
+  // A box saved with a type that cannot sit in a map keeps that type in the
+  // list, so the dialog shows what is actually stored and changing it is a
+  // choice rather than something that happens on the next save.
+  var cats = BOX_CATS.indexOf(cat) >= 0 ? BOX_CATS : [cat].concat(BOX_CATS);
   document.getElementById('ln-modal-content').innerHTML = '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (b && b.def ? 'Edit Box' : 'Set Up Box') + '</h3>' +
     '<div class="ln-form-grid"><div class="ln-form-row"><label>Box Name</label><input id="m-boxname" value="' + esc(b ? b.name : '') + '" placeholder="e.g. Box 1"></div>' +
     '<div class="ln-form-row"><label>Holds</label><select id="m-boxcat"' + (typeLocked ? ' disabled' : '') + '>' +
-      BOX_CATS.map(function (c) { return '<option value="' + c + '"' + (c === cat ? ' selected' : '') + '>' + INV_LABELS[c].many.replace(/^./, function (x) { return x.toUpperCase(); }) + '</option>'; }).join('') +
+      cats.map(function (c) { return '<option value="' + c + '"' + (c === cat ? ' selected' : '') + '>' + esc(boxCatMany(c).replace(/^./, function (x) { return x.toUpperCase(); })) + (boxCanHold(c) ? '' : ' — not a box type') + '</option>'; }).join('') +
     '</select></div></div>' +
     '<div class="hint" style="margin:-.4rem 0 .9rem;font-size:12px;color:#7a877f;">' + (typeLocked ? 'The type is set by the vials already in this box. ' : '') +
+      (boxCanHold(cat) ? '' : 'Only plasmids, glycerol stocks and cell lines have a Box and a Position, so this box cannot hold anything as it stands: pick one of those to use it, or delete it below. ') +
       'Vials of this type are placed here when their Box field matches the name. Boxes of different types can share a name.</div>' +
     '<div class="ln-form-grid"><div class="ln-form-row"><label>Layout</label><select id="m-boxlayout">' +
       Object.keys(BOX_LAYOUTS).map(function (k) { var d = BOX_LAYOUTS[k]; return '<option value="' + k + '"' + (k === layout ? ' selected' : '') + '>' + d.rows + ' × ' + d.cols + ' (' + d.rows * d.cols + ' positions)</option>'; }).join('') +
@@ -2373,7 +2439,7 @@ async function saveBox() {
 async function deleteBox() {
   var b = editingBox;
   if (!b || !b.def) return;
-  var msg = 'Delete the box set-up for “' + b.name + '”?' +
+  var msg = 'Delete the box set-up for “' + boxLabel(b) + '”?' +
     (b.vials.length ? ' Its ' + b.vials.length + ' vial(s) are not deleted and keep their Box name, so the box still appears with its layout unset.' : '') +
     (b.sharedDef ? ' This set-up is also used by the other boxes named “' + b.name + '”, which lose their layout too.' : '');
   if (!confirm(msg)) return;

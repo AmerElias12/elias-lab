@@ -271,6 +271,8 @@ button.ln-dash-row:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
 .ln-vchip.plasmids{background:#e3edfb;color:#1f4f99;}
 .ln-vchip.stocks{background:#e3f5ec;color:#0c6b4e;}
 .ln-vchip.cells{background:#efe7fa;color:#5b3a99;}
+/* A box set to hold something that is not kept in boxes: listed, not hidden. */
+.ln-vchip.odd{background:rgba(166,98,12,.1);color:#a6620c;}
 .ln-box-notes{font-size:13px;color:#555;background:#f6f4ee;border-radius:10px;padding:.6rem .9rem;margin-bottom:1rem;white-space:pre-wrap;}
 .ln-bm-wrap{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:1.4rem;align-items:start;}
 .ln-bm{display:grid;gap:4px;background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:16px;padding:1rem;overflow-x:auto;}
