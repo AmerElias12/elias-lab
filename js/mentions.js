@@ -83,7 +83,16 @@
     if (kind === 'gene') return [item.species, item.accession || item.locus].filter(Boolean).join(' · ');
     if (kind === 'primer') return [item.sequence ? String(item.sequence).slice(0, 24) : '', item.application].filter(Boolean).join(' · ');
     if (kind === 'enzyme') return [item.cutsite, item.supplier].filter(Boolean).join(' · ');
-    if (kind === 'kit') return [item.supplier, item.catalog].filter(Boolean).join(' · ');
+    // What is left matters more here than the catalogue number: an @ to a
+    // reagent mid-experiment is usually somebody about to go and get it.
+    if (kind === 'kit') {
+      var left = typeof aliquotCount === 'function' ? aliquotCount(item) : null;
+      var each = typeof aliquotSize === 'function' ? aliquotSize(item) : '';
+      var stock = left === null ? ''
+        : left === 0 ? 'no aliquots left'
+        : left + ' aliquot' + (left === 1 ? '' : 's') + (each ? ' × ' + each : '') + ' left';
+      return [item.supplier, item.catalog, stock].filter(Boolean).join(' · ');
+    }
     if (kind === 'stock') return [item.description, item.hostStrain].filter(Boolean).join(' · ');
     // Passages are typed either "P12" or "12"; don't print "pP12".
     if (kind === 'cell') return [item.source, item.passage ? String(item.passage).replace(/^p?/i, 'p') : ''].filter(Boolean).join(' · ');

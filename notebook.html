@@ -196,7 +196,7 @@
         </div>
 
         <div id="ln-inv-kits" class="ln-section">
-          <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
+          <div class="ln-section-header"><div><h2>Kits &amp; Reagents</h2><p>Catalogue numbers, aliquots left, quantity remaining and expiry dates</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('kits')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Kit or Reagent</button></div></div>
           <input class="ln-search" id="ln-invsearch-kits" placeholder="🔍 Search kits and reagents..." oninput="renderInventory('kits')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-kits"></div>
         </div>
@@ -240,6 +240,6 @@
   <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=23"></script>
-  <script src="js/notebook.js?v=36"></script>
+  <script src="js/notebook.js?v=37"></script>
 </body>
 </html>

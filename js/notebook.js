@@ -1516,8 +1516,37 @@ var INV_CONFIG = {
   genes: { cols: ['Gene', 'Species', 'Accession', 'Locus', 'Size (bp)', 'Source', 'Owner', 'Notes', 'Added by'], fields: ['name', 'species', 'accession', 'locus', 'len', 'source', 'owner', 'notes', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Cells / Vial', 'Source', 'Growth Media', 'Banking Media', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] },
-  kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'expiry', 'storage', 'addedBy'] }
+  kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Aliquots', 'Volume each', 'Unit', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'aliquots', 'aliquotVol', 'aliquotUnit', 'expiry', 'storage', 'addedBy'] }
 };
+/* Reagents mostly arrive as one tube and are split the same day — twelve
+   500 µL aliquots, so the stock is thawed once instead of twelve times.
+   What people ask at the bench is "how many are left", so the count is a
+   number the table can mark when it runs low rather than a phrase buried
+   in "Qty Left".
+
+   The unit is a list, not a text box, on purpose: µl, uL and ul are one
+   volume and should not search, sort or read as three. */
+var ALIQUOT_UNITS = ['µL', 'mL', 'L', 'µg', 'mg', 'g', 'U', 'preps', 'rxns', 'vials'];
+
+function aliquotCount(item) {
+  var n = parseInt(item && item.aliquots, 10);
+  return (isNaN(n) || n < 0) ? null : n;
+}
+// "500 µL", or nothing when no volume was recorded.
+function aliquotSize(item) {
+  if (!item || !item.aliquotVol) return '';
+  return String(item.aliquotVol) + (item.aliquotUnit ? ' ' + item.aliquotUnit : '');
+}
+/* What to say about a count — and mostly, nothing. The cell already shows
+   the number, so a badge repeating it is noise; only the two states that
+   should stop someone starting an experiment get one. */
+function aliquotState(item) {
+  var n = aliquotCount(item);
+  if (n === null) return null;
+  if (n === 0) return { cls: 'expired', note: 'none left' };
+  if (n === 1) return { cls: 'expired', note: 'last one' };
+  return null;
+}
 // E. coli strains the lab keeps glycerol stocks in; offered as suggestions, others can be typed.
 var STOCK_STRAINS = ['DH5α', 'NEB Stable', 'Stbl3'];
 var RESISTANCES = ['AmpR', 'KanR', 'CmR', 'SpecR', 'TetR', 'ZeoR'];
@@ -1842,6 +1871,21 @@ function renderInventory(tab) {
       if (soon) parts.push('<strong>' + soon + '</strong> expiring within 30 days');
       banner = '<div class="ln-inv-alert ' + (expired ? 'expired' : 'soon') + '">\u26a0 ' + parts.join(' \u00b7 ') + '</div>';
     }
+    /* What has run out of aliquots, said at the top. Counted across the
+       whole category rather than the filtered view, so a search does not
+       make the lab look better stocked than it is. */
+    var out = 0, last = 0;
+    all.forEach(function (item) {
+      var n = aliquotCount(item);
+      if (n === 0) out++; else if (n === 1) last++;
+    });
+    if (out || last) {
+      var aq = [];
+      if (out) aq.push('<strong>' + out + '</strong> out of aliquots');
+      if (last) aq.push('<strong>' + last + '</strong> down to the last one');
+      banner += '<div class="ln-inv-alert ' + (out ? 'expired' : 'soon') + '">\u26a0 ' + aq.join(' \u00b7 ') +
+        ' \u2014 worth an order request before somebody needs it.</div>';
+    }
   }
 
   // What is still waiting on somebody, said at the top so the PI can see the
@@ -1906,6 +1950,11 @@ function renderInventory(tab) {
           var st = expiryState(item[f]);
           if (st) val = '<span class="ln-exp ' + st.cls + '">' + val + ' \u00b7 ' + st.note + '</span>';
         }
+        // The count is marked where it is read, not only in the banner.
+        if (f === 'aliquots' && currentInvTab === 'kits') {
+          var aq = aliquotState(item);
+          if (aq) val = '<span class="ln-exp ' + aq.cls + '">' + val + ' \u00b7 ' + aq.note + '</span>';
+        }
         // A request's status is the thing you change most, so it is a control
         // in the row rather than a trip through the edit form.
         if (f === 'status' && currentInvTab === 'requests') {
@@ -1939,6 +1988,11 @@ function renderInventory(tab) {
         // typing the other eight fields out four times is how they end up
         // disagreeing with each other.
         (currentInvTab === 'cells' ? '<button class="ln-icon-btn" title="Copy this vial to another position" onclick="copyInvItem(\'' + item.id + '\')">\u29c9</button>' : '') +
+        // Taking an aliquot is the commonest thing that happens to a reagent.
+        // Behind the edit form it would not get done, and a count nobody
+        // decrements is worse than no count at all.
+        (currentInvTab === 'kits' && aliquotCount(item) ? '<button class="ln-icon-btn" title="Took one aliquot \u2014 ' +
+          (aliquotCount(item) - 1) + ' left after this" onclick="takeAliquot(\'' + item.id + '\')">\u22121</button>' : '') +
         '<button class="ln-icon-btn" title="Edit" onclick="openInventoryModal(\'' + item.id + '\')">\u270e</button>' +
         '<button class="ln-icon-btn danger" title="Remove" onclick="deleteInvItem(\'' + currentInvTab + '\',\'' + item.id + '\')">\u2715</button>' +
       '</td></tr>';
@@ -1969,6 +2023,25 @@ function csvCell(v) {
   if (/^[=+\-@]/.test(v)) v = "'" + v;
   return '"' + v.replace(/"/g, '""') + '"';
 }
+/* One aliquot taken off the shelf.
+
+   No confirmation: it is one click to undo by editing, and a dialog in
+   front of something people do several times a day is how they stop doing
+   it. Two people taking the last two at the same moment will each write
+   their own number and one will win — the fix for that is a word at the
+   bench, not a lock in a notebook. */
+async function takeAliquot(id) {
+  var item = (getInventory().kits || []).filter(function (x) { return x.id === id; })[0];
+  var n = aliquotCount(item);
+  if (!item || !n) return;
+  try {
+    await DB.upsertInventory('kits', Object.assign({}, item, { aliquots: String(n - 1) }));
+  } catch (e) {
+    alert('Could not update the aliquot count: ' + e.message);
+  }
+  renderInventory('kits');
+}
+
 /* Moving a request along. Anybody can do it: the person who asked knows when
    it arrived, and the PI knows when it was ordered. */
 async function setRequestStatus(id, status) {
@@ -2325,11 +2398,16 @@ var BULK_EXAMPLES = {
   plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', freezer: 'Freezer A', box: 'Plasmid Box 1', position: 'A3 (or 1-81)', location: 'Any other location detail' },
   stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
-  kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps', expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
+  kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps',
+    aliquots: '12 (whole number, blank if not aliquoted)', aliquotVol: '500 (number only)',
+    aliquotUnit: ALIQUOT_UNITS.join(' / '), expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
 };
 // Other header spellings people are likely to type, keyed by field.
 var BULK_ALIASES = {
   qty: ['quantity', 'quantityremaining'], expiry: ['expirydate', 'expires'],
+  aliquots: ['numberofaliquots', 'noofaliquots', 'aliquotcount', 'aliquotsleft', 'tubes'],
+  aliquotVol: ['volumeeach', 'volumeperaliquot', 'amountperaliquot', 'aliquotvolume', 'volumeperaliquot'],
+  aliquotUnit: ['unit', 'units', 'amountunit', 'volumeunit', 'aliquotunit'],
   cutsite: ['recognitionsite', 'recognitioncutsite'], conc: ['concentration'],
   resistance: ['antibioticresistance'], location: ['boxlocation', 'storagelocation'], passage: ['passagenumber'],
   tank: ['ln2tank', 'liquidnitrogentank'], storage: ['storagelocation'],
@@ -2767,7 +2845,24 @@ function openInventoryModal(id, prefill) {
       '<div class="ln-form-row"><label>Notes</label><textarea id="m-notes" rows="2"></textarea></div>' +
       '<datalist id="ln-strain-list">' + STOCK_STRAINS.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>' +
       '<datalist id="ln-resistance-list">' + RESISTANCES.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('') + '</datalist>',
-    kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div><div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
+    kits: '<div class="ln-form-row"><label>Kit Name</label><input id="m-name" placeholder="e.g. QIAprep Spin Miniprep Kit"></div>' +
+      '<div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. QIAGEN"></div>' +
+      '<div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div>' +
+      '<div class="ln-form-row"><label>Quantity Remaining</label><input id="m-qty" placeholder="e.g. 250 preps"></div>' +
+      '<div class="ln-form-section">Aliquots</div>' +
+      '<div class="hint">For anything split into single-use tubes: how many there are, and how much is in each. ' +
+        'Leave blank if it is kept as one tube — the table only counts what you fill in here.</div>' +
+      // The volume and its unit sit together: they are one answer, and a
+      // two-column grid would otherwise strand the unit on a row of its own.
+      '<div class="ln-form-row"><label>Number of aliquots</label><input id="m-aliquots" type="number" min="0" step="1" placeholder="e.g. 12"></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Volume each</label><input id="m-aliquotVol" type="number" min="0" step="any" placeholder="e.g. 500"></div>' +
+        '<div class="ln-form-row"><label>Unit</label><select id="m-aliquotUnit">' +
+          ALIQUOT_UNITS.map(function (u) { return '<option value="' + esc(u) + '">' + esc(u) + '</option>'; }).join('') +
+        '</select></div>' +
+      '</div>' +
+      '<div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div>' +
+      '<div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
   };
   /* A category with no form here cannot be filled in, and the modal would
      open empty or not at all. That happened once: the glycerol stock form
@@ -2846,7 +2941,25 @@ async function saveInvItem() {
       return;
     }
   }
-  else if (tab === 'kits') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), qty: g('m-qty'), expiry: g('m-expiry'), storage: g('m-storage') });
+  else if (tab === 'kits') {
+    Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'),
+      qty: g('m-qty'), aliquots: g('m-aliquots'), aliquotVol: g('m-aliquotVol'),
+      aliquotUnit: g('m-aliquotUnit'), expiry: g('m-expiry'), storage: g('m-storage') });
+    // The number input stops most of this, but a bulk upload or an older
+    // browser can still get a word in here, and half an aliquot is not a
+    // thing you can take off a shelf.
+    if (item.aliquots && !/^\d+$/.test(item.aliquots)) {
+      alert('The number of aliquots should be a whole number — 12, not "12 tubes" or "a dozen".\n\n' +
+        'Put anything else in Quantity Remaining.');
+      return;
+    }
+    if (item.aliquotVol && !(parseFloat(item.aliquotVol) >= 0)) {
+      alert('The volume in each aliquot should be a number — 500, with the unit chosen beside it.');
+      return;
+    }
+    // A unit with nothing to measure is noise in the table and the export.
+    if (!item.aliquots && !item.aliquotVol) item.aliquotUnit = '';
+  }
   else if (tab === 'requests') {
     Object.assign(item, { name: g('m-name'), purpose: g('m-purpose'), supplier: g('m-supplier'),
       catalog: g('m-catalog'), qty: g('m-qty'), cost: g('m-cost'), urgency: g('m-urgency'),
