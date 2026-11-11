@@ -1507,7 +1507,7 @@ var INV_LABELS = {
   kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
 };
 var INV_CONFIG = {
-  enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'addedBy'] },
+  enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Box', 'Position', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'box', 'position', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
   plasmids: { cols: ['Name', 'Backbone', 'Insert', 'Resistance', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Location', 'Added by'], fields: ['name', 'backbone', 'insert', 'resistance', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'location', 'addedBy'] },
   requests: { cols: ['Status', 'Item', 'What for', 'Supplier', 'Catalog #', 'Qty', 'Est. cost', 'Urgency', 'Requested by', 'Needed by', 'Notes'], fields: ['status', 'name', 'purpose', 'supplier', 'catalog', 'qty', 'cost', 'urgency', 'addedBy', 'needBy', 'notes'] },
@@ -1516,7 +1516,7 @@ var INV_CONFIG = {
   genes: { cols: ['Gene', 'Species', 'Accession', 'Locus', 'Size (bp)', 'Source', 'Owner', 'Notes', 'Added by'], fields: ['name', 'species', 'accession', 'locus', 'len', 'source', 'owner', 'notes', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Cells / Vial', 'Source', 'Growth Media', 'Banking Media', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] },
-  kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Aliquots', 'Volume each', 'Unit', 'Expiry', 'Storage', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'aliquots', 'aliquotVol', 'aliquotUnit', 'expiry', 'storage', 'addedBy'] }
+  kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Aliquots', 'Volume each', 'Unit', 'Expiry', 'Storage', 'Box', 'Position', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'aliquots', 'aliquotVol', 'aliquotUnit', 'expiry', 'storage', 'box', 'position', 'addedBy'] }
 };
 /* Reagents mostly arrive as one tube and are split the same day — twelve
    500 µL aliquots, so the stock is thawed once instead of twelve times.
@@ -1676,7 +1676,12 @@ function invSortKeys(cat, cfg) { return INV_SORT[cat] || [cfg.fields[0]]; }
 var INV_SLOT = {
   cells: ['tank', 'rack', 'box', 'position'],
   stocks: ['freezer', 'shelf', 'box', 'position'],
-  plasmids: ['freezer', 'box', 'position']
+  plasmids: ['freezer', 'box', 'position'],
+  // Enzymes and reagents record the shelf as free text under Storage, which
+  // is the same thing a freezer name is here: what separates two boxes that
+  // share a name.
+  enzymes: ['storage', 'box', 'position'],
+  kits: ['storage', 'box', 'position']
 };
 /* The values already in use for a field, to offer while somebody types.
 
@@ -1812,6 +1817,19 @@ function slotTakenBy(cat, item) {
   return (getInventory()[cat] || []).filter(function (x) {
     return x.id !== item.id && sameSlot(cat, item, x);
   })[0] || null;
+}
+
+/* One tube per square. The box map paints two records sharing a position in
+   red, which is the right thing to do about one that already exists — but it
+   should not be possible to make a new one, and refusing at the save is the
+   only moment anybody is looking. Returns false having said what is there. */
+function boxPositionOk(cat, item) {
+  var there = slotIsNew(cat, item) && slotTakenBy(cat, item);
+  if (!there) return true;
+  alert('Position ' + item.position + ' in box ' + (item.box || '—') +
+    ' already holds ' + (there.name || 'something else') + '.' +
+    '\n\nUse a free position, or edit that one if this is the same tube.');
+  return false;
 }
 
 /* A copy, not a sort in place: `items` is the app's own array, and drawing a
@@ -2076,8 +2094,16 @@ async function deleteInvItem(tab, id) {
    never set up still shows, assumed 9x9.
    Set-ups saved before boxes had a type have no `cat`; they apply to every
    type using that name until edited, when they are saved with the type. */
-var BOX_CATS = ['plasmids', 'stocks', 'cells'];
-var BOX_TYPE_NAMES = { plasmids: 'Plasmid boxes', stocks: 'Glycerol stock boxes', cells: 'Tissue culture boxes' };
+var BOX_CATS = ['plasmids', 'stocks', 'cells', 'enzymes', 'kits'];
+var BOX_TYPE_NAMES = {
+  plasmids: 'Plasmid boxes', stocks: 'Glycerol stock boxes', cells: 'Tissue culture boxes',
+  enzymes: 'Restriction enzyme boxes', kits: 'Kit and reagent boxes'
+};
+/* Where the box itself is, in each type's own words: the one field above the
+   box that says which freezer, tank or shelf to walk to. A box takes it from
+   its vials when its own is blank, and lends it back when a vial is added
+   from the map. */
+var BOX_WHERE = { plasmids: 'freezer', stocks: 'freezer', cells: 'tank', enzymes: 'storage', kits: 'storage' };
 var BOX_LAYOUTS = { '9x9': { rows: 9, cols: 9 }, '10x10': { rows: 10, cols: 10 }, '5x5': { rows: 5, cols: 5 } };
 var BOX_DEFAULT_LAYOUT = '9x9';
 var boxView = null;      // key of the open box, or null for the list of boxes
@@ -2098,6 +2124,12 @@ function boxCatOne(cat) { return (INV_LABELS[cat] && INV_LABELS[cat].one) || Str
 function boxCatMany(cat) { return (INV_LABELS[cat] && INV_LABELS[cat].many) || String(cat); }
 // A box has to be nameable to be opened, renamed or deleted.
 function boxLabel(b) { return b.name || 'Box with no name'; }
+// What can be placed in a box, in a sentence, so adding a type updates every
+// page that explains the rule rather than leaving one behind saying three.
+function boxTypeList() {
+  var names = BOX_CATS.map(boxCatMany);
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
 function boxGroupName(cat) {
   if (!cat) return 'Type not set';
   return BOX_TYPE_NAMES[cat] || (boxCatOne(cat) + ' boxes — not a box type');
@@ -2167,7 +2199,7 @@ function boxIndex() {
     });
     b.placed = Object.keys(b.cells).length;
     // Where it is: the box's own freezer, else what its vials say.
-    b.where = (b.def && b.def.freezer) || (b.vials.map(function (v) { return v.item.freezer || v.item.tank || ''; }).filter(Boolean)[0] || '');
+    b.where = (b.def && b.def.freezer) || (b.vials.map(function (v) { return v.item[BOX_WHERE[v.cat]] || ''; }).filter(Boolean)[0] || '');
     return b;
   }).sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); });
 }
@@ -2188,7 +2220,7 @@ function renderBoxes() {
 function boxListHtml(all) {
   var box = document.getElementById('ln-boxsearch');
   var q = box ? box.value : '';
-  return '<div class="ln-section-header"><div><h2>Storage Boxes</h2><p>Freezer and liquid-nitrogen boxes: open one to see where every vial sits</p></div>' +
+  return '<div class="ln-section-header"><div><h2>Storage Boxes</h2><p>Freezer, liquid-nitrogen and bench boxes: open one to see what sits in every position</p></div>' +
     '<div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">\ud83d\udda8 Print</button><button class="ln-add-btn" onclick="openBoxModal()">+ New Box</button></div></div>' +
     '<input class="ln-search" id="ln-boxsearch" placeholder="🔍 Search boxes or freezers..." value="' + esc(q) + '" oninput="document.getElementById(\'ln-box-listbody\').innerHTML = boxListBody(boxIndex(), this.value)" style="margin-bottom:1.5rem;">' +
     '<div id="ln-box-listbody">' + boxListBody(all, q) + '</div>';
@@ -2196,7 +2228,8 @@ function boxListHtml(all) {
 function boxListBody(all, q) {
   q = String(q || '').trim().toLowerCase();
   var shown = !q ? all : all.filter(function (b) { return (b.name + ' ' + b.where).toLowerCase().indexOf(q) >= 0; });
-  if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give a plasmid, glycerol stock or cell line a Box name and it appears here.</div>' + boxUnshownNote();
+  if (!all.length) return '<div class="ln-empty">No boxes yet. Click "+ New Box", or give any of ' + esc(boxTypeList()) +
+    ' a Box name and it appears here.</div>' + boxUnshownNote();
   if (!shown.length) return '<div class="ln-empty">No box matches “' + esc(q) + '”.</div>';
   // One group per type, so same-named boxes of different types sit apart.
   var placed = {}, out = '';
@@ -2249,8 +2282,14 @@ function boxDetailHtml(b) {
       '<button class="ln-add-btn ghost" data-key="' + esc(b.key) + '" onclick="exportBoxCSV(this.dataset.key)">\u2193 CSV</button>' +
       '<button class="ln-add-btn ' + (b.def ? 'ghost' : '') + '" data-key="' + esc(b.key) + '" onclick="openBoxModal(this.dataset.key)">' + (b.def ? 'Edit box' : 'Set up this box') + '</button></div></div>' +
     (b.def && b.def.notes ? '<div class="ln-box-notes">' + esc(b.def.notes) + '</div>' : '') +
+    /* One physical box can hold enzymes and master mixes at once, and each
+       type is a map of its own: a tube is only ever drawn in the box of its
+       own type, so looking for it in the other one finds an empty square.
+       Say where the rest of the name's contents are rather than leaving
+       somebody to conclude the record was lost. */
+    boxSiblingsHtml(b) +
     (odd ? '<div class="ln-inv-alert expired">This box is set to hold ' + esc(boxCatMany(b.cat)) +
-      ', which are not kept in boxes: only plasmids, glycerol stocks and cell lines have a Box and a Position to be placed by. ' +
+      ', which are not kept in boxes: only ' + esc(boxTypeList()) + ' have a Box and a Position to be placed by. ' +
       'Nothing can go in it until you change the type under “Edit box” — or delete it if the box is gone.</div>' : '');
   rowsHtml += '<div class="ln-bm-corner"></div>';
   for (var c = 0; c < d.cols; c++) rowsHtml += '<div class="ln-bm-colh">' + (c + 1) + '</div>';
@@ -2274,6 +2313,20 @@ function boxDetailHtml(b) {
     }).join('') + '</div>' : '';
   return head + '<div class="ln-bm-wrap"><div class="ln-bm" style="grid-template-columns:22px repeat(' + d.cols + ',minmax(26px,1fr));">' + rowsHtml + '</div>' +
     '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced + boxContentsHtml(b);
+}
+
+/* The other boxes of this name, each a type of its own. */
+function boxSiblingsHtml(b) {
+  if (!b.name) return '';
+  var others = boxIndex().filter(function (x) {
+    return x.key !== b.key && bulkKey(x.name) === bulkKey(b.name) && x.vials.length;
+  });
+  if (!others.length) return '';
+  return '<div class="ln-box-notes">A box of this name also holds ' +
+    others.map(function (x) {
+      return '<a href="#" class="ln-box-link" data-key="' + esc(x.key) + '" onclick="openBox(this.dataset.key);return false;">' +
+        x.vials.length + ' ' + esc(x.vials.length === 1 ? boxCatOne(x.cat).toLowerCase() : boxCatMany(x.cat)) + ' ▦</a>';
+    }).join(', ') + '. Each type has a map of its own, so a tube is only drawn in the box for what it is.</div>';
 }
 
 /* What is in a box, position by position: shown under the map, printed with
@@ -2372,7 +2425,7 @@ function addVialAt(cat, key, pos) {
   if (!b) return;
   currentInvTab = cat;
   var prefill = { box: b.name, position: pos };
-  if (b.where) prefill[cat === 'cells' ? 'tank' : 'freezer'] = b.where;
+  if (b.where) prefill[BOX_WHERE[cat] || 'freezer'] = b.where;
   openInventoryModal(null, prefill);
 }
 
@@ -2396,7 +2449,7 @@ function openBoxModal(key) {
       cats.map(function (c) { return '<option value="' + c + '"' + (c === cat ? ' selected' : '') + '>' + esc(boxCatMany(c).replace(/^./, function (x) { return x.toUpperCase(); })) + (boxCanHold(c) ? '' : ' — not a box type') + '</option>'; }).join('') +
     '</select></div></div>' +
     '<div class="hint" style="margin:-.4rem 0 .9rem;font-size:12px;color:#7a877f;">' + (typeLocked ? 'The type is set by the vials already in this box. ' : '') +
-      (boxCanHold(cat) ? '' : 'Only plasmids, glycerol stocks and cell lines have a Box and a Position, so this box cannot hold anything as it stands: pick one of those to use it, or delete it below. ') +
+      (boxCanHold(cat) ? '' : 'Only ' + esc(boxTypeList()) + ' have a Box and a Position, so this box cannot hold anything as it stands: pick one of those to use it, or delete it below. ') +
       'Vials of this type are placed here when their Box field matches the name. Boxes of different types can share a name.</div>' +
     '<div class="ln-form-grid"><div class="ln-form-row"><label>Layout</label><select id="m-boxlayout">' +
       Object.keys(BOX_LAYOUTS).map(function (k) { var d = BOX_LAYOUTS[k]; return '<option value="' + k + '"' + (k === layout ? ' selected' : '') + '>' + d.rows + ' × ' + d.cols + ' (' + d.rows * d.cols + ' positions)</option>'; }).join('') +
@@ -2460,13 +2513,15 @@ var BULK_DATE_FIELDS = { expiry: true };
 // A column whose value must not repeat within a category: rows reusing one are skipped.
 var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
-  enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials', storage: '-20°C Box 2A' },
+  enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials',
+    storage: '-20°C Freezer A', box: 'Enzymes Box 1', position: 'A3 (or 1-81)' },
   plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', freezer: 'Freezer A', box: 'Plasmid Box 1', position: 'A3 (or 1-81)', location: 'Any other location detail' },
   stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps',
     aliquots: '12 (whole number, blank if not aliquoted)', aliquotVol: '500 (number only)',
-    aliquotUnit: ALIQUOT_UNITS.join(' / '), expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B' }
+    aliquotUnit: ALIQUOT_UNITS.join(' / '), expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B',
+    box: 'Reagents Box 1 (blank if it is not in a box)', position: 'A3 (or 1-81)' }
 };
 // Other header spellings people are likely to type, keyed by field.
 var BULK_ALIASES = {
@@ -2859,7 +2914,16 @@ function openInventoryModal(id, prefill) {
   var bg = document.getElementById('ln-modal-bg'), mc = document.getElementById('ln-modal-content');
   var user = currentUser(), today = new Date().toISOString().split('T')[0];
   var forms = {
-    enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div><div class="ln-form-row"><label>Storage Location</label><input id="m-storage" placeholder="e.g. -20°C Box 2A"></div>',
+    enzymes: '<div class="ln-form-row"><label>Enzyme Name</label><input id="m-name" placeholder="e.g. EcoRI"></div><div class="ln-form-row"><label>Supplier</label><input id="m-supplier" placeholder="e.g. NEB"></div><div class="ln-form-row"><label>Catalog #</label><input id="m-catalog"></div><div class="ln-form-row"><label>Recognition / Cut Site</label><input id="m-cutsite" placeholder="e.g. G↓AATTC"></div><div class="ln-form-row"><label>Concentration</label><input id="m-conc" placeholder="e.g. 20,000 U/mL"></div><div class="ln-form-row"><label>Quantity</label><input id="m-qty" placeholder="e.g. 3 vials"></div>' +
+      /* Storage is the shelf — which freezer, which drawer. Box and Position
+         are the box map: fill both in and the tube has a square of its own,
+         leave them and the enzyme is still recorded, just not drawn. */
+      '<div class="ln-form-section">Location</div>' +
+      '<div class="ln-form-row"><label>Storage Location</label><input id="m-storage" list="ln-storage-list" placeholder="e.g. -20°C Freezer A"></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Enzymes Box 1"></div>' +
+        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3 (or 1-81)"></div>' +
+      '</div>',
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
     cells: '<div class="ln-note-tip">Before banking: look up the <strong>cells per vial</strong> and the <strong>banking medium</strong> recommended for this line — both differ by cell line, and a vial frozen at the wrong density or in the wrong medium usually does not come back.</div>' +
       '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div>' +
@@ -2928,7 +2992,12 @@ function openInventoryModal(id, prefill) {
         '</select></div>' +
       '</div>' +
       '<div class="ln-form-row"><label>Expiry Date</label><input type="date" id="m-expiry"></div>' +
-      '<div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. Room temp, Kit Shelf B"></div>'
+      '<div class="ln-form-section">Location</div>' +
+      '<div class="ln-form-row"><label>Storage</label><input id="m-storage" list="ln-storage-list" placeholder="e.g. Room temp, Kit Shelf B"></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Reagents Box 1"></div>' +
+        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3 (or 1-81)"></div>' +
+      '</div>'
   };
   /* A category with no form here cannot be filled in, and the modal would
      open empty or not at all. That happened once: the glycerol stock form
@@ -2952,6 +3021,11 @@ function openInventoryModal(id, prefill) {
     (currentInvTab === 'stocks'
       ? invDatalist('ln-freezer-list', 'stocks', 'freezer') + invDatalist('ln-shelf-list', 'stocks', 'shelf')
       : '') +
+    // Same reason: "-20°C Freezer A" and "-20 freezer A" are one shelf, and
+    // a box map that believes them to be two is wrong about the lab.
+    (currentInvTab === 'enzymes' || currentInvTab === 'kits'
+      ? invDatalist('ln-storage-list', currentInvTab, 'storage')
+      : '') +
     '<div style="margin-top:.75rem;font-size:12px;color:#888;">' + (editing ? 'Originally added by' : 'Added by') + ': <strong>' + esc(credit) + '</strong></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveInvItem()">' + (editing ? 'Save changes' : 'Add to Inventory') + '</button></div>';
   // Pre-fill from the item being edited; fields without an input are skipped.
@@ -2974,7 +3048,12 @@ async function saveInvItem() {
   var user = currentUser(), addedBy = user ? user.name : 'Unknown', today = new Date().toISOString().split('T')[0], tab = currentInvTab;
   // Editing keeps the item's id and who originally added it.
   var item = editingInvItem ? Object.assign({}, editingInvItem) : { id: uid(), addedBy: addedBy };
-  if (tab === 'enzymes') Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'), cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'), storage: g('m-storage') });
+  if (tab === 'enzymes') {
+    Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'),
+      cutsite: g('m-cutsite'), conc: g('m-conc'), qty: g('m-qty'),
+      storage: g('m-storage'), box: g('m-box'), position: g('m-position') });
+    if (!boxPositionOk(tab, item)) return;
+  }
   else if (tab === 'primers') Object.assign(item, { name: g('m-name'), sequence: g('m-sequence'), tm: g('m-tm'), application: g('m-application'), storage: g('m-storage') });
   else if (tab === 'stocks') {
     INV_CONFIG.stocks.fields.forEach(function (f) { item[f] = g('m-' + f); });
@@ -3010,7 +3089,9 @@ async function saveInvItem() {
   else if (tab === 'kits') {
     Object.assign(item, { name: g('m-name'), supplier: g('m-supplier'), catalog: g('m-catalog'),
       qty: g('m-qty'), aliquots: g('m-aliquots'), aliquotVol: g('m-aliquotVol'),
-      aliquotUnit: g('m-aliquotUnit'), expiry: g('m-expiry'), storage: g('m-storage') });
+      aliquotUnit: g('m-aliquotUnit'), expiry: g('m-expiry'), storage: g('m-storage'),
+      box: g('m-box'), position: g('m-position') });
+    if (!boxPositionOk(tab, item)) return;
     // The number input stops most of this, but a bulk upload or an older
     // browser can still get a word in here, and half an aliquot is not a
     // thing you can take off a shelf.
