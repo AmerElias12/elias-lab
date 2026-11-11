@@ -2396,7 +2396,7 @@ function boxDetailHtml(b) {
         ' <span>' + (v.item.position ? 'position “' + esc(v.item.position) + '” does not fit' : 'no position') + '</span></button>';
     }).join('') + '</div>' : '';
   return head + '<div class="ln-bm-wrap"><div class="ln-bm" style="grid-template-columns:22px repeat(' + d.cols + ',minmax(26px,1fr));">' + rowsHtml + '</div>' +
-    '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced + boxContentsHtml(b);
+    '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced + boxMismatchHtml(b) + boxContentsHtml(b);
 }
 
 /* What to print in a Position cell: the square, or — for a record that takes
@@ -2405,6 +2405,48 @@ function boxDetailHtml(b) {
 function boxPositionLabel(item, cells) {
   if (cells.length === 1) return cellName(cells[0]);
   return String(item.position).trim() + ' (' + cells.length + ' positions)';
+}
+
+/* An aliquot count and a run of squares are two statements about the same
+   tubes, made at different moments, and they drift apart in two different
+   ways — so they are not one warning.
+
+   Taking an aliquot drops the count and leaves the squares behind, which is
+   the ordinary state of a box in use. That is not a mistake to correct; it
+   is space nobody knows is free, and saying so is the useful part. More
+   aliquots than squares is the other way round: tubes the map does not
+   account for, which are either somewhere else or were never written down.
+
+   Neither refuses a save. A count that argues with the map is still the
+   best information anybody has, and the fix belongs to whoever next opens
+   the box with it in their hand. */
+function aliquotPlaces(v, dims) {
+  if (!v || v.cat !== 'kits') return null;
+  var n = aliquotCount(v.item);
+  if (n === null) return null;
+  var cells = parsePositions(v.item.position, dims).length;
+  if (!cells || n === cells) return null;
+  return { n: n, cells: cells, spare: cells - n };
+}
+function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+function aliquotPlacesNote(m) {
+  if (!m.n) return 'none left, but still given ' + plural(m.cells, 'square');
+  if (m.spare > 0) return plural(m.n, 'aliquot') + ' left across ' + plural(m.cells, 'square') +
+    ' — up to ' + plural(m.spare, 'square') + ' may be free';
+  return plural(m.n, 'aliquot') + ' but ' + plural(m.cells, 'square') + ' here — ' +
+    (m.n - m.cells) + ' must be somewhere else';
+}
+function boxMismatchHtml(b) {
+  var out = b.vials.map(function (v) {
+    var m = aliquotPlaces(v, b.dims);
+    return m ? '<button type="button" class="ln-bm-uitem ' + v.cat + '" onclick="editVial(\'' + v.cat + '\',\'' + v.item.id + '\')">' +
+      esc(vialLabel(v.cat, v.item)) + ' <span>' + esc(aliquotPlacesNote(m)) + '</span></button>' : '';
+  }).filter(Boolean);
+  if (!out.length) return '';
+  return '<div class="ln-bm-mismatch"><strong>' + (out.length === 1
+    ? 'One reagent’s aliquot count does not match the squares it holds'
+    : out.length + ' reagents’ aliquot counts do not match the squares they hold') +
+    '</strong>' + out.join('') + '</div>';
 }
 
 /* The other boxes of this name, each a type of its own. */
@@ -2496,6 +2538,10 @@ function boxCellPanel(b) {
       var spread = parsePositions(v.item.position, b.dims);
       var also = spread.length > 1
         ? '<div><span>All positions</span>' + esc(String(v.item.position).trim()) + ' (' + spread.length + ')</div>' : '';
+      // Said here as well as under the map: this is where somebody who has
+      // just looked in the square is reading.
+      var m = aliquotPlaces(v, b.dims);
+      if (m) also += '<div class="warn"><span>Count</span>' + esc(aliquotPlacesNote(m)) + '</div>';
       var rows = also + cfg.fields.map(function (f, i) {
         var val = v.item[f];
         if (!val || f === 'box' || f === 'position' || val === vialLabel(v.cat, v.item)) return '';

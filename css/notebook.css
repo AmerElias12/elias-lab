@@ -313,7 +313,11 @@ button.ln-dash-row:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
 .ln-bm-fields div{display:grid;grid-template-columns:110px 1fr;gap:.5rem;padding:.15rem 0;color:#16241f;}
 .ln-bm-fields span{color:#7a877f;font-size:12px;}
 .ln-bm-vial .ln-icon-btn{margin-top:.5rem;}
-.ln-bm-unplaced{margin-top:1.2rem;background:#fdf6ea;border:1px solid rgba(168,106,18,.25);border-radius:12px;padding:.8rem 1rem;font-size:13px;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;}
+.ln-bm-unplaced,.ln-bm-mismatch{margin-top:1.2rem;background:#fdf6ea;border:1px solid rgba(168,106,18,.25);border-radius:12px;padding:.8rem 1rem;font-size:13px;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;}
+/* Quieter than the unplaced block: a count that has drifted is worth
+   knowing, not worth stopping for. */
+.ln-bm-mismatch{background:#f6f4ee;border-color:rgba(22,36,31,.12);}
+.ln-bm-mismatch > strong{width:100%;color:#3a4a42;margin-bottom:.2rem;}
 .ln-bm-unplaced > strong{width:100%;color:#7a4e0d;margin-bottom:.2rem;}
 .ln-bm-unplaced-how{width:100%;color:#7a4e0d;margin:-.2rem 0 .35rem;font-size:12.5px;}
 .ln-bm-unplaced-how strong{font-weight:600;white-space:nowrap;}

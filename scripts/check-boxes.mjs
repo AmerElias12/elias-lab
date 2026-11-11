@@ -49,6 +49,7 @@ const html = read('notebook.html');
 const { boxIndex, boxListBody, boxCardHtml, boxDetailHtml, boxContentCols, boxCanHold,
   boxGroupName, boxGroupCats, boxLabel, boxCellPanel, boxContentRows,
   parsePosition, parsePositions, cellName, slotTakenBy,
+  aliquotPlaces, aliquotPlacesNote, boxMismatchHtml,
   INV_CONFIG, INV_SLOT, BULK_EXAMPLES, bulkColumns, bulkMapHeader,
   BOX_CATS, BOX_TYPE_NAMES, BOX_WHERE } = sandbox;
 
@@ -401,6 +402,85 @@ check('shrinking a box warns about the squares a record would lose', () => {
   const save = src.slice(src.indexOf('async function saveBox'), src.indexOf('async function deleteBox'));
   assert.match(save, /parsePositions\(v\.item\.position, boxDims\(def\)\)\.length < parsePositions/);
   assert.match(save, /will lose them/);
+});
+
+console.log('\nWhen the count and the squares disagree');
+
+const mismatch = (item) => {
+  inventory({ kits: [Object.assign({ id: 'k1', name: 'Buffer', box: 'Reagents Box 1' }, item)] });
+  const b = boxIndex()[0];
+  const m = aliquotPlaces(b.vials[0], b.dims);
+  return m ? aliquotPlacesNote(m) : null;
+};
+
+check('a count that matches the squares says nothing', () => {
+  assert.equal(mismatch({ aliquots: '2', position: 'A2-A3' }), null);
+  assert.equal(mismatch({ aliquots: '9', position: 'B1-B9' }), null);
+});
+
+check('nothing is said when there is nothing to compare', () => {
+  // A reagent nobody aliquoted, and one nobody has placed, are not wrong.
+  assert.equal(mismatch({ position: 'A2-A3' }), null, 'no count is not a disagreement');
+  assert.equal(mismatch({ aliquots: '12' }), null, 'a reagent in no box is not on any map');
+  assert.equal(mismatch({ aliquots: '12', position: 'nowhere useful' }), null);
+});
+
+check('using aliquots reads as space, not as an error', () => {
+  // The −1 button drops the count and leaves the squares behind, so this is
+  // the ordinary state of a box in use: it must not read as a mistake.
+  const note = mismatch({ aliquots: '3', position: 'B1-B9' });
+  assert.match(note, /3 aliquots left across 9 squares/);
+  assert.match(note, /up to 6 squares may be free/);
+  assert.doesNotMatch(note, /wrong|error|mismatch/i);
+});
+
+check('an empty run is called out as squares to reclaim', () => {
+  assert.match(mismatch({ aliquots: '0', position: 'B1-B9' }), /none left, but still given 9 squares/);
+});
+
+check('more aliquots than squares says they are elsewhere', () => {
+  assert.match(mismatch({ aliquots: '12', position: 'B1-B9' }), /12 aliquots but 9 squares here — 3 must be somewhere else/);
+});
+
+check('one tube reads as one, not as 1 squares', () => {
+  assert.match(mismatch({ aliquots: '0', position: 'A1' }), /1 square\b/);
+  assert.match(mismatch({ aliquots: '1', position: 'A1-A3' }), /1 aliquot left/);
+});
+
+check('only reagents are counted this way', () => {
+  // Enzymes record a quantity as free text ("3 vials"), which is not a
+  // number to compare with anything.
+  inventory({ enzymes: [{ id: 'e1', name: 'EcoRI', aliquots: '12', box: 'E1', position: 'A1-A3' }] });
+  const b = boxIndex()[0];
+  assert.equal(aliquotPlaces(b.vials[0], b.dims), null);
+});
+
+check('the box page lists them, and the square says it too', () => {
+  inventory({
+    kits: [
+      { id: 'k1', name: 'jetOPTIMUS Buffer', box: 'Reagents Box 1', aliquots: '0', position: 'A1-A3' },
+      { id: 'k2', name: 'Q5 polymerase', box: 'Reagents Box 1', aliquots: '12', position: 'B1-B4' },
+      { id: 'k3', name: 'Miniprep kit', box: 'Reagents Box 1', aliquots: '1', position: 'C1' }
+    ]
+  });
+  const b = boxIndex()[0];
+  const block = boxMismatchHtml(b);
+  assert.match(block, /2 reagents’ aliquot counts do not match/, 'the agreeing one must not be listed');
+  assert.match(block, /jetOPTIMUS Buffer/);
+  assert.match(block, /Q5 polymerase/);
+  assert.doesNotMatch(block, /Miniprep kit/);
+  assert.match(block, /editVial\('kits','k1'\)/, 'the way to fix it should be one click away');
+  assert.match(boxDetailHtml(b), /ln-bm-mismatch/);
+  sandbox.boxSelected = '0,0';
+  const panel = boxCellPanel(b);
+  sandbox.boxSelected = null;
+  assert.match(panel, /none left, but still given 3 squares/);
+});
+
+check('a box whose counts all agree says nothing at all', () => {
+  inventory({ kits: [{ id: 'k1', name: 'Buffer', box: 'Reagents Box 1', aliquots: '3', position: 'A1-A3' }] });
+  assert.equal(boxMismatchHtml(boxIndex()[0]), '');
+  assert.doesNotMatch(boxDetailHtml(boxIndex()[0]), /ln-bm-mismatch/);
 });
 
 check('the form says a run of positions is allowed', () => {
