@@ -310,6 +310,50 @@ been thrown away. It is the same number of keystrokes.
 
 ---
 
+## Bringing protocols in from somewhere else
+
+**Protocols → ↑ Import from file** adds a folder of protocol PDFs at once
+instead of one at a time. It takes a bundle made on the computer that holds
+the PDFs:
+
+```
+python3 scripts/import_protocols.py --src <folder> --out ~/protocols-import.json
+```
+
+The script prints what it found and what it left out and why, then the dialog
+shows you the same list before anything is saved. A protocol whose title is
+already here is left exactly as it is, so you can run the same bundle twice,
+or re-run it after dropping a few more PDFs in the folder.
+
+**If the PDFs came from somewhere else, read this part.** Documents from
+another lab or a former employer carry things that should not follow them:
+the approvals block naming whoever prepared and signed off each revision, the
+owner's name through the materials tables, and — in at least one real case —
+a working web account typed into a step. The approvals and the credentials
+are cut by their shape and need no setting. The owner's name is given on the
+command line:
+
+```
+python3 scripts/import_protocols.py --src <folder> --out ~/protocols-import.json --scrub "Their Name"
+```
+
+Forgetting that flag does not quietly publish the name: the run stops, says
+which name it found and in how many files, and writes nothing. Afterwards it
+re-reads every finished record and fails the run if any of it survived.
+
+Two things the script deliberately does **not** do. It does not copy a
+supplier's own manual — those become a short record pointing at the supplier,
+because their current version is the one you should be following; attach the
+PDF yourself with **Edit → Upload Files** if you want the copy you have.
+And it does not carry figures across, so a protocol that leans on a gel
+photograph or a plate diagram says so in the run's report and still needs the
+original PDF beside it.
+
+The bundle holds lab protocol text, and this repository is public, so the
+script refuses to write one inside it.
+
+---
+
 ## Getting help
 
 - **The data is shared.** Everything you add is visible to the lab immediately,

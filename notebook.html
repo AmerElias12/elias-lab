@@ -106,7 +106,7 @@
         </div>
         <!-- PROTOCOLS -->
         <div id="ln-protocols" class="ln-section">
-          <div class="ln-section-header"><div><h2>Protocols</h2><p>SOPs and experimental methods</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn" onclick="openModal('protocol')">+ Add Protocol</button></div></div>
+          <div class="ln-section-header"><div><h2>Protocols</h2><p>SOPs and experimental methods</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openProtocolImportModal()">↑ Import from file</button><button class="ln-add-btn" onclick="openModal('protocol')">+ Add Protocol</button></div></div>
           <input class="ln-search" placeholder="🔍 Search protocols..." oninput="renderProtocols(this.value)" style="margin-bottom:1.5rem;">
           <div id="ln-protocols-list"></div>
         </div>
@@ -240,6 +240,6 @@
   <script src="js/plasmid-ui.js?v=29"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=23"></script>
-  <script src="js/notebook.js?v=41"></script>
+  <script src="js/notebook.js?v=42"></script>
 </body>
 </html>

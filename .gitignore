@@ -62,3 +62,9 @@ venv/
 
 # Node (docs/checks)
 node_modules/
+
+# Protocol bundles made by scripts/import_protocols.py hold lab protocol
+# text. This repo is public, and the script refuses to write one in here
+# without --force; this is the second net.
+protocols-import*.json
+*-protocols-import.json

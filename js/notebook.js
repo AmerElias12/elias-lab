@@ -405,6 +405,155 @@ function exportProtocolWord(id) {
   var a = document.createElement('a'); a.href = url; a.download = p.title.replace(/[^a-z0-9]/gi, '_') + '.doc'; a.click(); URL.revokeObjectURL(url);
 }
 
+/* ---- importing a folder of protocols at once ----
+
+   Typing twenty protocols in by hand is how a lab ends up with none of them
+   written down. scripts/import_protocols.py reads a folder of protocol PDFs
+   and writes one .json bundle; this reads that bundle, says what it is about
+   to add, and adds it only when told to.
+
+   Nothing is overwritten. A protocol whose title is already here is left
+   alone and counted, so running the same bundle twice is safe and so is
+   re-running it after adding a few more PDFs to the folder.
+
+   The bundle is a file off disk, so it is checked rather than trusted: only
+   the fields a protocol has are read, the category has to be one the form
+   offers, and a link has to be http(s) — the cards put it straight into an
+   href, where a javascript: URL would run. */
+var PROTO_IMPORT_KIND = 'elias-lab-protocols';
+var PROTO_FIELDS = ['title', 'category', 'author', 'date', 'link',
+                    'summary', 'materials', 'steps', 'notes'];
+var PROTO_IMPORT_MAX = 20 * 1024 * 1024;
+var protoImportPlan = null;
+
+function protoCategories() {
+  // The categories the protocol form offers, which is what CAT_COLORS keys.
+  return Object.keys(CAT_COLORS);
+}
+
+function cleanProtoLink(v) {
+  var s = String(v == null ? '' : v).trim();
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+
+function cleanProtoRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  var title = String(raw.title == null ? '' : raw.title).trim();
+  if (!title) return null;
+  var cats = protoCategories();
+  var out = { title: title };
+  PROTO_FIELDS.forEach(function (f) {
+    if (f === 'title') return;
+    out[f] = String(raw[f] == null ? '' : raw[f]).trim();
+  });
+  if (cats.indexOf(out.category) < 0) out.category = 'Other';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(out.date)) out.date = '';
+  out.link = cleanProtoLink(out.link);
+  out.files = [];
+  return out;
+}
+
+/* new: what will be added. here: a title that already exists. skipped: a row
+   with no title at all, which there is nothing useful to do with. */
+function buildProtoImportPlan(data) {
+  if (!data || data.kind !== PROTO_IMPORT_KIND || !Array.isArray(data.protocols))
+    throw new Error('this is not a protocol bundle. Generate one with ' +
+                    'scripts/import_protocols.py.');
+  var existing = {};
+  getProtocols().forEach(function (p) { existing[bulkKey(p.title)] = true; });
+  var plan = { new: [], here: [], skipped: 0, references: 0 };
+  data.protocols.forEach(function (row) {
+    var rec = cleanProtoRecord(row);
+    if (!rec) { plan.skipped++; return; }
+    var key = bulkKey(rec.title);
+    if (existing[key]) { plan.here.push(rec.title); return; }
+    existing[key] = true;                       // and not twice from one file
+    if (row && row.kind === 'reference') plan.references++;
+    plan.new.push(rec);
+  });
+  return plan;
+}
+
+function openProtocolImportModal() {
+  protoImportPlan = null;
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Import protocols from a file</h3>' +
+    '<p class="ln-bulk-intro">A folder of protocol PDFs at once, instead of one protocol at a time.</p>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">1</span><div><strong>Make the bundle</strong>' +
+      '<div class="hint">On the computer holding the PDFs:<br>' +
+      '<code>python3 scripts/import_protocols.py --src &lt;folder&gt; --out ~/protocols-import.json</code><br>' +
+      'It prints what it found, and what it left out and why.</div></div></div>' +
+    '<div class="ln-bulk-step"><span class="ln-bulk-num">2</span><div><strong>Upload the bundle</strong>' +
+      '<div class="hint">You will see what will be added before anything is saved. ' +
+      'A protocol whose title is already here is left as it is.</div>' +
+      '<input type="file" id="m-proto-file" accept=".json,application/json" onchange="previewProtocolImport(this)"></div></div>' +
+    '<div id="ln-bulk-preview"></div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+    '<button class="ln-modal-save" id="ln-bulk-save" disabled onclick="saveProtocolImport()">Add protocols</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+
+async function previewProtocolImport(input) {
+  var out = document.getElementById('ln-bulk-preview'), btn = document.getElementById('ln-bulk-save');
+  protoImportPlan = null; btn.disabled = true; btn.textContent = 'Add protocols';
+  var file = input.files && input.files[0];
+  if (!file) { out.innerHTML = ''; return; }
+  if (file.size > PROTO_IMPORT_MAX) {
+    out.innerHTML = '<div class="ln-bulk-note error">That file is ' +
+      Math.round(file.size / 1048576) + ' MB, which is far larger than a bundle of ' +
+      'protocols should be. Check it is the right file.</div>';
+    return;
+  }
+  out.innerHTML = '<div class="ln-bulk-note">Reading ' + esc(file.name) + '…</div>';
+  try {
+    protoImportPlan = buildProtoImportPlan(JSON.parse(await file.text()));
+  } catch (e) {
+    out.innerHTML = '<div class="ln-bulk-note error">Could not read this file: ' +
+      esc(e.message) + '</div>';
+    return;
+  }
+  var plan = protoImportPlan, notes = [];
+  if (plan.references) notes.push(plan.references + ' of them a supplier’s own ' +
+    'document, kept as a pointer rather than a copy');
+  if (plan.here.length) notes.push(plan.here.length + ' already here, left alone: ' +
+    esc(plan.here.slice(0, 5).join(', ')) + (plan.here.length > 5 ? '…' : ''));
+  if (plan.skipped) notes.push(plan.skipped + ' with no title, skipped');
+  var byCat = dashCountBy(plan.new, 'category');
+  out.innerHTML = '<ul class="ln-bulk-list"><li><strong>' + plan.new.length +
+    ' new protocol' + (plan.new.length === 1 ? '' : 's') + '</strong>' +
+    (byCat.length ? '<div class="ln-bulk-sub">' + byCat.map(function (r) {
+      return esc(r.name) + ': ' + r.count;
+    }).join(' · ') + '</div>' : '') +
+    (notes.length ? '<div class="ln-bulk-sub">' + notes.join('<br>') + '</div>' : '') +
+    '</li></ul>';
+  if (plan.new.length) {
+    btn.disabled = false;
+    btn.textContent = 'Add ' + plan.new.length + ' protocol' + (plan.new.length === 1 ? '' : 's');
+  }
+}
+
+async function saveProtocolImport() {
+  if (!protoImportPlan || !protoImportPlan.new.length) return;
+  var btn = document.getElementById('ln-bulk-save'), out = document.getElementById('ln-bulk-preview');
+  var items = protoImportPlan.new;
+  btn.disabled = true; btn.textContent = 'Adding…';
+  var done = 0, error = null;
+  for (var i = 0; i < items.length; i++) {
+    btn.textContent = 'Adding ' + (i + 1) + ' of ' + items.length + '…';
+    try { await DB.upsert('protocols', items[i]); done++; }
+    catch (e) { error = items[i].title + ': ' + e.message; break; }
+  }
+  protoImportPlan = null;
+  renderProtocols(); renderDashboard();
+  // Whatever happened, say how far it got: the ones already saved are saved,
+  // and running the same bundle again will skip them by title.
+  out.innerHTML = (done ? '<div class="ln-bulk-note ok">Added ' + done + ' protocol' +
+      (done === 1 ? '' : 's') + '.</div>' : '') +
+    (error ? '<div class="ln-bulk-note error">Stopped on ' + esc(error) + '</div>' : '');
+  btn.textContent = 'Done'; btn.disabled = false; btn.onclick = closeModal;
+  document.getElementById('m-proto-file').value = '';
+}
+
 // ── EXPERIMENT NOTEBOOKS ───────────────────────────────────
 function renderNotebooks(filter) {
   filter = filter || '';
