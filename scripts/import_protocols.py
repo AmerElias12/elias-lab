@@ -110,8 +110,8 @@ CREDENTIALS = [
 
 # Both set once, from the command line, and read by everything below. The
 # names are not written down in this file on purpose — see the module
-# docstring.
-SCRUB_NAMES: list[str] = []
+# docstring. Each entry is (name, replacement); an empty replacement deletes.
+SCRUB_NAMES: list[tuple[str, str]] = []
 PROVENANCE = True
 
 # ── the shape of an SOP ─────────────────────────────────────────────────────
@@ -378,6 +378,32 @@ def cut_region(text: str, start: re.Pattern, stop: re.Pattern) -> tuple[str, int
 TOP_HEADING = re.compile(r"^\s*\d{1,2}\.\s*[A-Z]")
 
 
+def retitle(filed_as: str, counts: dict) -> str:
+    """The title as it will be shown, and a note in `counts` when the scrub
+    changed it — a renamed protocol is the one thing somebody looking at the
+    list will not recognise, so the report says so rather than leaving them
+    to notice."""
+    title = scrub_title(filed_as)
+    if not title:
+        title = "Untitled protocol"
+    if title != filed_as:
+        counts["renamed"] = title
+    return title
+
+
+def scrub_title(title: str) -> str:
+    """The same scrub, over a title.
+
+    Titles come from the filenames, which never go through the document
+    scrub, so a name cut from every page of a protocol was still sitting at
+    the top of its card. Tidied afterwards, because taking a product code out
+    of "<code> Media" otherwise leaves the leading space behind.
+    """
+    out, _ = scrub(title)
+    out = re.sub(r"\s{2,}", " ", out).strip(" -–—:,")
+    return out
+
+
 def name_pattern(name: str) -> str:
     """A name as a pattern: spacing inside it is optional, since the same
     organisation is written both "Acme Bio" and "AcmeBio"."""
@@ -426,11 +452,22 @@ def scrub(text: str) -> tuple[str, dict]:
         text, n = pattern.subn("", text)
         counts["credentials"] += n
 
-    for name in SCRUB_NAMES:
+    for name, instead in SCRUB_NAMES:
+        pattern = name_pattern(name)
+        if instead:
+            # A name that is also a thing — a platform or a product the
+            # procedures talk about — cannot simply be deleted: "a tube
+            # containing <it> and sgRNA" would become "a tube containing and
+            # sgRNA". It is swapped for the generic word instead, and only
+            # the name is swapped, so a plural stays plural.
+            text, n = re.subn(r"\b" + pattern + r"\b", instead, text, flags=re.I)
+            counts["company"] += n
+            text, n = re.subn(r"\b" + pattern + r"(?=\w)", instead, text, flags=re.I)
+            counts["company"] += n
+            continue
         # "Manufacturer/<owner> Cat#" is the common case: the slash and the
         # spacing have to come out with the name, or the column header is left
         # reading "Manufacturer/ Cat#".
-        pattern = name_pattern(name)
         text, n = re.subn(r"\s*/\s*" + pattern + r"\b", "", text, flags=re.I)
         counts["company"] += n
         text, n = re.subn(pattern + r"\s*/\s*", "", text, flags=re.I)
@@ -605,10 +642,13 @@ def build_notes(sections: dict[str, str], code: str, version: str, date: str) ->
 
 
 def build_sop(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dict]:
-    code, title = title_from_filename(path.stem)
+    code, filed_as = title_from_filename(path.stem)
     date, version = header_facts(raw)
-    text = drop_furniture(raw, title)
+    # drop_furniture matches the running header, which is the title as it was
+    # written, so the scrub comes after it.
+    text = drop_furniture(raw, filed_as)
     text, counts = scrub(text)
+    title = retitle(filed_as, counts)
     sections = split_sections(text)
 
     summary = strip_numbering(sections.get("scope", ""))
@@ -617,7 +657,9 @@ def build_sop(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dict]:
     record = {
         "kind": "protocol",
         "title": title,
-        "category": classify(title, text),
+        # Classified on the title as filed: it is never shown, and a name the
+        # scrub removed is often the clearest signal of what a protocol is for.
+        "category": classify(filed_as, text),
         "author": author,
         "date": date,
         "link": "",
@@ -633,13 +675,14 @@ def build_sop(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dict]:
 
 
 def build_appendix(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dict]:
-    code, title = title_from_filename(path.stem)
-    text, counts = scrub(drop_furniture(raw, title))
+    code, filed_as = title_from_filename(path.stem)
+    text, counts = scrub(drop_furniture(raw, filed_as))
+    title = retitle(filed_as, counts)
     body = reflow(text)
     record = {
         "kind": "protocol",
         "title": title,
-        "category": classify(title, body),
+        "category": classify(filed_as, body),
         "author": author,
         "date": "",
         "link": "",
@@ -657,7 +700,7 @@ def build_appendix(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dic
 
 
 def build_reference(path: pathlib.Path, raw: str, author: str) -> tuple[dict, dict]:
-    _, title = title_from_filename(path.stem)
+    _, filed_as = title_from_filename(path.stem)
     urls = URL.findall(raw)
     link = ""
     for u in urls:
@@ -666,10 +709,11 @@ def build_reference(path: pathlib.Path, raw: str, author: str) -> tuple[dict, di
         link = u if u.startswith("http") else "https://" + u
         break
     text, counts = scrub(raw)
+    title = retitle(filed_as, counts)
     record = {
         "kind": "reference",
         "title": title,
-        "category": classify(title, text),
+        "category": classify(filed_as, text),
         "author": author,
         "date": "",
         "link": link.rstrip("."),
@@ -692,7 +736,7 @@ def verify(records: list[dict]) -> list[str]:
     gone. A scrub nobody checks is a scrub that stops working quietly."""
     problems = []
     checks = [("a name that --scrub should have removed",
-               [re.compile(name_pattern(n), re.I) for n in SCRUB_NAMES]),
+               [re.compile(r"\b" + name_pattern(n), re.I) for n, _ in SCRUB_NAMES]),
               ("credentials", CREDENTIALS),
               ("approval line", [APPROVAL_LINE, SIGNATURE_ROW])]
     for rec in records:
@@ -743,9 +787,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, help="bundle to write (.json)")
     ap.add_argument("--author", default="Amer Elias",
                     help="who is importing them (the notebook's Author field)")
-    ap.add_argument("--scrub", action="append", default=[], metavar="NAME",
+    ap.add_argument("--scrub", action="append", default=[], metavar="NAME[=WORD]",
                     help="a name to remove everywhere, e.g. the organisation that "
-                         "owns the documents. Repeatable, or comma-separated.")
+                         "owns the documents. Repeatable, or comma-separated. "
+                         "NAME=WORD swaps it for WORD instead of deleting it, "
+                         "which is what a platform or product name needs: delete "
+                         "it and the sentence using it falls apart.")
     ap.add_argument("--scrub-ok", action="append", default=[], metavar="NAME",
                     help="a name found in a 'Manufacturer/<owner>' column that is "
                          "meant to stay, so the run does not stop for it")
@@ -760,8 +807,11 @@ def main(argv: list[str] | None = None) -> int:
     PROVENANCE = not args.no_provenance
     for value in args.scrub:
         for part in value.split(","):
-            if part.strip():
-                SCRUB_NAMES.append(part.strip())
+            part = part.strip()
+            if not part:
+                continue
+            name, _, instead = part.partition("=")
+            SCRUB_NAMES.append((name.strip(), instead.strip()))
     allowed = {n.strip().lower() for v in args.scrub_ok for n in v.split(",") if n.strip()}
 
     src = pathlib.Path(args.src).expanduser()
@@ -829,7 +879,9 @@ def main(argv: list[str] | None = None) -> int:
         if counts.get("history"):
             notes.append(f"{counts['history']} history line(s) removed")
         if counts.get("company"):
-            notes.append(f"company name removed {counts['company']}×")
+            notes.append(f"scrubbed name(s) removed {counts['company']}×")
+        if counts.get("renamed"):
+            notes.append(f'renamed from "{path.stem}"')
         report.append(f"  {record['category']:<22} {record['title']}"
                       + (f"\n      {'; '.join(notes)}" if notes else ""))
 

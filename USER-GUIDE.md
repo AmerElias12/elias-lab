@@ -341,6 +341,23 @@ Forgetting that flag does not quietly publish the name: the run stops, says
 which name it found and in how many files, and writes nothing. Afterwards it
 re-reads every finished record and fails the run if any of it survived.
 
+Some names cannot just be deleted. A platform or product name is used as a
+noun in the procedure itself — delete it and "a tube containing X and sgRNA"
+becomes "a tube containing and sgRNA". Those get a generic word instead,
+written `NAME=WORD`:
+
+```
+--scrub "<their nuclease>=nuclease" --scrub "<their medium>=HSC"
+```
+
+(Spelled out properly on the command line, of course. The real names are not
+written down in this repository or in the script, for the same reason the
+company's name is not.)
+
+Titles go through the same scrub, so a renamed protocol is listed as renamed
+in the run's report — it is the one change you would not otherwise spot in
+the list.
+
 Two things the script deliberately does **not** do. It does not copy a
 supplier's own manual — those become a short record pointing at the supplier,
 because their current version is the one you should be following; attach the

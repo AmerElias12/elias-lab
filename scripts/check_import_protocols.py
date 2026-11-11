@@ -86,9 +86,10 @@ Revision No. Date Author Title Main Changes
 
 
 def with_scrub(names, fn):
-    """Run fn with SCRUB_NAMES set, and put it back afterwards."""
+    """Run fn with SCRUB_NAMES set, and put it back afterwards. A bare string
+    means delete; a (name, word) pair means swap."""
     old = list(ip.SCRUB_NAMES)
-    ip.SCRUB_NAMES[:] = names
+    ip.SCRUB_NAMES[:] = [(n, "") if isinstance(n, str) else n for n in names]
     try:
         return fn()
     finally:
@@ -117,7 +118,7 @@ def _the_default_list_is_empty():
 
 def _the_source_names_nobody():
     src = (HERE / "import_protocols.py").read_text(encoding="utf-8")
-    assert "SCRUB_NAMES: list[str] = []" in src, "the empty default went missing"
+    assert "SCRUB_NAMES: list[tuple[str, str]] = []" in src, "the empty default went missing"
 
 
 check("the scrub list is empty until the command line fills it",
@@ -233,13 +234,112 @@ def _what_is_not_the_owner_is_kept():
     assert "NEB-M2080S" in text, "a real supplier's catalogue number must survive"
 
 
+def _the_title_is_scrubbed_too():
+    # Titles come from the filenames, which never go through the document
+    # scrub: a name cut from every page was still on the card.
+    rec = with_scrub(["Widget"], lambda: ip.build_sop(
+        pathlib.Path("SOP-MET-042 - Widget Preparation.pdf"), SOP, "A Scientist")[0])
+    assert rec["title"] == "Preparation", rec["title"]
+
+
+def _a_title_left_with_nothing_is_not_left_blank():
+    rec = with_scrub(["Widget Preparation"], lambda: ip.build_sop(
+        pathlib.Path("SOP-MET-042 - Widget Preparation.pdf"), SOP, "A Scientist")[0])
+    assert rec["title"] == "Untitled protocol", rec["title"]
+
+
+def _a_rename_is_reported():
+    _, counts = with_scrub(["Widget"], lambda: ip.build_sop(
+        pathlib.Path("SOP-MET-042 - Widget Preparation.pdf"), SOP, "A Scientist"))
+    assert counts.get("renamed") == "Preparation", counts.get("renamed")
+
+
+def _a_title_the_scrub_did_not_touch_is_not_reported_as_renamed():
+    _, counts = with_scrub([], lambda: ip.build_sop(
+        pathlib.Path("SOP-MET-042 - Widget Preparation.pdf"), SOP, "A Scientist"))
+    assert "renamed" not in counts
+
+
+def _the_scrub_leaves_no_ragged_edges_in_a_title():
+    assert with_scrub(["WX-101"], lambda: ip.scrub_title("WX-101 Media")) == "Media"
+    assert with_scrub(["Acme"], lambda: ip.scrub_title("Acme - Widget Assay")) == "Widget Assay"
+
+
 check("the name goes from every field", _the_name_goes_everywhere)
+check("the title is scrubbed too", _the_title_is_scrubbed_too)
+check("a title left with nothing is not left blank",
+      _a_title_left_with_nothing_is_not_left_blank)
+check("a rename is reported", _a_rename_is_reported)
+check("a title the scrub did not touch is not reported as renamed",
+      _a_title_the_scrub_did_not_touch_is_not_reported_as_renamed)
+check("a scrubbed title has no ragged edges", _the_scrub_leaves_no_ragged_edges_in_a_title)
 check("the materials column header still makes sense",
       _the_column_header_still_makes_sense)
 check("the same name written without the space goes too",
       _the_spelling_without_the_space_goes_as_well)
 check("a longer word built on the name goes too", _a_suffixed_form_goes_as_well)
 check("suppliers and catalogue codes are left alone", _what_is_not_the_owner_is_kept)
+
+
+# ---------------------------------------------------------------------------
+print("\nA name that is also a thing: swapped, not deleted")
+
+
+def _a_sentence_survives_the_swap():
+    # Deleting a platform name wrecks the sentences that use it as a noun:
+    # "a tube containing <it> and sgRNA" becomes "a tube containing and sgRNA".
+    text, _ = with_scrub([("Widget", "nuclease")],
+                         lambda: ip.scrub("A tube containing Widget and sgRNA.\n"))
+    assert text.strip() == "A tube containing nuclease and sgRNA."
+
+
+def _deleting_is_still_the_default():
+    text, _ = with_scrub(["Widget"], lambda: ip.scrub("A tube containing Widget and sgRNA.\n"))
+    assert "Widget" not in text
+    assert "nuclease" not in text
+
+
+def _a_plural_stays_plural():
+    text, _ = with_scrub([("Widget", "nuclease")],
+                         lambda: ip.scrub("other Widgets or nucleases\n"))
+    assert text.strip() == "other nucleases or nucleases", text
+
+
+def _a_hyphenated_form_keeps_its_tail():
+    text, _ = with_scrub([("Widget", "nuclease")],
+                         lambda: ip.scrub("Linear Widget-sequence with 1000bp\n"))
+    assert text.strip() == "Linear nuclease-sequence with 1000bp", text
+
+
+def _a_swapped_name_still_fails_the_run_if_it_survives():
+    bad = [{"title": "T", "summary": "made with Widget", "materials": "", "steps": "",
+            "notes": "", "link": ""}]
+    problems = with_scrub([("Widget", "nuclease")], lambda: ip.verify(bad))
+    assert problems, "a swap that did not happen has to fail the run too"
+
+
+def _the_replacement_itself_is_not_mistaken_for_a_leak():
+    good = [{"title": "T", "summary": "made with nuclease", "materials": "", "steps": "",
+             "notes": "", "link": ""}]
+    assert with_scrub([("Widget", "nuclease")], lambda: ip.verify(good)) == []
+
+
+def _a_name_inside_a_longer_word_is_not_swapped_blindly():
+    # "Widget" must not turn "Midwidgetry" into "Midnucleasery".
+    text, _ = with_scrub([("Widget", "nuclease")], lambda: ip.scrub("Midwidgetry stands.\n"))
+    assert text.strip() == "Midwidgetry stands.", text
+
+
+check("a sentence survives the swap", _a_sentence_survives_the_swap)
+check("deleting is still what happens without one", _deleting_is_still_the_default)
+check("a plural stays plural", _a_plural_stays_plural)
+check("a hyphenated form keeps its tail", _a_hyphenated_form_keeps_its_tail)
+check("a swap that did not happen fails the run",
+      _a_swapped_name_still_fails_the_run_if_it_survives)
+check("the replacement word is not mistaken for a leak",
+      _the_replacement_itself_is_not_mistaken_for_a_leak)
+check("a name inside a longer word is left alone",
+      _a_name_inside_a_longer_word_is_not_swapped_blindly)
 
 
 # ---------------------------------------------------------------------------
