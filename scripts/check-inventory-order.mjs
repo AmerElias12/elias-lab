@@ -54,6 +54,14 @@ runStatement('var INV_SLOT =');
 vm.runInContext(extract('invSortKeys', 'function'), ctx);
 vm.runInContext(extract('slotKey', 'function'), ctx);
 vm.runInContext(extract('bulkKey', 'function'), ctx);
+/* sameSlot compares the squares two records occupy, not their position
+   text, because one record can hold several — so it needs the reader and
+   the box sizes as well. */
+runStatement('var BOX_LAYOUTS =');
+const dflt = src.indexOf("var BOX_DEFAULT_LAYOUT =");
+vm.runInContext(src.slice(dflt, src.indexOf(';', dflt) + 1), ctx);
+['cellInside', 'parseOneCell', 'cellsBetween', 'cellsOfPart', 'parsePositions', 'cellsOverlap']
+  .forEach((fn) => vm.runInContext(extract(fn, 'function'), ctx));
 vm.runInContext(extract('sameSlot', 'function'), ctx);
 vm.runInContext(extract('sortInventory', 'function'), ctx);
 

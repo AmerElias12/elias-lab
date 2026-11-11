@@ -1506,6 +1506,11 @@ var INV_LABELS = {
   cells:    { one: 'Cell Line',           many: 'cell lines' },
   kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
 };
+/* Said under the Position field of anything that comes in aliquots: one
+   tube is one square, and a reagent split into several takes several. */
+var POSITION_HINT = '<div class="hint">One square per tube — A3, or 12. Something aliquoted can take a run of them: ' +
+  '<strong>A2-A3</strong> for two tubes, <strong>A1-C3</strong> for a block of nine, <strong>1-12</strong> counting row by row, ' +
+  'or a list like <strong>A1, B4</strong>. Leave it blank if the tube is not in a box.</div>';
 var INV_CONFIG = {
   enzymes: { cols: ['Name', 'Supplier', 'Catalog #', 'Cut Site', 'Conc.', 'Qty', 'Storage', 'Box', 'Position', 'Added by'], fields: ['name', 'supplier', 'catalog', 'cutsite', 'conc', 'qty', 'storage', 'box', 'position', 'addedBy'] },
   primers: { cols: ['Name', "Sequence (5'→3')", 'Tm (°C)', 'Application', 'Storage', 'Added by'], fields: ['name', 'sequence', 'tm', 'application', 'storage', 'addedBy'] },
@@ -1787,35 +1792,53 @@ function slotIsNew(cat, item) {
 }
 /* Whether two records are in the same physical place.
 
-   The box and the position have to be filled in on both and agree: that is
-   what a box map draws, and two vials it draws on one square are in one
-   square whatever else their rows say. Everything above the box — the
-   freezer, the tank, the rack — only separates them when both records state
-   it and the two differ. A blank is not a disagreement: a vial added from a
-   box map knows its box and its position but not which shelf the box sits
-   on, and an unrecorded shelf is no evidence of a different shelf. Treating
-   it as one let a vial be filed on top of another from the map, which is
-   the one place the clash would have been visible. */
-function sameSlot(cat, a, b) {
+   The box has to be filled in on both and agree, and the squares they take
+   up have to overlap: that is what a box map draws, and two records it
+   draws on one square are in one square whatever else their rows say. A
+   record can take several squares, so this is an overlap and not an equal:
+   a buffer in A2-A3 and a tube in A3 are in the same place, and comparing
+   the two position fields as text would have said they were not.
+
+   Everything above the box — the freezer, the tank, the rack, the shelf a
+   reagent is on — only separates them when both records state it and the
+   two differ. A blank is not a disagreement: a vial added from a box map
+   knows its box and its position but not which shelf the box sits on, and
+   an unrecorded shelf is no evidence of a different shelf. Treating it as
+   one let a vial be filed on top of another from the map, which is the one
+   place the clash would have been visible. */
+function cellsOverlap(a, b) {
+  var seen = {};
+  a.forEach(function (p) { seen[p.r + ',' + p.c] = true; });
+  return b.some(function (p) { return seen[p.r + ',' + p.c]; });
+}
+function sameSlot(cat, a, b, dims) {
   var keys = INV_SLOT[cat];
   if (!keys) return false;
-  var pos = keys[keys.length - 1];
-  var must = [pos, 'box'];
-  for (var i = 0; i < must.length; i++) {
-    var m = bulkKey(a[must[i]]);
-    if (!m || m !== bulkKey(b[must[i]])) return false;
-  }
+  // Without the box's own layout, read the positions in a default box: a
+  // caller with no dims to hand should still get the common cases right.
+  dims = dims || BOX_LAYOUTS[BOX_DEFAULT_LAYOUT];
+  var box = bulkKey(a.box);
+  if (!box || box !== bulkKey(b.box)) return false;
   for (var j = 0; j < keys.length; j++) {
+    if (keys[j] === 'box' || keys[j] === keys[keys.length - 1]) continue;
     var x = bulkKey(a[keys[j]]), y = bulkKey(b[keys[j]]);
     if (x && y && x !== y) return false;
   }
-  return true;
+  return cellsOverlap(parsePositions(a.position, dims), parsePositions(b.position, dims));
+}
+/* How big the box is, so a position reads the same at the save as on the
+   map: "12" is a different square in a 9×9 than in a 10×10. */
+function boxDimsFor(cat, name) {
+  var b = String(name == null ? '' : name).trim() ? findBox(boxKey(cat, name)) : null;
+  return b ? b.dims : BOX_LAYOUTS[BOX_DEFAULT_LAYOUT];
 }
 /* The item already sitting where this one wants to go, if there is one. */
 function slotTakenBy(cat, item) {
-  if (!slotKey(cat, item)) return null;
+  if (!INV_SLOT[cat] || !slotKey(cat, item)) return null;
+  var dims = boxDimsFor(cat, item.box);
+  if (!parsePositions(item.position, dims).length) return null;
   return (getInventory()[cat] || []).filter(function (x) {
-    return x.id !== item.id && sameSlot(cat, item, x);
+    return x.id !== item.id && sameSlot(cat, item, x, dims);
   })[0] || null;
 }
 
@@ -2151,15 +2174,70 @@ function vialLabel(cat, it) {
   if (cat === 'stocks') return it.serial || it.description || 'Stock';
   return it.name || INV_LABELS[cat].one;
 }
-// Grid cell for a position, or null when it doesn't fit this box.
-function parsePosition(pos, dims) {
-  var s = String(pos == null ? '' : pos).trim().toUpperCase().replace(/[\s\-_:]/g, '');
+/* The squares a position refers to.
+
+   One tube is one square, but a reagent split into aliquots is several: the
+   twelve tubes of a transfection buffer are one record and sit in a run of
+   positions, and refusing to draw them because "A2-A3" is not a square
+   meant the whole record fell out of the map. So a position is a list of
+   squares — "A3", "A2-A3", "A1-C3", "1-12", or any of those separated by
+   commas — and the record is drawn in every one of them.
+
+   A lettered range is a block, the way a range of wells on a plate is:
+   A1-C3 is the rectangle between those corners, nine squares. A numbered
+   range is a run, because a number already counts row by row: 1-12 is the
+   first twelve squares of the box. Anything that does not parse, or that
+   lands outside the box, comes back empty, and the record is listed as
+   needing a position rather than drawn somewhere it is not. */
+function cellInside(r, c, dims) { return r >= 0 && c >= 0 && r < dims.rows && c < dims.cols; }
+function parseOneCell(s, dims) {
   var r, c, m;
   if ((m = /^([A-Z])0*(\d{1,2})$/.exec(s))) { r = m[1].charCodeAt(0) - 65; c = +m[2] - 1; }
   else if ((m = /^0*(\d{1,3})$/.exec(s))) { var i = +m[1] - 1; r = Math.floor(i / dims.cols); c = i % dims.cols; }
   else return null;
-  return r >= 0 && c >= 0 && r < dims.rows && c < dims.cols ? { r: r, c: c } : null;
+  return cellInside(r, c, dims) ? { r: r, c: c } : null;
 }
+function cellsBetween(a, b, dims, linear) {
+  var out = [], r, c, i;
+  if (linear) {
+    var i0 = a.r * dims.cols + a.c, i1 = b.r * dims.cols + b.c;
+    if (i1 < i0) { i = i0; i0 = i1; i1 = i; }
+    for (i = i0; i <= i1; i++) out.push({ r: Math.floor(i / dims.cols), c: i % dims.cols });
+    return out;
+  }
+  for (r = Math.min(a.r, b.r); r <= Math.max(a.r, b.r); r++) {
+    for (c = Math.min(a.c, b.c); c <= Math.max(a.c, b.c); c++) out.push({ r: r, c: c });
+  }
+  return out;
+}
+function cellsOfPart(part, dims) {
+  var raw = String(part == null ? '' : part).trim().toUpperCase();
+  if (!raw) return [];
+  var strip = function (x) { return x.replace(/[\s_:]/g, ''); };
+  var m = /^(.+?)\s*(?:-|–|—|\.\.)\s*(.+)$/.exec(raw);
+  if (m) {
+    var a = parseOneCell(strip(m[1]), dims), b = parseOneCell(strip(m[2]), dims);
+    if (a && b) return cellsBetween(a, b, dims, /^\d+$/.test(strip(m[1])) && /^\d+$/.test(strip(m[2])));
+  }
+  // Not a range after all: "A-3" and "A_3" are how some people write A3.
+  var one = parseOneCell(strip(raw).replace(/-/g, ''), dims);
+  return one ? [one] : [];
+}
+function parsePositions(pos, dims) {
+  var out = [], seen = {};
+  String(pos == null ? '' : pos).split(/[,;]+/).forEach(function (part) {
+    cellsOfPart(part, dims).forEach(function (cell) {
+      var k = cell.r + ',' + cell.c;
+      if (seen[k]) return;
+      seen[k] = true;
+      out.push(cell);
+    });
+  });
+  return out.sort(function (x, y) { return x.r - y.r || x.c - y.c; });
+}
+// The first square, for the places that want one: null when nothing fits.
+function parsePosition(pos, dims) { return parsePositions(pos, dims)[0] || null; }
+function cellName(cell) { return String.fromCharCode(65 + cell.r) + (cell.c + 1); }
 
 /* Every box: the set-up ones plus names vials use without a set-up box. */
 function boxIndex() {
@@ -2193,9 +2271,13 @@ function boxIndex() {
     b.dims = boxDims(b.def);
     b.cells = {}; b.unplaced = [];
     b.vials.forEach(function (v) {
-      var p = parsePosition(v.item.position, b.dims);
-      if (!p) { b.unplaced.push(v); return; }
-      (b.cells[p.r + ',' + p.c] = b.cells[p.r + ',' + p.c] || []).push(v);
+      // One record, every square it names: twelve aliquots of one buffer are
+      // twelve squares and one row in the contents.
+      var ps = parsePositions(v.item.position, b.dims);
+      if (!ps.length) { b.unplaced.push(v); return; }
+      ps.forEach(function (p) {
+        (b.cells[p.r + ',' + p.c] = b.cells[p.r + ',' + p.c] || []).push(v);
+      });
     });
     b.placed = Object.keys(b.cells).length;
     // Where it is: the box's own freezer, else what its vials say.
@@ -2307,12 +2389,22 @@ function boxDetailHtml(b) {
   var legend = '<div class="ln-bm-legend">' + (b.cat && boxCanHold(b.cat) ? '<span><i class="ln-bm-swatch ' + b.cat + '"></i>' + INV_LABELS[b.cat].one + '</span>' : '') +
     '<span><i class="ln-bm-swatch clash"></i>Two vials in one position</span></div>';
   var unplaced = b.unplaced.length ? '<div class="ln-bm-unplaced"><strong>' + b.unplaced.length + ' in this box without a usable position</strong>' +
+    '<div class="ln-bm-unplaced-how">A position is a square — <strong>A3</strong> or <strong>12</strong> — a block of them for something aliquoted — ' +
+      '<strong>A2-A3</strong>, <strong>A1-C3</strong>, <strong>1-12</strong> — or a list: <strong>A1, B4</strong>.</div>' +
     b.unplaced.map(function (v) {
       return '<button type="button" class="ln-bm-uitem ' + v.cat + '" onclick="editVial(\'' + v.cat + '\',\'' + v.item.id + '\')">' + esc(vialLabel(v.cat, v.item)) +
         ' <span>' + (v.item.position ? 'position “' + esc(v.item.position) + '” does not fit' : 'no position') + '</span></button>';
     }).join('') + '</div>' : '';
   return head + '<div class="ln-bm-wrap"><div class="ln-bm" style="grid-template-columns:22px repeat(' + d.cols + ',minmax(26px,1fr));">' + rowsHtml + '</div>' +
     '<div class="ln-bm-side">' + legend + boxCellPanel(b) + '</div></div>' + unplaced + boxContentsHtml(b);
+}
+
+/* What to print in a Position cell: the square, or — for a record that takes
+   several — what was written, with how many squares that came to, so a typo
+   in a range shows up as a number nobody expected. */
+function boxPositionLabel(item, cells) {
+  if (cells.length === 1) return cellName(cells[0]);
+  return String(item.position).trim() + ' (' + cells.length + ' positions)';
 }
 
 /* The other boxes of this name, each a type of its own. */
@@ -2332,10 +2424,16 @@ function boxSiblingsHtml(b) {
 /* What is in a box, position by position: shown under the map, printed with
    it, and exported as CSV. Fields are the box type's columns minus Box. */
 function boxContentRows(b) {
-  var rows = [];
+  var rows = [], seen = {};
   Object.keys(b.cells).forEach(function (k) {
-    var rc = k.split(',');
-    b.cells[k].forEach(function (v) { rows.push({ r: +rc[0], c: +rc[1], pos: String.fromCharCode(65 + +rc[0]) + (+rc[1] + 1), v: v }); });
+    b.cells[k].forEach(function (v) {
+      // A record across several squares is one thing in the box, so it is
+      // one row, headed by what was written and how many squares it is.
+      if (seen[v.item.id]) return;
+      seen[v.item.id] = true;
+      var ps = parsePositions(v.item.position, b.dims);
+      rows.push({ r: ps[0].r, c: ps[0].c, pos: boxPositionLabel(v.item, ps), v: v });
+    });
   });
   rows.sort(function (x, y) { return x.r - y.r || x.c - y.c; });
   b.unplaced.forEach(function (v) { rows.push({ pos: v.item.position ? v.item.position + ' (does not fit)' : '\u2014', v: v }); });
@@ -2393,7 +2491,12 @@ function boxCellPanel(b) {
   return '<div class="ln-bm-panel"><div class="ln-bm-panel-pos">' + pos + (vs.length > 1 ? ' · <span class="warn">' + vs.length + ' vials share this position</span>' : '') + '</div>' +
     vs.map(function (v) {
       var cfg = INV_CONFIG[v.cat];
-      var rows = cfg.fields.map(function (f, i) {
+      // Where else this same record sits, so one of twelve aliquots does not
+      // read as the whole of it.
+      var spread = parsePositions(v.item.position, b.dims);
+      var also = spread.length > 1
+        ? '<div><span>All positions</span>' + esc(String(v.item.position).trim()) + ' (' + spread.length + ')</div>' : '';
+      var rows = also + cfg.fields.map(function (f, i) {
         var val = v.item[f];
         if (!val || f === 'box' || f === 'position' || val === vialLabel(v.cat, v.item)) return '';
         if (f === 'mapLink' && /^https?:\/\//i.test(val)) return '<div><span>' + cfg.cols[i] + '</span><a href="' + esc(val) + '" target="_blank" rel="noopener" class="ln-map-link">Map ↗</a></div>';
@@ -2474,8 +2577,13 @@ async function saveBox() {
   if (!def.addedBy) def.addedBy = currentUser() ? currentUser().name : 'Unknown';
   // Fewer positions than before: say which vials would no longer fit.
   if (b && b.vials.length) {
-    var lost = b.vials.filter(function (v) { return parsePosition(v.item.position, b.dims) && !parsePosition(v.item.position, boxDims(def)); });
-    if (lost.length && !confirm(lost.length + ' vial(s) sit outside a ' + def.layout.replace('x', '×') + ' grid and will be listed as without a usable position. Continue?')) return;
+    // A record can hold several squares, so shrinking the grid can take some
+    // of them away without taking all: both are worth stopping for.
+    var lost = b.vials.filter(function (v) {
+      return parsePositions(v.item.position, boxDims(def)).length < parsePositions(v.item.position, b.dims).length;
+    });
+    if (lost.length && !confirm(lost.length + ' record(s) use positions outside a ' + def.layout.replace('x', '×') +
+      ' grid and will lose them. Continue?')) return;
   }
   var renamed = b && b.vials.length && key !== b.key;
   if (renamed && !confirm('Move the ' + b.vials.length + ' vial(s) in “' + b.name + '” to the new name “' + name + '” as well?')) return;
@@ -2514,14 +2622,14 @@ var BULK_DATE_FIELDS = { expiry: true };
 var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
   enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials',
-    storage: '-20°C Freezer A', box: 'Enzymes Box 1', position: 'A3 (or 1-81)' },
+    storage: '-20°C Freezer A', box: 'Enzymes Box 1', position: 'A3 (or A2-A3 for a run)' },
   plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', freezer: 'Freezer A', box: 'Plasmid Box 1', position: 'A3 (or 1-81)', location: 'Any other location detail' },
   stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps',
     aliquots: '12 (whole number, blank if not aliquoted)', aliquotVol: '500 (number only)',
     aliquotUnit: ALIQUOT_UNITS.join(' / '), expiry: '2027-01-31', storage: 'Room temp, Kit Shelf B',
-    box: 'Reagents Box 1 (blank if it is not in a box)', position: 'A3 (or 1-81)' }
+    box: 'Reagents Box 1 (blank if it is not in a box)', position: 'A3, or A2-A3 for aliquots' }
 };
 // Other header spellings people are likely to type, keyed by field.
 var BULK_ALIASES = {
@@ -2922,8 +3030,8 @@ function openInventoryModal(id, prefill) {
       '<div class="ln-form-row"><label>Storage Location</label><input id="m-storage" list="ln-storage-list" placeholder="e.g. -20°C Freezer A"></div>' +
       '<div class="ln-form-grid">' +
         '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Enzymes Box 1"></div>' +
-        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3 (or 1-81)"></div>' +
-      '</div>',
+        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3, or A2-A3"></div>' +
+      '</div>' + POSITION_HINT,
     primers: '<div class="ln-form-row"><label>Primer Name</label><input id="m-name" placeholder="e.g. HK022_attB_F"></div><div class="ln-form-row"><label>Sequence (5\'→3\')</label><input id="m-sequence" placeholder="ATCGATCG..."></div><div class="ln-form-row"><label>Tm (°C)</label><input id="m-tm" type="number" placeholder="60"></div><div class="ln-form-row"><label>Application</label><input id="m-application" placeholder="e.g. Genotyping HK022 locus"></div><div class="ln-form-row"><label>Storage</label><input id="m-storage" placeholder="e.g. -20°C Primers Box A"></div>',
     cells: '<div class="ln-note-tip">Before banking: look up the <strong>cells per vial</strong> and the <strong>banking medium</strong> recommended for this line — both differ by cell line, and a vial frozen at the wrong density or in the wrong medium usually does not come back.</div>' +
       '<div class="ln-form-row"><label>Cell Line</label><input id="m-name" placeholder="e.g. HEK293T"></div>' +
@@ -2996,8 +3104,8 @@ function openInventoryModal(id, prefill) {
       '<div class="ln-form-row"><label>Storage</label><input id="m-storage" list="ln-storage-list" placeholder="e.g. Room temp, Kit Shelf B"></div>' +
       '<div class="ln-form-grid">' +
         '<div class="ln-form-row"><label>Box</label><input id="m-box" list="ln-box-list" placeholder="e.g. Reagents Box 1"></div>' +
-        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3 (or 1-81)"></div>' +
-      '</div>'
+        '<div class="ln-form-row"><label>Position</label><input id="m-position" placeholder="e.g. A3, or A2-A3"></div>' +
+      '</div>' + POSITION_HINT
   };
   /* A category with no form here cannot be filled in, and the modal would
      open empty or not at all. That happened once: the glycerol stock form

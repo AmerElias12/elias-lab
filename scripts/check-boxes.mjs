@@ -47,7 +47,8 @@ vm.runInContext(read('js', 'notebook.js'), sandbox, { filename: 'notebook.js' })
 const src = read('js', 'notebook.js');
 const html = read('notebook.html');
 const { boxIndex, boxListBody, boxCardHtml, boxDetailHtml, boxContentCols, boxCanHold,
-  boxGroupName, boxGroupCats, boxLabel, boxCellPanel, parsePosition, slotTakenBy,
+  boxGroupName, boxGroupCats, boxLabel, boxCellPanel, boxContentRows,
+  parsePosition, parsePositions, cellName, slotTakenBy,
   INV_CONFIG, INV_SLOT, BULK_EXAMPLES, bulkColumns, bulkMapHeader,
   BOX_CATS, BOX_TYPE_NAMES, BOX_WHERE } = sandbox;
 
@@ -293,6 +294,120 @@ check('a position is read the same way everywhere', () => {
   assert.deepEqual(Object.assign({}, parsePosition('A3', dims)), { r: 0, c: 2 });
   assert.deepEqual(Object.assign({}, parsePosition('3', dims)), { r: 0, c: 2 });
   assert.equal(parsePosition('Z9', dims), null);
+});
+
+console.log('\nOne record, several squares');
+
+const dims9 = { rows: 9, cols: 9 };
+const squares = (s, dims = dims9) => parsePositions(s, dims).map(cellName).join(' ');
+
+check('a run of aliquots is a run of squares', () => {
+  // The case this exists for: a buffer aliquoted into two tubes, written
+  // "A2-A3", was drawn nowhere and listed as not fitting the box.
+  assert.equal(squares('A2-A3'), 'A2 A3');
+  assert.equal(squares('A2 - A3'), 'A2 A3');
+  assert.equal(squares('A2–A3'), 'A2 A3', 'an en dash is what a word processor leaves behind');
+});
+
+check('a lettered range is a block, a numbered one is a run', () => {
+  // A1-C3 is read the way a range of wells on a plate is: a rectangle.
+  assert.equal(squares('A1-C3'), 'A1 A2 A3 B1 B2 B3 C1 C2 C3');
+  // Numbers already count row by row, so a range of them is twelve in a row.
+  assert.equal(parsePositions('1-12', dims9).length, 12);
+  assert.equal(squares('1-12').split(' ').slice(-2).join(' '), 'B2 B3');
+});
+
+check('a list of squares is a list of squares', () => {
+  assert.equal(squares('A1, B4'), 'A1 B4');
+  assert.equal(squares('A1; B4'), 'A1 B4');
+  assert.equal(squares('A1, A1'), 'A1', 'the same square twice is one square');
+  assert.equal(squares('A2-A3, C5'), 'A2 A3 C5');
+});
+
+check('what was already written still reads the same', () => {
+  assert.equal(squares('A3'), 'A3');
+  assert.equal(squares('3'), 'A3');
+  assert.equal(squares('A03'), 'A3');
+  assert.equal(squares('A-3'), 'A3', 'some people write the square with a dash');
+  assert.equal(squares(''), '');
+  assert.equal(squares('somewhere in the freezer'), '');
+});
+
+check('nothing is drawn outside the box', () => {
+  assert.equal(squares('A2-A3', { rows: 2, cols: 2 }), '', 'A3 is not in a 2×2 box');
+  assert.equal(squares('Z9'), '');
+  assert.equal(squares('99'), '');
+  assert.equal(parsePositions('1-12', { rows: 2, cols: 2 }).length, 0);
+});
+
+check('the map draws the record in every square it names', () => {
+  inventory({ kits: [{ id: 'k1', name: 'jetOPTIMUS Buffer', box: 'Reagents Box 1', position: 'A2-A3' }] });
+  const b = boxIndex()[0];
+  assert.equal(b.unplaced.length, 0, 'this is the record that fell out of the map');
+  assert.equal(b.placed, 2, 'two tubes, two squares');
+  assert.ok(b.cells['0,1'] && b.cells['0,2'], 'A2 and A3 should both hold it');
+  assert.equal(b.cells['0,1'][0].item.id, b.cells['0,2'][0].item.id, 'it is one record, not two');
+  const page = boxDetailHtml(b);
+  assert.equal((page.match(/jetOPTIMUS Buffer/g) || []).length >= 2, true, 'it should be labelled in both squares');
+});
+
+check('it is one row in the contents, saying how many squares', () => {
+  inventory({ kits: [{ id: 'k1', name: 'jetOPTIMUS Buffer', box: 'Reagents Box 1', position: 'A2-A3' }] });
+  const rows = boxContentRows(boxIndex()[0]);
+  assert.equal(rows.length, 1, 'a record across squares is one thing in the box');
+  assert.match(rows[0].pos, /A2-A3/);
+  assert.match(rows[0].pos, /2 positions/);
+});
+
+check('a single square still reads as the square itself', () => {
+  inventory({ kits: [{ id: 'k1', name: 'Miniprep kit', box: 'Reagents Box 1', position: '12' }] });
+  assert.equal(boxContentRows(boxIndex()[0])[0].pos, 'B3', 'a number should print as the square it is');
+});
+
+check('two records still cannot overlap, even partly', () => {
+  inventory({
+    kits: [
+      { id: 'k1', name: 'jetOPTIMUS Buffer', storage: '-20°C Freezer A', box: 'Reagents Box 1', position: 'A2-A3' },
+      { id: 'k2', name: 'Q5 polymerase', storage: '-20°C Freezer A', box: 'Reagents Box 1', position: 'B1-B4' }
+    ]
+  });
+  // Overlapping a run at one end is the same mistake as sitting on top of it.
+  const onto = slotTakenBy('kits', { id: 'k3', name: 'New tube', box: 'Reagents Box 1', position: 'A3' });
+  assert.ok(onto && onto.name === 'jetOPTIMUS Buffer', 'a tube into A3 should hit the buffer');
+  const across = slotTakenBy('kits', { id: 'k3', name: 'New tube', box: 'Reagents Box 1', position: 'A3-B2' });
+  assert.ok(across, 'a run that crosses two records should be refused');
+  assert.equal(slotTakenBy('kits', { id: 'k3', name: 'New tube', box: 'Reagents Box 1', position: 'C1-C9' }), null,
+    'an empty row is free');
+  // The same square written two ways is still the same square.
+  assert.ok(slotTakenBy('kits', { id: 'k3', name: 'New tube', box: 'Reagents Box 1', position: '3' }),
+    '"3" is A3 in a 9×9 box, and A3 is taken');
+  // A box of the same name on another shelf is a different box — but only
+  // when both records say which shelf, since a blank is not a disagreement.
+  assert.equal(slotTakenBy('kits', { id: 'k3', name: 'New tube', storage: 'Bench 2', box: 'Reagents Box 1', position: 'A3' }), null);
+  assert.ok(slotTakenBy('kits', { id: 'k3', name: 'New tube', box: 'Reagents Box 1', position: 'A3' }),
+    'a tube with no shelf recorded is not evidence of a different shelf');
+});
+
+check('the panel for one square says where the rest of it is', () => {
+  inventory({ kits: [{ id: 'k1', name: 'jetOPTIMUS Buffer', box: 'Reagents Box 1', position: 'A2-A3' }] });
+  sandbox.boxSelected = '0,1';
+  const panel = boxCellPanel(boxIndex()[0]);
+  sandbox.boxSelected = null;
+  assert.match(panel, /All positions/);
+  assert.match(panel, /A2-A3/);
+});
+
+check('shrinking a box warns about the squares a record would lose', () => {
+  const save = src.slice(src.indexOf('async function saveBox'), src.indexOf('async function deleteBox'));
+  assert.match(save, /parsePositions\(v\.item\.position, boxDims\(def\)\)\.length < parsePositions/);
+  assert.match(save, /will lose them/);
+});
+
+check('the form says a run of positions is allowed', () => {
+  assert.match(src, /var POSITION_HINT = /);
+  const forms = src.slice(src.indexOf('var forms = {'), src.indexOf('if (!forms[currentInvTab])'));
+  assert.equal((forms.match(/POSITION_HINT/g) || []).length, 2, 'enzymes and kits should both explain it');
+  assert.match(src, /A2-A3/, 'the example people copy has to be in the app, not only here');
 });
 
 console.log('\nThe dialog that gets a box out of the wrong type');
