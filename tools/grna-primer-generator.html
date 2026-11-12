@@ -8,7 +8,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="../js/primer-store.js?v=1"></script>
+    <script src="../js/primer-store.js?v=2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .copy-icon { cursor: pointer; transition: all 0.2s; }
@@ -315,6 +315,7 @@
             const [regPrimerStatus, setRegPrimerStatus] = useState('Designed');
             const [shared, setShared] = useState(false);
             const [storeNote, setStoreNote] = useState('');
+            const [saveError, setSaveError] = useState('');
             const [showClearModal, setShowClearModal] = useState(false);
             const [clearPasscode, setClearPasscode] = useState('');
             const CLEAR_PASSCODE = 'DELETE123'; // Set your secure passcode here
@@ -347,8 +348,19 @@
                 return () => { dead = true; };
             }, []);
 
-            React.useEffect(() => { if (loaded) PrimerStore.save('grna', grnaPrimers); }, [grnaPrimers, loaded]);
-            React.useEffect(() => { if (loaded) PrimerStore.save('regular', regPrimers); }, [regPrimers, loaded]);
+            /* A save that fails has to say so. These ran as fire-and-forget:
+               save() is async, so a rejected write — the shared store refusing
+               the row, the network gone — went nowhere anybody would see it.
+               The primer stayed on screen looking saved, and the next refresh
+               was the first anyone heard of it. */
+            const keep = (kind, list) => {
+                if (!loaded) return;
+                PrimerStore.save(kind, list).then(
+                    () => setSaveError(''),
+                    (err) => setSaveError((err && err.message) || String(err)));
+            };
+            React.useEffect(() => { keep('grna', grnaPrimers); }, [grnaPrimers, loaded]);
+            React.useEffect(() => { keep('regular', regPrimers); }, [regPrimers, loaded]);
 
             // Tm calculation
             const calculateTm = (sequence) => {
@@ -385,7 +397,7 @@
                 const reverseNumber = grnaPrimerCounter + 1;
 
                 const newPrimer = {
-                    id: Date.now(),
+                    id: PrimerStore.newId(),
                     forwardNumber,
                     reverseNumber,
                     forwardName: `PRg${forwardNumber}_Frw`,
@@ -450,7 +462,7 @@
                 const primerName = `PR${primerNumber}_${descSnippet}`;
 
                 const newPrimer = {
-                    id: Date.now(),
+                    id: PrimerStore.newId(),
                     number: primerNumber,
                     name: primerName,
                     sequence: regPrimerSeq.toUpperCase(),
@@ -654,7 +666,7 @@
                             const reverseNumber = counter + 1;
 
                             newPrimers.push({
-                                id: Date.now() + addedCount,
+                                id: PrimerStore.newId(),
                                 forwardNumber,
                                 reverseNumber,
                                 forwardName: `PRg${forwardNumber}_Frw`,
@@ -722,7 +734,7 @@
                             const primerName = `PR${counter}_${descSnippet}`;
 
                             newPrimers.push({
-                                id: Date.now() + addedCount,
+                                id: PrimerStore.newId(),
                                 number: counter,
                                 name: primerName,
                                 sequence,
@@ -763,9 +775,14 @@
                         <div className="mb-8">
                             <h1 className="text-4xl font-bold text-gray-900 mb-2">Primer Generator - Dual System</h1>
                             <p className="text-lg text-gray-600">Separate documentation for gRNA cloning (PRg) and regular primers (PR)</p>
-                            {storeNote && (
-                                <p className={'mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ' + (shared ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800')}>
-                                    {shared ? '✓ ' : '⚠ '}{storeNote}
+                            {(saveError || storeNote) && (
+                                <p className={'mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold ' +
+                                    (saveError ? 'bg-red-100 text-red-800'
+                                        : shared ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-amber-100 text-amber-800')}>
+                                    {saveError
+                                        ? '✗ Not saved — ' + saveError + '. Export to CSV before you close this page.'
+                                        : (shared ? '✓ ' : '⚠ ') + storeNote}
                                 </p>
                             )}
                         </div>

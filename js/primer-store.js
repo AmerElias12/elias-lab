@@ -68,12 +68,55 @@
     return [r.freezer, r.shelf, r.box].filter(Boolean).join(' · ');
   }
 
+  /* The shared row's primary key.
+
+     inventory_items.id is a uuid column. The generator stamped its records
+     with Date.now(), and this passed that straight through, so every save
+     into the shared inventory was rejected by Postgres — "invalid input
+     syntax for type uuid" — while the generator went on showing the primer
+     as though it were saved. In local mode an id is only a key in an array,
+     so it worked there and nowhere else.
+
+     New records carry a real uuid. An older one, out of this browser's
+     localStorage, is folded into a uuid derived from what it had, so the
+     same record always lands on the same row: saving twice updates it rather
+     than making a second copy of it. */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /* The id a brand-new record gets. Date.now() was the old answer, and two
+     primers added inside the same millisecond — which a CSV import does —
+     shared it. */
+  function newId() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) { /* older browser */ }
+    return rowId('primer-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+  }
+
+  function rowId(value) {
+    const raw = String(value == null ? '' : value);
+    if (UUID.test(raw)) return raw.toLowerCase();
+    // FNV-1a over the id, four times with different offsets, for 32 hex digits.
+    let hex = '';
+    for (let seed = 0; seed < 4; seed++) {
+      let h = (0x811c9dc5 ^ (seed * 0x9e3779b9)) >>> 0;
+      for (let i = 0; i < raw.length; i++) {
+        h = (h ^ raw.charCodeAt(i)) >>> 0;
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      hex += ('00000000' + h.toString(16)).slice(-8);
+    }
+    // Shaped as a v4 uuid so anything reading the version nibble is not surprised.
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' +
+      ((parseInt(hex[16], 16) & 0x3 | 0x8).toString(16)) + hex.slice(17, 20) + '-' + hex.slice(20, 32);
+  }
+
   /* One generator record -> one inventory row. The record is kept whole, so
      nothing the generator relies on is lost on the way through; the fields
      added on top are the ones the rest of the notebook reads. */
   function toRow(kind, rec, addedBy) {
     const row = Object.assign({}, rec, {
-      id: String(rec.id),
+      id: rowId(rec.id),
       kind: kind,
       storage: where(rec),
       application: rec.description || ''
@@ -116,7 +159,7 @@
       const have = {};
       rowsOf(h, kind).forEach(function (r) { have[String(r.id)] = true; });
       for (const rec of mine) {
-        if (!rec || rec.id == null || have[String(rec.id)]) continue;
+        if (!rec || rec.id == null || have[rowId(rec.id)]) continue;
         await h.DB.upsertInventory(CATEGORY, toRow(kind, rec, addedBy));
         moved++;
       }
@@ -172,7 +215,7 @@
     const seen = {}, fresh = [];
     for (const rec of (list || [])) {
       if (!rec || rec.id == null) continue;
-      const id = String(rec.id);
+      const id = rowId(rec.id);
       seen[id] = true;
       const row = toRow(kind, rec, addedBy);
       if (!existing[id]) fresh.push(row);
@@ -214,5 +257,5 @@
     return out.filter(function (x) { return x.seq.length; });
   }
 
-  return { load, save, flat, isShared, toRow, fromRow, counters, CATEGORY };
+  return { load, save, flat, isShared, toRow, fromRow, counters, rowId, newId, CATEGORY };
 }));
