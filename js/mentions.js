@@ -40,6 +40,7 @@
     { kind: 'plasmid',    cat: 'plasmids', invKind: 'plasmid', label: 'Plasmid',        name: 'name' },
     { kind: 'cdna',       cat: 'plasmids', invKind: 'cdna',    label: 'cDNA',           name: 'name' },
     { kind: 'gene',       cat: 'plasmids', invKind: 'gene',    label: 'Gene',           name: 'name' },
+    { kind: 'block',      cat: 'plasmids', invKind: 'block',   label: 'DNA block',      name: 'name' },
     { kind: 'primer',     cat: 'primers',  label: 'Primer',         section: 'inv-primers',   name: 'name' },
     { kind: 'enzyme',     cat: 'enzymes',  label: 'Enzyme',         section: 'inv-enzymes',   name: 'name' },
     { kind: 'kit',        cat: 'kits',     label: 'Kit / reagent',  section: 'inv-kits',      name: 'name' },
@@ -54,11 +55,11 @@
     { kind: 'expense',    cat: 'expenses', label: 'Expense',        section: 'finances',      name: 'name' }
   ];
   // The three that share the plasmids store.
-  var CLONING = ['plasmid', 'cdna', 'gene'];
+  var CLONING = ['plasmid', 'cdna', 'gene', 'block'];
   var BY_KIND = {};
   KINDS.forEach(function (k) { BY_KIND[k.kind] = k; });
 
-  var ICONS = { plasmid: '⦿', cdna: '〜', gene: '⌁', primer: '→', enzyme: '✂',
+  var ICONS = { plasmid: '⦿', cdna: '〜', gene: '⌁', block: '▬', primer: '→', enzyme: '✂',
     kit: '▧', stock: '❄', cell: '◌', box: '▦', protocol: '☰', experiment: '✎',
     talk: '▭', request: '⊞', grant: '✦', expense: '⊗', user: '●' };
   var BOX_OF = { plasmids: 'Plasmid box', stocks: 'Glycerol stock box', cells: 'Tissue culture box' };
@@ -80,6 +81,7 @@
   function metaOf(kind, item) {
     if (kind === 'plasmid') return [item.backbone, item.resistance, item.len ? item.len + ' bp' : ''].filter(Boolean).join(' · ');
     if (kind === 'cdna') return [item.insert, item.species, item.accession].filter(Boolean).join(' · ');
+    if (kind === 'block') return [item.insert, item.source, item.len ? item.len + ' bp' : ''].filter(Boolean).join(' · ');
     if (kind === 'gene') return [item.species, item.accession || item.locus].filter(Boolean).join(' · ');
     if (kind === 'primer') return [item.sequence ? String(item.sequence).slice(0, 24) : '', item.application].filter(Boolean).join(' · ');
     if (kind === 'enzyme') return [item.cutsite, item.supplier].filter(Boolean).join(' · ');

@@ -8,7 +8,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="../js/primer-store.js?v=2"></script>
+    <script src="../js/primer-store.js?v=3"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .copy-icon { cursor: pointer; transition: all 0.2s; }
@@ -529,7 +529,10 @@
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                setTimeout(() => URL.revokeObjectURL(url), 0);
+                // Not straight away: the browser reads the file after this
+                // function returns, and Safari in particular finds nothing
+                // there if the address has already been withdrawn.
+                setTimeout(() => URL.revokeObjectURL(url), 40000);
             };
 
             const exportGrna = () => {
@@ -582,50 +585,25 @@
             };
 
             // ===== BULK UPLOAD FUNCTIONS =====
+            /* Both templates go out the way the exports do, as a file made in
+               the page. They used to be a data: address handed to a link,
+               which not every browser will treat as a download — least of
+               all from inside a frame, and this page is shown in one on the
+               notebook's Primers page. There the button did nothing. */
             const downloadGrnaTemplate = () => {
-                const templateData = [
+                downloadCsv([
                     ['20bp Spacer', 'Description', 'Freezer', 'Shelf', 'Box'],
                     ['ATCGATCGATCGATCGATCG', 'Example gRNA 1', 'AE_Freezer 1 (-20C)', 'A', '1'],
-                    ['GCTAGCTAGCTAGCTAGCTA', 'Example gRNA 2', 'AE_Freezer 1 (-20C)', 'A', '1'],
-                    ['', '', '', '', ''],
-                    ['', '', '', '', '']
-                ];
-
-                let csv = 'data:text/csv;charset=utf-8,';
-                templateData.forEach(row => {
-                    csv += row.map(cell => `"${cell}"`).join(',') + '\n';
-                });
-
-                const link = document.createElement('a');
-                link.setAttribute('href', encodeURI(csv));
-                link.setAttribute('download', 'gRNA_Primers_Template.csv');
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                    ['GCTAGCTAGCTAGCTAGCTA', 'Example gRNA 2', 'AE_Freezer 1 (-20C)', 'A', '1']
+                ], 'gRNA_Primers_Template.csv');
             };
 
             const downloadRegTemplate = () => {
-                const templateData = [
+                downloadCsv([
                     ['Sequence', 'Orientation', 'Description', 'Vendor', 'Status', 'Freezer', 'Shelf', 'Box'],
                     ['ATCGATCGATCGATCGATCG', 'Frw', 'Example primer 1', 'IDT', 'Designed', 'AE_Freezer 1 (-20C)', 'A', '1'],
-                    ['GCTAGCTAGCTAGCTAGCTA', 'Rev', 'Example primer 2', 'GeneScript', 'Ordered', 'AE_Freezer 1 (-20C)', 'A', '1'],
-                    ['', '', '', '', '', '', '', ''],
-                    ['', '', '', '', '', '', '', '']
-                ];
-
-                let csv = 'data:text/csv;charset=utf-8,';
-                templateData.forEach(row => {
-                    csv += row.map(cell => `"${cell}"`).join(',') + '\n';
-                });
-
-                const link = document.createElement('a');
-                link.setAttribute('href', encodeURI(csv));
-                link.setAttribute('download', 'Regular_Primers_Template.csv');
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                    ['GCTAGCTAGCTAGCTAGCTA', 'Rev', 'Example primer 2', 'GeneScript', 'Ordered', 'AE_Freezer 1 (-20C)', 'A', '1']
+                ], 'Regular_Primers_Template.csv');
             };
 
             const uploadGrnaFile = (event) => {

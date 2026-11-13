@@ -168,11 +168,13 @@
     var p = asPlasmid(it), len = p.seq.length;
     el.innerHTML =
       '<div class="ln-entry-bar">' +
-        '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-plasmids\');return false;">← Plasmids</a>' +
+        '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-' + cloningTab(it.kind) + '\');return false;">← ' +
+          { plasmids: 'Plasmids', cdnas: 'cDNAs', genes: 'Genes', blocks: 'DNA Blocks' }[cloningTab(it.kind)] + '</a>' +
         '<span id="ln-pl-status" class="ln-entry-status">' + (plDirty ? 'Unsaved changes' : 'Saved') + '</span>' +
         '<div class="ln-header-actions">' +
           '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in a browser window ↗</a>' +
           '<button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button>' +
+          '<button class="ln-add-btn ghost" title="Make a copy of this record, named “' + esc(it.name || 'Untitled') + ' copy”" onclick="plCopyThis()">⧉ Copy</button>' +
           '<button class="ln-add-btn ghost" onclick="plExportMenu(this)">↓ Export</button>' +
           '<button class="ln-add-btn" id="ln-pl-save" onclick="savePlasmid()">Save</button>' +
         '</div></div>' +
@@ -213,6 +215,7 @@
   var plMap = null, plSeqMap = null;
 
   function unmountMap() {
+    stopWatchingRows();
     [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.destroy(); } catch (e) {} } });
     plMap = null; plSeqMap = null;
   }
@@ -234,7 +237,185 @@
     return fs ? [{ start: fs.from, end: fs.to, direction: fs.strand }] : [];
   }
   function seqViewOpts(p) {
-    return { enzymes: shownEnzymeNames(), search: plOpts.find || '', translations: shownTranslations(p) };
+    return { enzymes: shownEnzymeNames(), search: plOpts.find || '', translations: shownTranslations(p),
+      primers: primerRowsFor(primerGlyphs(p)) };
+  }
+
+  /* ---- primers, drawn as primers ----
+
+     An annotated primer used to be one more ribbon under the sequence, the
+     same as a promoter. It is drawn now as what it is: its own bases in a
+     box against the strand it anneals to, with an arrow at the 3' end, and
+     any 5' tail that does not anneal lifted clear of the sequence — so a
+     primer that adds a site or an overlap shows which of its bases are on
+     the template and which are along for the ride.
+
+     SeqViz has primer rows but draws only a blank bar in them, with no bases
+     and no idea of a tail. So it is asked for the room and nothing else: each
+     primer is handed over three times, which stacks into a band three rows
+     deep beside the right strand, its own bars are hidden in the stylesheet,
+     and the primer is painted into that band here. The paint goes with every
+     redraw, like the caret, so it is put back whenever the rows change. */
+  var GLYPH_ROWS = 3, GLYPH_ROW_H = 16;
+  var plGlyphs = [];
+  function reverseStr(x) { return x.split('').reverse().join(''); }
+  function primerGlyphs(p) {
+    var len = p.seq.length, binds = primerBindings(p), out = [];
+    p.features.forEach(function (f, fi) {
+      if (f.type !== 'primer_bind' || f.strand === 0 || f.end <= f.start) return;   // across the origin stays a ribbon
+      var hit = null;
+      binds.forEach(function (b) {
+        b.hits.forEach(function (h) {
+          if (h.start === f.start && h.end === f.end && h.strand === f.strand && (!hit || b.primer.name === f.name)) hit = h;
+        });
+      });
+      // The tail, from the primer if it is still attached, else from the note
+      // the annotation was given — which is what survives a GenBank file.
+      var tail = P.clean(hit ? hit.tail : ((/tail not annealed:\s*([A-Za-z]+)/.exec(f.note || '') || [])[1] || ''));
+      var body = p.seq.slice(f.start, f.end), fwd = f.strand === 1;
+      var from = fwd ? Math.max(0, f.start - tail.length) : f.start;
+      var to = fwd ? f.end : Math.min(len, f.end + tail.length);
+      /* Left to right as it lies on the page. A forward primer reads 5'→3'
+         that way, tail first. A reverse one lies on the bottom strand, so it
+         reads 3'→5': the complement of the bases above it, then its tail. */
+      var shown = fwd ? tail.slice(tail.length - (f.start - from)) + body
+        : reverseStr(P.revcomp(body)) + reverseStr(tail).slice(0, to - f.end);
+      out.push({ feature: fi, name: f.name, from: from, to: to, a0: f.start, a1: f.end, dir: f.strand,
+        shown: shown.toLowerCase() });
+    });
+    plGlyphs = out;
+    return out;
+  }
+  function primerRowsFor(glyphs) {
+    var out = [];
+    glyphs.forEach(function (d, i) {
+      for (var k = 0; k < GLYPH_ROWS; k++) out.push({ name: 'plp-' + i + '-' + k, start: d.from, end: d.to, direction: d.dir });
+    });
+    return out;
+  }
+  // The sequence view's features: everything but what is drawn as a primer.
+  function seqPayload(p) {
+    var drawn = {};
+    primerGlyphs(p).forEach(function (d) { drawn[d.feature] = true; });
+    return { name: p.name, seq: p.seq, topology: p.topology,
+      features: p.features.filter(function (f, n) { return !drawn[n]; }) };
+  }
+  function svgEl(tag, attrs, text) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  function paintPrimers() {
+    var host = document.getElementById('pl-seq-map');
+    if (!host) return;
+    stopWatchingRows();
+    Array.prototype.forEach.call(host.querySelectorAll('.pl-primer-glyph'), function (x) { x.remove(); });
+    var rows = plGlyphs.length ? seqRows() : null;
+    if (rows) {
+      var seq = edSeq();
+      rows.blocks.forEach(function (block) {
+        var text = block.querySelector('text.la-vz-seq');
+        var index = parseInt(String(block.id).replace(/^\D*/, ''), 10);
+        if (!text || !isFinite(index)) return;
+        var first = index * rows.per, count = text.textContent.length;
+        // The same check the caret makes: draw nothing against bases that
+        // are not the ones this row is thought to hold.
+        if (seq.substr(first, count) !== text.textContent) return;
+        var spans = text.querySelectorAll('tspan');
+        var cw = spans.length > 1 ? parseFloat(spans[1].getAttribute('x')) - parseFloat(spans[0].getAttribute('x'))
+          : parseFloat(block.getAttribute('width')) / rows.per;
+        if (!(cw > 0)) return;
+        plGlyphs.forEach(function (d, i) {
+          if (d.to <= first || d.from >= first + count) return;
+          var bars = block.querySelectorAll('g[id^="primerplp-' + i + '-"]');
+          if (!bars.length) return;
+          var top = Infinity;
+          Array.prototype.forEach.call(bars, function (bar) {
+            var m = bar.getCTM && bar.getCTM();
+            if (m) top = Math.min(top, m.f);
+          });
+          if (!isFinite(top)) return;
+          block.appendChild(primerGlyph(d, first, count, cw, top - 1));
+        });
+      });
+    }
+    watchRows(host);
+  }
+  /* One primer's share of one row. `top` is the top of its band; the side
+     of the band nearest the sequence is the bottom for a forward primer and
+     the top for a reverse one, and everything is laid out from that side. */
+  function primerGlyph(d, first, count, cw, top) {
+    var fwd = d.dir === 1, band = GLYPH_ROWS * GLYPH_ROW_H, boxH = 19, lift = 9;
+    var near = fwd ? top + band - boxH - 2 : top + 2;          // the annealed box
+    var far = fwd ? near - lift : near + lift;                 // the tail's box
+    var lo = Math.max(d.from, first), hi = Math.min(d.to, first + count);
+    function x(pos) { return (pos - first) * cw; }
+    var gEl = svgEl('g', { 'class': 'pl-primer-glyph' + (fwd ? '' : ' rev') });
+    gEl.appendChild(svgEl('title', {}, d.name));
+
+    // the tail: the part of the footprint outside the annealed stretch
+    var t0 = fwd ? lo : Math.max(lo, d.a1), t1 = fwd ? Math.min(hi, d.a0) : hi;
+    if (t1 > t0) gEl.appendChild(svgEl('rect', { 'class': 'pl-primer-tail', x: x(t0), y: far, width: x(t1) - x(t0), height: boxH }));
+
+    var b0 = Math.max(lo, d.a0), b1 = Math.min(hi, d.a1);
+    if (b1 > b0) {
+      var l = x(b0), r = x(b1), w = r - l, y0 = near, y1 = near + boxH, path;
+      var tip = fwd ? d.a1 <= first + count : d.a0 >= first;     // is the 3' end on this row?
+      if (tip && w > 30 && fwd) {
+        path = 'M' + l + ' ' + y0 + ' L' + (r - 22) + ' ' + y0 + ' L' + (r - 28) + ' ' + (y0 - 7) + ' L' + (r - 11) + ' ' + (y0 - 7) +
+          ' L' + r + ' ' + (y0 + 5) + ' L' + r + ' ' + y1 + ' L' + l + ' ' + y1 + ' Z';
+      } else if (tip && w > 30) {
+        path = 'M' + l + ' ' + y0 + ' L' + r + ' ' + y0 + ' L' + r + ' ' + y1 + ' L' + (l + 22) + ' ' + y1 + ' L' + (l + 28) + ' ' + (y1 + 7) +
+          ' L' + (l + 11) + ' ' + (y1 + 7) + ' L' + l + ' ' + (y1 - 5) + ' Z';
+      } else {
+        path = 'M' + l + ' ' + y0 + ' L' + r + ' ' + y0 + ' L' + r + ' ' + y1 + ' L' + l + ' ' + y1 + ' Z';
+      }
+      gEl.appendChild(svgEl('path', { 'class': 'pl-primer-body', d: path }));
+      // the name, once, on the row where the annealed stretch begins
+      if (d.a0 >= first) {
+        var name = d.name.length > 28 ? d.name.slice(0, 27) + '…' : d.name;
+        var lw = name.length * 6.4 + 14, total = count * cw;
+        var cx = Math.max(lw / 2, Math.min(total - lw / 2, (l + r) / 2));
+        var ly = fwd ? top + 1 : top + band - 15;
+        gEl.appendChild(svgEl('rect', { 'class': 'pl-primer-tag', x: cx - lw / 2, y: ly, width: lw, height: 14, rx: 7 }));
+        gEl.appendChild(svgEl('text', { 'class': 'pl-primer-name', x: cx, y: ly + 7.5, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, name));
+      }
+    }
+    // the bases, each over the base it pairs with (or would)
+    function letters(a, b, y) {
+      if (b <= a) return;
+      var xs = [];
+      for (var pos = a; pos < b; pos++) xs.push((x(pos) + cw / 2).toFixed(2));
+      gEl.appendChild(svgEl('text', { 'class': 'pl-primer-bases', x: xs.join(' '), y: y + boxH / 2 + 0.5,
+        'text-anchor': 'middle', 'dominant-baseline': 'central' }, d.shown.slice(a - d.from, b - d.from)));
+    }
+    letters(t0, t1, far);
+    letters(b0, b1, near);
+    return gEl;
+  }
+  /* SeqViz only keeps the rows that are on screen, and makes new ones as the
+     view scrolls, so the paint has to follow it. Watching is paused while
+     painting, or the paint would be the change that asks for a paint. */
+  var plRowWatch = null, plGlyphTimer = null;
+  function stopWatchingRows() { if (plRowWatch) { plRowWatch.disconnect(); plRowWatch = null; } }
+  function watchRows(host) {
+    if (typeof MutationObserver !== 'function') return;
+    plRowWatch = new MutationObserver(function (list) {
+      var ours = list.every(function (m) {
+        return Array.prototype.every.call(m.addedNodes, isOurs) && Array.prototype.every.call(m.removedNodes, isOurs);
+      });
+      if (!ours) schedulePrimerPaint();
+    });
+    plRowWatch.observe(host, { childList: true, subtree: true });
+  }
+  function isOurs(n) {
+    var c = n.nodeType === 1 && n.getAttribute('class') || '';
+    return /pl-primer-glyph|pl-seqcaret/.test(c);
+  }
+  function schedulePrimerPaint() {
+    clearTimeout(plGlyphTimer);
+    plGlyphTimer = setTimeout(paintPrimers, 30);
   }
   function mountMap(p) {
     unmountMap();
@@ -252,8 +433,10 @@
       }
     }
     plMap = put('pl-map', 'circular');
+    payload = seqPayload(p);
     plSeqMap = put('pl-seq-map', 'linear', seqViewOpts(p));
     paintCaret();
+    schedulePrimerPaint();
   }
   // The sequence view alone, after the panel around it was rebuilt.
   function mountSeqMap() {
@@ -264,12 +447,13 @@
     var p = asPlasmid(it);
     if (!p.seq.length) return;
     try {
-      plSeqMap = VV.createViewer(el, mapPayload(p), Object.assign(
+      plSeqMap = VV.createViewer(el, seqPayload(p), Object.assign(
         { view: 'linear', log: false, onSelect: onMapSelect }, seqViewOpts(p)));
     } catch (e) {
       el.innerHTML = '<div class="ln-pl-maperr">' + esc('The sequence could not be drawn: ' + e.message) + '</div>';
     }
     paintCaret();
+    schedulePrimerPaint();
   }
   /* After an edit: the bases have changed but the panel has not, so the
      viewer is handed the new sequence rather than being rebuilt — a remount
@@ -279,15 +463,17 @@
     var it = rec(); if (!it) return;
     var p = asPlasmid(it);
     if (!plSeqMap) { mountSeqMap(); return; }
-    try { plSeqMap.update(mapPayload(p)); } catch (e) {}
+    try { plSeqMap.update(seqPayload(p)); } catch (e) {}
     try { plSeqMap.setOptions(seqViewOpts(p)); } catch (e) {}
     paintCaret();
+    schedulePrimerPaint();
   }
   // Marking a different set of enzymes, searching, or changing the frame.
   function seqMapOptions() {
     var it = rec(); if (!it || !plSeqMap) return;
     try { plSeqMap.setOptions(seqViewOpts(asPlasmid(it))); } catch (e) {}
     paintSelection();
+    schedulePrimerPaint();
   }
   /* After an edit the sequence has changed but the page has not, so the map is
      handed the new sequence instead of being torn down and rebuilt. When there
@@ -334,7 +520,7 @@
       return '<div class="ln-form-row"><label>' + label + '</label><input id="' + id + '" value="' + esc(value || '') + '"' +
         (hint ? ' placeholder="' + esc(hint) + '"' : '') + '></div>';
     }
-    /* The same page serves plasmids, cDNAs and genes. Only the identity
+    /* The same page serves plasmids, cDNAs, genes and DNA blocks. Only the identity
        block differs: a gene has a species and an accession where a plasmid
        has a backbone and a resistance. Everything below — preparation,
        storage, the maps, the tools — is the same question whatever the
@@ -347,6 +533,10 @@
           row('pl-accession', 'Accession', it.accession, 'e.g. NM_000053.4') + '</div>' +
         '<div class="ln-form-grid">' + row('pl-locus', 'Locus', it.locus, 'e.g. 13q14.3') +
           row('pl-source', 'Source', it.source, 'e.g. Ensembl, or a collaborator') + '</div>';
+    } else if (kind === 'block') {
+      identity = row('pl-name', 'DNA block name', it.name, 'e.g. gBlock HK022 attB') +
+        '<div class="ln-form-grid">' + row('pl-insert', 'Carries', it.insert, 'e.g. attB site with homology arms') +
+          row('pl-source', 'Supplier / order', it.source, 'e.g. IDT gBlock, order 12345') + '</div>';
     } else if (kind === 'cdna') {
       identity = row('pl-name', 'cDNA name', it.name, 'e.g. ATP7B cDNA') +
         '<div class="ln-form-grid">' + row('pl-insert', 'Gene / insert', it.insert, 'e.g. ATP7B CDS') +
@@ -953,6 +1143,7 @@
       return '<strong>' + (plSel.start + 1) + '–' + plSel.end + '</strong> · ' + sub.length + ' bp · GC ' +
         P.gc(sub).toFixed(1) + '% · Tm ' + P.tm(sub).toFixed(1) + ' °C' +
         '<button class="ln-icon-btn" onclick="plFeatureModal(-1)">+ Make a feature</button>' +
+        '<button class="ln-icon-btn" onclick="plNewPrimerModal()">+ Make a new primer</button>' +
         '<button class="ln-icon-btn" onclick="plCopySelection()">Copy</button>' +
         '<button class="ln-icon-btn" onclick="plCopyMenu(this)">Copy as ▾</button>';
     }
@@ -1080,13 +1271,24 @@
       return '<button type="button" onclick="plCopySelection(\'' + k + '\')">' +
         esc(P.COPY_FORMS[k].label) + '</button>';
     }).join('');
-    btn.parentNode.appendChild(menu);
-    setTimeout(function () {
-      document.addEventListener('click', function close(e) {
-        if (menu.contains(e.target) || e.target === btn) return;
-        menu.remove(); document.removeEventListener('click', close);
-      });
-    }, 0);
+    dropMenu(btn, menu);
+  }
+  /* Hang a menu under the button that opened it. It used to be left wherever
+     the row put it, which for Export was the far end of the bar, over other
+     buttons. The listener that closes it is taken away when the menu goes,
+     however it goes, so choosing an item does not leave one behind. */
+  function dropMenu(btn, menu) {
+    var host = btn.parentNode;
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    host.appendChild(menu);
+    menu.style.top = (btn.offsetTop + btn.offsetHeight) + 'px';
+    var left = btn.offsetLeft + btn.offsetWidth - menu.offsetWidth;
+    menu.style.left = Math.max(0, Math.min(left, host.clientWidth - menu.offsetWidth)) + 'px';
+    function close(e) {
+      if (e && document.body.contains(menu) && (menu.contains(e.target) || e.target === btn)) return;
+      menu.remove(); document.removeEventListener('click', close);
+    }
+    setTimeout(function () { document.addEventListener('click', close); }, 0);
   }
 
   /* Redraw the sequence alone, keeping where the page was scrolled and which
@@ -1997,7 +2199,7 @@
   function primerList() { var it = rec(); return (it && it.primers) || []; }
   function primerBindings(p) {
     return primerList().map(function (pr) {
-      var hits = P.bindPrimers(p, pr.seq, { minAnneal: 14 });
+      var hits = P.bindPrimers(p, pr.seq, { minAnneal: PRIMER_MIN_3PRIME });
       hits.forEach(function (h) { h.name = pr.name; });
       return { primer: pr, hits: hits };
     });
@@ -2006,9 +2208,13 @@
     var binds = primerBindings(p);
     var rows = binds.map(function (b, i) {
       var h = b.hits[0];
+      /* Other places it would prime. Eight bases is enough to attach, but
+         eight bases turn up by chance all over a plasmid, so a second site
+         is only worth a warning when it holds about as well as the first. */
+      var others = h ? b.hits.filter(function (x) { return x !== h && x.anneal.length >= Math.min(14, h.anneal.length); }).length : 0;
       var where = !h ? '<span class="warn">does not bind</span>'
         : (h.start + 1) + '–' + h.end + ' ' + (h.strand === -1 ? '←' : '→') +
-          (b.hits.length > 1 ? ' <span class="warn">(+' + (b.hits.length - 1) + ' more)</span>' : '');
+          (others ? ' <span class="warn">(+' + others + ' more)</span>' : '');
       return '<tr><td>' + esc(b.primer.name) + '</td>' +
         '<td><code>' + (h && h.tail ? '<span class="pcr-tailtext">' + esc(h.tail) + '</span>' : '') +
           esc(h ? h.anneal : b.primer.seq) + '</code></td>' +
@@ -2016,7 +2222,7 @@
         '<td class="ln-nowrap">' + (h ? h.tm.toFixed(1) + ' °C' : '—') + '</td>' +
         '<td class="ln-nowrap">' + where + '</td>' +
         '<td class="ln-nowrap">' + (h && h.tail ? h.tail.length + ' nt tail' : h ? 'full match' : '—') + '</td>' +
-        '<td class="ln-row-actions">' + (h ? '<button class="ln-icon-btn" onclick="plAnnotatePrimer(' + i + ')">Annotate</button>' : '') +
+        '<td class="ln-row-actions">' + annotateButton(b, i) +
         '<button class="ln-icon-btn danger" onclick="plDeletePrimer(' + i + ')">✕</button></td></tr>';
     }).join('');
     return '<div class="ln-pl-panel" id="pl-primers"><div class="ln-pl-panel-head"><h3>Primers <span>' + binds.length + '</span></h3>' +
@@ -2027,6 +2233,35 @@
       (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
   }
+  /* A primer is annotated once. The button used to add another identical
+     feature every time it was pressed, so the map and the feature table
+     filled up with copies of one primer. Now it says the primer is on the
+     map, and where copies were already made it offers to take them away. */
+  function primerFeature(b, len) {
+    var h = b.hits[0];
+    if (!h) return null;
+    return P.normFeature({ name: b.primer.name, type: 'primer_bind', start: h.start, end: h.end, strand: h.strand,
+      note: h.tail ? h.tail.length + ' base 5′ tail not annealed: ' + h.tail : 'Full match' }, len);
+  }
+  // Which of the record's features are this primer, where it binds.
+  function primerAnnotations(it, f) {
+    var len = P.clean(it.seq || '').length, out = [];
+    (it.features || []).forEach(function (raw, n) {
+      var x = P.normFeature(raw, len);
+      if (x && x.type === 'primer_bind' && x.name === f.name && x.start === f.start && x.end === f.end && x.strand === f.strand) out.push(n);
+    });
+    return out;
+  }
+  function annotateButton(b, i) {
+    var it = rec(), f = it && primerFeature(b, P.clean(it.seq || '').length);
+    if (!f) return '';
+    var n = primerAnnotations(it, f).length;
+    if (!n) return '<button class="ln-icon-btn" onclick="plAnnotatePrimer(' + i + ')">Annotate</button>';
+    if (n === 1) return '<span class="pl-annotated" title="This primer is already on the map and in the feature list">Annotated ✓</span>';
+    return '<button class="ln-icon-btn" title="This primer was annotated ' + n + ' times. Keep one." onclick="plAnnotatePrimer(' + i + ')">Remove ' +
+      (n - 1) + ' duplicate' + (n === 2 ? '' : 's') + '</button>';
+  }
+
   /* ---- the primers the lab has written down ----
      js/primer-store.js keeps them, in the shared inventory, so this is the
      same list everybody else sees. A gRNA record is one pair, so it arrives
@@ -2050,13 +2285,15 @@
      bindPrimers grows the annealed stretch from the 3' end until the template
      stops agreeing, which is the end that has to match: a 5' tail hanging
      free is normal and is what adds a site or an overlap, but a primer whose
-     3' end does not sit on the template will not extend. Ten bases is the
-     floor the lab works to, so anything shorter is listed — you can see it is
-     there — but cannot be ticked.
+     3' end does not sit on the template will not extend. Eight bases at the
+     3' end is the floor the lab works to: a primer that mostly hangs free —
+     a long tail carrying a site or an overlap — still attaches and can still
+     be annotated. Anything shorter is listed, so you can see it is there,
+     but cannot be ticked.
 
      Worked out once per primer when the dialog opens, not on every keystroke
      in the search box. */
-  var PRIMER_MIN_3PRIME = 10;
+  var PRIMER_MIN_3PRIME = 8;
   var plPrimerBinds = {};
   function plPrimerBind(seq) {
     if (plPrimerBinds[seq]) return plPrimerBinds[seq];
@@ -2149,7 +2386,7 @@
       '<div class="hint">Ordinary primers and gRNA cloning pairs, from the Primers page — the lab\u2019s shared list, so whatever anyone has recorded is here.</div></div>' +
       '<div id="pm-results">' + plPrimerRows('') + '</div>' +
       '<div class="hint">A primer can be ticked once at least ' + PRIMER_MIN_3PRIME +
-      ' of its bases match the template at its 3′ end. The rest are shown, greyed, because a primer that does not ' +
+      ' of its bases match the template at its 3′ end — the rest of it can hang free as a tail. The others are shown, greyed, because a primer that does not ' +
       'prime here may still be the one you were looking for.</div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" id="pm-attach" onclick="plAddPrimer()">Attach</button></div>';
@@ -2208,12 +2445,115 @@
     var it = rec(); if (!it) return;
     var p = asPlasmid(it), b = primerBindings(p)[i];
     if (!b || !b.hits.length) return;
-    var h = b.hits[0];
-    var f = P.normFeature({ name: b.primer.name, type: 'primer_bind', start: h.start, end: h.end, strand: h.strand,
-      note: h.tail ? h.tail.length + ' base 5′ tail not annealed: ' + h.tail : 'Full match' }, p.seq.length);
-    if (!f) return;
-    it.features = (it.features || []).concat([f]);
-    markPlDirty(); renderPlasmid();
+    if (annotatePrimer(it, b)) { markPlDirty(); renderPlasmid(); }
+  }
+  // Puts the primer on the map if it is not there, and leaves exactly one.
+  function annotatePrimer(it, b) {
+    var f = primerFeature(b, P.clean(it.seq || '').length);
+    if (!f) return false;
+    var have = primerAnnotations(it, f);
+    if (!have.length) { it.features = (it.features || []).concat([f]); return true; }
+    if (have.length === 1) return false;
+    var extra = {};
+    have.slice(1).forEach(function (n) { extra[n] = true; });
+    it.features = it.features.filter(function (x, n) { return !extra[n]; });
+    return true;
+  }
+
+  /* ---- a new primer, from the bases that are selected ----
+
+     The selection is the primer: as it reads for a forward one, its reverse
+     complement for a reverse one. It is written into the lab's primer list —
+     the same list the Primers page shows, with the next PR number — and
+     attached to this record, so it is on the Primers page and here at once.
+
+     The list is shared and is written straight away; the attachment is part
+     of this page and waits for Save like every other edit to it. */
+  var plNewPrimer = null;
+  function plNewPrimerModal() {
+    var it = rec(); if (!it || !plSel) return;
+    if (!window.PrimerStore || !window.PrimerStore.addRegular) { alert('The lab’s primer list is not available on this page.'); return; }
+    var sub = P.clean(it.seq).slice(plSel.start, plSel.end);
+    if (sub.length < 10) { alert('Select at least 10 bases to make a primer from — ' + sub.length + ' selected.'); return; }
+    if (sub.length > 150) { alert('That selection is ' + sub.length.toLocaleString() + ' bases, which is too long to order as a primer. Select just the stretch it should anneal to.'); return; }
+    plNewPrimer = { fwd: sub, rev: P.revcomp(sub), from: plSel.start + 1, to: plSel.end };
+    function opts(list, chosen) {
+      return list.map(function (v) { return '<option' + (v === chosen ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+    }
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Make a new primer</h3>' +
+      '<p class="ln-bulk-intro">From bases ' + plNewPrimer.from + '–' + plNewPrimer.to + '. It is added to the lab’s primer list, ' +
+      'where the Primers page shows it, and attached to this sequence.</p>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Orientation</label><select id="np-dir" onchange="plNewPrimerFlip()">' +
+          '<option value="Frw">Forward — reads as selected</option><option value="Rev">Reverse — reverse complement</option></select></div>' +
+        '<div class="ln-form-row"><label>Description</label><input id="np-desc" placeholder="e.g. ATP7B exon 8" oninput="plNewPrimerStats()"></div></div>' +
+      '<div class="ln-form-row"><label>Sequence (5′→3′)</label><input id="np-seq" value="' + esc(plNewPrimer.fwd) + '" oninput="plNewPrimerStats()" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;">' +
+        '<div class="hint" id="np-stats"></div></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Vendor</label><input id="np-vendor" value="IDT"></div>' +
+        '<div class="ln-form-row"><label>Status</label><select id="np-status">' + opts(['Designed', 'Ordered', 'Received'], 'Designed') + '</select></div></div>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Freezer</label><input id="np-freezer" value="AE_Freezer 1 (-20C)"></div>' +
+        '<div class="ln-form-grid"><div class="ln-form-row"><label>Shelf</label><input id="np-shelf" value="A"></div>' +
+          '<div class="ln-form-row"><label>Box</label><input id="np-box" value="1"></div></div></div>' +
+      '<label class="ln-pl-check" style="display:block;margin:.2rem 0 .6rem;"><input type="checkbox" id="np-annotate" checked> Annotate it on this sequence</label>' +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" id="np-save" onclick="plSaveNewPrimer()">Add primer</button></div>';
+    document.getElementById('ln-modal-bg').classList.add('open');
+    plNewPrimerStats();
+    document.getElementById('np-desc').focus();
+  }
+  function plNewPrimerFlip() {
+    if (!plNewPrimer) return;
+    document.getElementById('np-seq').value = g('np-dir') === 'Rev' ? plNewPrimer.rev : plNewPrimer.fwd;
+    plNewPrimerStats();
+  }
+  function plNewPrimerStats() {
+    var out = document.getElementById('np-stats'); if (!out) return;
+    var seq = P.clean(g('np-seq'));
+    out.textContent = seq.length + ' nt' + (seq.length ? ' · GC ' + P.gc(seq).toFixed(0) + '%' : '') +
+      (seq.length >= 14 ? ' · Tm ' + P.tm(seq).toFixed(1) + ' °C' : '') +
+      ' · it will be given the next PR number' + (g('np-desc') ? ', as PR…_' + g('np-desc').slice(0, 20) : '');
+  }
+  function plSaveNewPrimer() {
+    var it = rec(); if (!it) return;
+    var seq = P.clean(g('np-seq')), desc = g('np-desc');
+    if (seq.length < 10) { alert('That is too short to be a primer.'); return; }
+    if (!desc) { alert('Give the primer a description — it becomes part of its name.'); document.getElementById('np-desc').focus(); return; }
+    var annotate = document.getElementById('np-annotate').checked;
+    var btn = document.getElementById('np-save');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    window.PrimerStore.addRegular({ sequence: seq, description: desc, orientation: g('np-dir'),
+      vendor: g('np-vendor'), status: g('np-status'), freezer: g('np-freezer'), shelf: g('np-shelf'), box: g('np-box')
+    }).then(function (made) {
+      var attached = (it.primers || []).some(function (x) { return P.clean(x.seq) === seq; });
+      if (!attached) it.primers = (it.primers || []).concat([{ name: made.name, seq: seq }]);
+      var onMap = false;
+      if (annotate) {
+        var b = primerBindings(asPlasmid(it)).filter(function (x) { return P.clean(x.primer.seq) === seq; })[0];
+        if (b && b.hits.length) { annotatePrimer(it, b); onMap = true; }
+      }
+      plNewPrimer = null;
+      closeModal(); markPlDirty();
+      plNote = made.name + ' is in the lab’s primer list and attached here' +
+        (annotate && !onMap ? ', but does not bind this sequence so it was not annotated' : '') + '. Save to keep it on this page.';
+      renderPlasmid();
+      refreshPrimerApp();
+    }, function (e) {
+      btn.disabled = false; btn.textContent = 'Add primer';
+      alert('Could not add the primer: ' + ((e && e.message) || e));
+    });
+  }
+  /* The Primers page is the generator in a frame, and it reads the list once,
+     when it loads. One that is already open would not show the new primer —
+     and, holding a list without it, would take it for a deletion the next
+     time it saved. So it is loaded again. */
+  function refreshPrimerApp() {
+    var frame = document.getElementById('ln-primer-app');
+    if (!frame || !frame.getAttribute('src')) return;      // never opened: it will read the list fresh
+    try { frame.contentWindow.location.reload(); }
+    catch (e) { frame.setAttribute('src', frame.getAttribute('data-src')); }
   }
 
   // ---------- the expected PCR ----------
@@ -2398,7 +2738,7 @@
       st.textContent = 'Saved ✓ ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       st.className = 'ln-entry-status saved';
       btn.disabled = false; btn.textContent = 'Save';
-      renderInventory('plasmids');
+      renderInventory(cloningTab(item.kind));
       if (window.LabTabs) LabTabs.refresh();   // drop the dot, pick up a rename
     }, function (e) {
       st.textContent = 'Not saved'; st.className = 'ln-entry-status dirty';
@@ -2546,16 +2886,19 @@
     var btn = document.getElementById('pl-import-save'), out = document.getElementById('pl-import-preview');
     btn.disabled = true; btn.textContent = 'Adding…';
     var me = currentUser() ? currentUser().name : 'Unknown', added = 0, failed = null;
+    // Filed under the page the import was started from: a file brought in on
+    // the DNA Blocks page is a DNA block, not a plasmid nobody can find there.
+    var kind = (CLONING_TABS.indexOf(currentInvTab) >= 0 && INV_KIND[currentInvTab]) || 'plasmid';
     for (var i = 0; i < plImport.length; i++) {
       var pl = plImport[i].res.plasmid;
       try {
-        await DB.upsertInventory('plasmids', { id: uid(), name: pl.name, seq: pl.seq, topology: pl.topology,
+        await DB.upsertInventory('plasmids', { id: uid(), name: pl.name, seq: pl.seq, topology: pl.topology, kind: kind,
           features: pl.features, len: pl.seq.length, insert: pl.definition || '', owner: me, addedBy: me });
         added++;
       } catch (e) { failed = e.message; break; }
     }
     plImport = null;
-    renderInventory('plasmids');
+    renderInventory(cloningTab(kind));
     out.innerHTML = (added ? '<div class="ln-bulk-note ok">Added ' + added + ' plasmid' + (added === 1 ? '' : 's') + '.</div>' : '') +
       (failed ? '<div class="ln-bulk-note error">Stopped: ' + esc(failed) + '</div>' : '');
     btn.textContent = 'Done'; btn.disabled = false; btn.onclick = closeModal;
@@ -2564,11 +2907,14 @@
 
   // ---------- exporting ----------
   function download(filename, text, type) {
-    var url = URL.createObjectURL(new Blob(['﻿'.repeat(type === 'text/csv' ? 1 : 0) + text], { type: (type || 'text/plain') + ';charset=utf-8' }));
+    var url = URL.createObjectURL(new Blob([(type === 'text/csv' ? '\ufeff' : '') + text], { type: (type || 'text/plain') + ';charset=utf-8' }));
     var a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+    /* Not straight away. The browser fetches the file after this function
+       has returned, and withdrawing the address in the same breath leaves
+       Safari with nothing to fetch: the menu closed and no file arrived. */
+    setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
   }
   function safeName(s) { return String(s || 'plasmid').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-|-$/g, '') || 'plasmid'; }
   function plExportMenu(btn) {
@@ -2579,13 +2925,7 @@
     menu.className = 'ln-pl-menu';
     menu.innerHTML = [['gb', 'GenBank (.gb)'], ['fa', 'FASTA (.fa)'], ['csv', 'Features (.csv)']]
       .map(function (o) { return '<button type="button" onclick="plExport(\'' + o[0] + '\')">' + o[1] + '</button>'; }).join('');
-    btn.parentNode.appendChild(menu);
-    setTimeout(function () {
-      document.addEventListener('click', function close(e) {
-        if (menu.contains(e.target) || e.target === btn) return;
-        menu.remove(); document.removeEventListener('click', close);
-      });
-    }, 0);
+    dropMenu(btn, menu);
   }
   function plExport(kind) {
     var it = rec(); if (!it) return;
@@ -2668,10 +3008,45 @@
       topology: kind === 'plasmid' ? 'circular' : 'linear',
       features: [], owner: me, addedBy: me };
     DB.upsertInventory('plasmids', item).then(function () {
-      renderInventory(kind === 'plasmid' ? 'plasmids' : kind === 'cdna' ? 'cdnas' : 'genes');
+      renderInventory(cloningTab(kind));
       openPlasmid(item.id);
       setTimeout(function () { var n = document.getElementById('pl-name'); if (n) n.focus(); }, 80);
     }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
+  /* A copy of a record, to work on without touching the original: the
+     sequence, the features, the attached primers and what is written about
+     it all come across. Where the tube sits does not — the copy is a new
+     record, not a second tube in the same square, and a box map that drew
+     two in one position would be reporting a clash that is not there. */
+  function copyName(name, taken) {
+    var base = (String(name || '').trim() || 'Untitled') + ' copy';
+    var out = base, n = 2;
+    while (taken[out.toLowerCase()]) out = base + ' ' + (n++);
+    return out;
+  }
+  function copyPlasmid(id) {
+    var all = getInventory().plasmids || [];
+    var src = all.filter(function (x) { return x.id === id; })[0];
+    if (!src) return;
+    var taken = {};
+    all.forEach(function (x) { taken[String(x.name || '').trim().toLowerCase()] = true; });
+    var me = currentUser() ? currentUser().name : 'Unknown';
+    var item = JSON.parse(JSON.stringify(src));
+    item.id = uid();
+    item.name = copyName(src.name, taken);
+    item.addedBy = me;
+    item.box = ''; item.position = '';
+    DB.upsertInventory('plasmids', item).then(function () {
+      renderInventory(cloningTab(item.kind));
+      openPlasmid(item.id);
+    }, function (e) { alert('Could not make the copy: ' + e.message); });
+  }
+
+  // From the page itself. The copy is of what is saved, so say so first.
+  function plCopyThis() {
+    if (plDirty && !confirm('This page has unsaved changes. The copy is made from the last saved version — carry on?')) return;
+    copyPlasmid(plId);
   }
 
   // Leaving the tab, and Ctrl/Cmd+S, behave as they do for an experiment entry.
@@ -2730,6 +3105,10 @@
   window.plAddPrimer = plAddPrimer;
   window.plDeletePrimer = plDeletePrimer;
   window.plAnnotatePrimer = plAnnotatePrimer;
+  window.plNewPrimerModal = plNewPrimerModal;
+  window.plNewPrimerFlip = plNewPrimerFlip;
+  window.plNewPrimerStats = plNewPrimerStats;
+  window.plSaveNewPrimer = plSaveNewPrimer;
   window.openPcr = openPcr;
   window.plPcrDraw = plPcrDraw;
   window.openGibson = openGibson;
@@ -2746,6 +3125,8 @@
   window.leavePlasmidOk = leavePlasmidOk;
   window.savePlasmid = savePlasmid;
   window.newPlasmid = newPlasmid;
+  window.copyPlasmid = copyPlasmid;
+  window.plCopyThis = plCopyThis;
   window.plFeatureModal = plFeatureModal;
   window.plTypeColor = plTypeColor;
   window.plSaveFeature = plSaveFeature;

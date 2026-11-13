@@ -114,12 +114,71 @@ check('the button is offered only when there is one to take', () => {
 });
 
 check('taking one subtracts exactly one and never goes below zero', () => {
-  const take = src.slice(src.indexOf('async function takeAliquot'), src.indexOf('/* Moving a request along'));
+  const take = src.slice(src.indexOf('async function takeAliquot'), src.indexOf('/* The squares that are left'));
   assert.match(take, /if \(!item \|\| !n\) return;/, 'it must refuse when there is nothing to take');
   assert.match(take, /aliquots: String\(n - 1\)/);
   assert.match(take, /Object\.assign\(\{\}, item/, 'the rest of the record has to survive the edit');
   assert.match(take, /renderInventory\('kits'\)/);
   assert.match(take, /catch \(e\)[\s\S]*?alert/, 'a failed write must not look like a success');
+});
+
+console.log('\nThe tube leaves its square');
+
+const { positionsAfterTaking, formatPositions, parsePositions } = sandbox;
+const dims = { rows: 9, cols: 9 };
+const after = (pos, left, d = dims) => positionsAfterTaking(pos, left, d);
+
+check('taking one of ten gives up the last square', () => {
+  // The case from the bench: ten 10 mL aliquots in C1-C5 and D1-D5.
+  assert.equal(after('C1-C5, D1-D5', 9), 'C1-C5, D1-D4');
+  assert.equal(after('C1-C5, D1-D4', 8), 'C1-C5, D1-D3');
+});
+
+check('a row that empties drops out, and the last tube takes the position with it', () => {
+  assert.equal(after('C1-C5, D1', 5), 'C1-C5');
+  assert.equal(after('A3', 0), '');
+});
+
+check('a block stays a block for as long as it is one', () => {
+  assert.equal(after('A1-C3', 8), 'A1-B3, C1-C2');
+  assert.equal(after('A1-C3', 6), 'A1-B3');
+});
+
+check('numbered positions stay numbered', () => {
+  assert.equal(after('1-12', 11), '1-11');
+  assert.equal(after('5', 0), '');
+});
+
+check('a count that had run ahead of its squares is put right', () => {
+  // Left by the old button: eight aliquots still drawn in ten squares.
+  assert.equal(after('C1-C5, D1-D5', 7), 'C1-C5, D1-D2');
+});
+
+check('tubes the map never knew about are taken first', () => {
+  assert.equal(after('B1-B9', 11), null, 'twelve tubes, nine squares: the squares stay');
+  assert.equal(after('B1-B9', 9), null);
+});
+
+check('a position that names no square is left alone', () => {
+  assert.equal(after('top shelf, left', 3), null);
+  assert.equal(after('', 3), null);
+});
+
+check('what is written back reads as the same squares', () => {
+  for (const pos of ['C1-C5, D1-D5', 'A1-C3', 'A1, B1, C1', 'A1-A9, B1-B4', 'A2, A4-A6, C1']) {
+    const cells = parsePositions(pos, dims);
+    const back = parsePositions(formatPositions(cells, dims, false), dims);
+    assert.deepEqual(back.map((c) => c.r + ',' + c.c), cells.map((c) => c.r + ',' + c.c), pos);
+  }
+  assert.equal(formatPositions(parsePositions('A1, B1', dims), dims, false), 'A1, B1');
+});
+
+check('the button changes the square and the count in one write', () => {
+  const take = src.slice(src.indexOf('async function takeAliquot'), src.indexOf('/* The squares that are left'));
+  assert.match(take, /positionsAfterTaking\(item\.position, n - 1/);
+  assert.match(take, /if \(kept !== null\) next\.position = kept;/);
+  assert.equal((take.match(/DB\.upsertInventory/g) || []).length, 1);
+  assert.match(take, /lnCurrentSection === 'boxes'\) renderBoxes\(\)/, 'an open box map has to redraw');
 });
 
 console.log('\nThe form and what it saves');
@@ -234,8 +293,8 @@ check('an @-mention of a reagent says what is left', () => {
 });
 
 check('the cache-busting versions were bumped with the code', () => {
-  assert.match(html, /js\/notebook\.js\?v=(3[7-9]|[4-9]\d)/, 'notebook.js ?v= is stale');
-  assert.match(html, /js\/mentions\.js\?v=([3-9]|\d\d)/, 'mentions.js ?v= is stale');
+  assert.match(html, /js\/notebook\.js\?v=(4[3-9]|[5-9]\d)/, 'notebook.js ?v= is stale');
+  assert.match(html, /js\/mentions\.js\?v=([4-9]|\d\d)/, 'mentions.js ?v= is stale');
 });
 
 console.log(`\n${pass} checks passed`);

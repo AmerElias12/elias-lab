@@ -375,6 +375,12 @@
         enzymes: opts.enzymes || [],
         // reading frames, as [{ start, end, direction }]
         translations: opts.translations || [],
+        /* Primers, as [{ name, start, end, direction }]. SeqViz gives each a
+           row of its own beside the strand it anneals to — above the top
+           strand reading forwards, below the bottom one reading backwards —
+           which is the room the page then draws the primer's bases into.
+           Only the linear view has such rows. */
+        primers: view === 'circular' ? [] : (opts.primers || []),
         // SeqViz wants { query, mismatch }; an empty query means no search,
         // and passing one in highlights every hit on both strands.
         search: opts.search ? { query: opts.search, mismatch: opts.mismatch || 0 } : undefined,

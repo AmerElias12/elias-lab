@@ -402,7 +402,7 @@ function exportProtocolWord(id) {
     '</body></html>';
   var blob = new Blob(['﻿', html], { type: 'application/msword' });
   var url = URL.createObjectURL(blob);
-  var a = document.createElement('a'); a.href = url; a.download = p.title.replace(/[^a-z0-9]/gi, '_') + '.doc'; a.click(); URL.revokeObjectURL(url);
+  var a = document.createElement('a'); a.href = url; a.download = p.title.replace(/[^a-z0-9]/gi, '_') + '.doc'; a.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
 }
 
 /* ---- importing a folder of protocols at once ----
@@ -1651,6 +1651,7 @@ var INV_LABELS = {
   requests: { one: 'Request',            many: 'requests' },
   cdnas:    { one: 'cDNA',               many: 'cDNAs' },
   genes:    { one: 'Gene',               many: 'genes' },
+  blocks:   { one: 'DNA block',          many: 'DNA blocks' },
   stocks:   { one: 'Glycerol Stock',     many: 'glycerol stocks' },
   cells:    { one: 'Cell Line',           many: 'cell lines' },
   kits:     { one: 'Kit / Reagent',      many: 'kits or reagents' }
@@ -1668,6 +1669,9 @@ var INV_CONFIG = {
   // Same store as plasmids; different things are worth a column.
   cdnas: { cols: ['Name', 'Gene / insert', 'Species', 'Accession', 'In vector', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Added by'], fields: ['name', 'insert', 'species', 'accession', 'backbone', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'addedBy'] },
   genes: { cols: ['Gene', 'Species', 'Accession', 'Locus', 'Size (bp)', 'Source', 'Owner', 'Notes', 'Added by'], fields: ['name', 'species', 'accession', 'locus', 'len', 'source', 'owner', 'notes', 'addedBy'] },
+  // A synthesised fragment: what it carries and who made it are what tell
+  // two of them apart, and it has a tube in a box like a plasmid does.
+  blocks: { cols: ['Name', 'Carries', 'Supplier / order', 'Size (bp)', 'Conc.', 'Owner', 'Freezer', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'insert', 'source', 'len', 'conc', 'owner', 'freezer', 'box', 'position', 'notes', 'addedBy'] },
   stocks: { cols: ['Serial #', 'Description', 'Resistance', 'Sequenced (QC)', 'Strain', 'Freezer (-80°C)', 'Rack_Shelf', 'Position on Drawer', 'Box', 'Position', 'Owner', 'Map', 'Notes'], fields: ['serial', 'description', 'resistance', 'qc', 'hostStrain', 'freezer', 'shelf', 'shelfPlace', 'box', 'position', 'owner', 'mapLink', 'notes'] },
   cells: { cols: ['Cell Line', 'Passage', 'Cells / Vial', 'Source', 'Growth Media', 'Banking Media', 'Liquid N₂ Tank', 'Rack', 'Box', 'Position', 'Notes', 'Added by'], fields: ['name', 'passage', 'amount', 'source', 'growthMedia', 'bankMedia', 'tank', 'rack', 'box', 'position', 'notes', 'addedBy'] },
   kits: { cols: ['Kit Name', 'Supplier', 'Catalog #', 'Qty Left', 'Aliquots', 'Volume each', 'Unit', 'Expiry', 'Storage', 'Box', 'Position', 'Added by'], fields: ['name', 'supplier', 'catalog', 'qty', 'aliquots', 'aliquotVol', 'aliquotUnit', 'expiry', 'storage', 'box', 'position', 'addedBy'] }
@@ -1769,7 +1773,7 @@ function invCompare(a, b, key) {
    Everything else sorts by the field that names it, which is fields[0]. */
 /* ---- Molecular Cloning: three views, one store ----
 
-   Plasmids, cDNAs and genes are all sequence records. They differ in what is
+   Plasmids, cDNAs, genes and DNA blocks are all sequence records. They differ in what is
    worth writing down beside the sequence — a plasmid has a backbone and a
    resistance, a gene has a species and an accession — but not in what you do
    with them: the map, the digest, the PCR and the cloning tools apply to all
@@ -1784,9 +1788,13 @@ function invCompare(a, b, key) {
 
    A record with no kind is a plasmid: that is what every record was before
    this existed, so nothing needs migrating. */
-var INV_STORE = { cdnas: 'plasmids', genes: 'plasmids' };
-var INV_KIND = { plasmids: 'plasmid', cdnas: 'cdna', genes: 'gene' };
-var CLONING_TABS = ['plasmids', 'cdnas', 'genes'];
+var INV_STORE = { cdnas: 'plasmids', genes: 'plasmids', blocks: 'plasmids' };
+var INV_KIND = { plasmids: 'plasmid', cdnas: 'cdna', genes: 'gene', blocks: 'block' };
+var CLONING_TABS = ['plasmids', 'cdnas', 'genes', 'blocks'];
+// The page a record of this kind is listed on.
+function cloningTab(kind) {
+  return CLONING_TABS.filter(function (t) { return INV_KIND[t] === (kind || 'plasmid'); })[0] || 'plasmids';
+}
 function invStore(tab) { return INV_STORE[tab] || tab; }
 function kindOf(item) { return (item && item.kind) || 'plasmid'; }
 /* The records a view shows: its store, narrowed to its kind. */
@@ -2133,7 +2141,7 @@ function renderInventory(tab) {
       // at it rather than leaving somebody to find it in the table.
       return '<tr data-item-id="' + esc(item.id || '') + '">' + cfg.fields.map(function (f) {
         var val = esc(item[f] || '\u2014');
-        if (f === 'name' && currentInvTab === 'plasmids' && item.name) {
+        if (f === 'name' && CLONING_TABS.indexOf(currentInvTab) >= 0 && item.name) {
           val = '<a href="#plasmid/' + esc(item.id) + '" class="ln-box-link" onclick="openPlasmid(\'' + item.id + '\');return false;">' + esc(item.name) + '</a>';
         }
         if (f === 'expiry') {
@@ -2173,7 +2181,8 @@ function renderInventory(tab) {
         return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</td>';
       }).join('') +
       '<td class="ln-row-actions">' +
-        (currentInvTab === 'plasmids' ? '<button class="ln-icon-btn" title="Open the plasmid page" onclick="openPlasmid(\'' + item.id + '\')">Open</button>' : '') +
+        (CLONING_TABS.indexOf(currentInvTab) >= 0 ? '<button class="ln-icon-btn" title="Open the sequence page" onclick="openPlasmid(\'' + item.id + '\')">Open</button>' +
+          '<button class="ln-icon-btn" title="Make a copy of this ' + esc(INV_LABELS[currentInvTab].one) + '" onclick="copyPlasmid(\'' + item.id + '\')">\u29c9 Copy</button>' : '') +
         // Four vials of the same freeze differ only in where they sit, and
         // typing the other eight fields out four times is how they end up
         // disagreeing with each other.
@@ -2206,7 +2215,7 @@ function exportInventoryCSV(cat) {
   a.href = url;
   a.download = 'elias-lab-' + cat + '-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
 }
 function csvCell(v) {
   // A leading = + - or @ makes Excel treat the cell as a formula; prefix it.
@@ -2219,17 +2228,77 @@ function csvCell(v) {
    front of something people do several times a day is how they stop doing
    it. Two people taking the last two at the same moment will each write
    their own number and one will win — the fix for that is a word at the
-   bench, not a lock in a notebook. */
+   bench, not a lock in a notebook.
+
+   The tube leaves its square as well. The count used to drop on its own and
+   the box map went on drawing a tube that had been used, so ten aliquots in
+   C1-C5 and D1-D5 became nine aliquots in the same ten squares. The last
+   square goes with the tube — D5 there — because a run is filled in order
+   and emptied from the far end. */
 async function takeAliquot(id) {
   var item = (getInventory().kits || []).filter(function (x) { return x.id === id; })[0];
   var n = aliquotCount(item);
   if (!item || !n) return;
+  var next = Object.assign({}, item, { aliquots: String(n - 1) });
+  if (String(item.box || '').trim() && String(item.position || '').trim()) {
+    var box = findBox(boxKey('kits', item.box));
+    var kept = positionsAfterTaking(item.position, n - 1, box ? box.dims : boxDims(null));
+    if (kept !== null) next.position = kept;
+  }
   try {
-    await DB.upsertInventory('kits', Object.assign({}, item, { aliquots: String(n - 1) }));
+    await DB.upsertInventory('kits', next);
   } catch (e) {
     alert('Could not update the aliquot count: ' + e.message);
   }
   renderInventory('kits');
+  if (lnCurrentSection === 'boxes') renderBoxes();
+}
+/* The squares that are left once the count has dropped to `left`.
+
+   Never more squares than tubes: the ones past the count are given up, last
+   first. That is one square for an ordinary take, and it is also what puts
+   right a record whose count had already run ahead of its squares. Fewer
+   squares than tubes is left alone — the tube that was taken may well have
+   been one of those the map never knew about.
+
+   null means "leave the position as it is": nothing to give up, or a
+   position that names no square in this box, which is somebody's note and
+   not ours to rewrite. */
+function positionsAfterTaking(position, left, dims) {
+  var cells = parsePositions(position, dims);
+  if (!cells.length || cells.length <= left) return null;
+  return formatPositions(cells.slice(0, Math.max(0, left)), dims, /^[\s\d,;.\-–—]+$/.test(String(position)));
+}
+/* Squares back into the words somebody would type: runs along a row, rows
+   that hold the same run folded into a block, so nine squares come back as
+   "A1-C3" and not as nine names. Numbered positions stay numbered. */
+function formatPositions(cells, dims, numbered) {
+  if (!cells.length) return '';
+  var out = [], i;
+  if (numbered) {
+    var idx = cells.map(function (c) { return c.r * dims.cols + c.c + 1; }).sort(function (a, b) { return a - b; });
+    for (i = 0; i < idx.length; i++) {
+      var from = idx[i];
+      while (i + 1 < idx.length && idx[i + 1] === idx[i] + 1) i++;
+      out.push(from === idx[i] ? String(from) : from + '-' + idx[i]);
+    }
+    return out.join(', ');
+  }
+  var sorted = cells.slice().sort(function (x, y) { return x.r - y.r || x.c - y.c; });
+  var runs = [];
+  for (i = 0; i < sorted.length; i++) {
+    var run = { r0: sorted[i].r, r1: sorted[i].r, c0: sorted[i].c, c1: sorted[i].c };
+    while (i + 1 < sorted.length && sorted[i + 1].r === run.r0 && sorted[i + 1].c === run.c1 + 1) { i++; run.c1 = sorted[i].c; }
+    var above = runs[runs.length - 1];
+    // A single square is not folded into the one above it: "A1, B1" reads as
+    // two tubes, "A1-B1" as a guess at what was meant.
+    if (above && run.c1 > run.c0 && above.r1 === run.r0 - 1 && above.c0 === run.c0 && above.c1 === run.c1) above.r1 = run.r0;
+    else runs.push(run);
+  }
+  return runs.map(function (b) {
+    var a = cellName({ r: b.r0, c: b.c0 }), z = cellName({ r: b.r1, c: b.c1 });
+    return a === z ? a : a + '-' + z;
+  }).join(', ');
 }
 
 /* Moving a request along. Anybody can do it: the person who asked knows when
@@ -2560,9 +2629,10 @@ function boxPositionLabel(item, cells) {
    tubes, made at different moments, and they drift apart in two different
    ways — so they are not one warning.
 
-   Taking an aliquot drops the count and leaves the squares behind, which is
-   the ordinary state of a box in use. That is not a mistake to correct; it
-   is space nobody knows is free, and saying so is the useful part. More
+   Fewer aliquots than squares is what a count edited by hand leaves behind
+   (the −1 button gives the square up with the tube). That is not a mistake
+   to correct; it is space nobody knows is free, and saying so is the useful
+   part. More
    aliquots than squares is the other way round: tubes the map does not
    account for, which are either somewhere else or were never written down.
 
@@ -2660,7 +2730,7 @@ function exportBoxCSV(key) {
   var a = document.createElement('a');
   a.href = url; a.download = 'elias-lab-box-' + b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
 }
 
 function selectBoxCell(key) { boxSelected = boxSelected === key ? null : key; renderBoxes(); }
@@ -4100,7 +4170,7 @@ function downloadExpenseTemplate() {
   var a = document.createElement('a');
   a.href = url; a.download = 'elias-lab-expenses-template.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
 }
 
 async function previewExpenseImport(input) {
@@ -4180,7 +4250,7 @@ function exportFinancesCSV() {
   a.href = url;
   a.download = 'elias-lab-finances-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
 }
 
 // ── BOOT ───────────────────────────────────────────────────

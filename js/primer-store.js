@@ -257,5 +257,46 @@
     return out.filter(function (x) { return x.seq.length; });
   }
 
-  return { load, save, flat, isShared, toRow, fromRow, counters, rowId, newId, CATEGORY };
+  /* The Tm the generator prints beside a primer, so one added from somewhere
+     else carries the same figure the rest of the list does. */
+  function listTm(sequence) {
+    const seq = String(sequence || '').toUpperCase();
+    if (seq.length < 14) return 'N/A';
+    const gc = (seq.match(/[GC]/g) || []).length / seq.length;
+    return (64.9 + 41 * (gc - 0.675) / (seq.length - 0.675)).toFixed(1);
+  }
+
+  /**
+   * One ordinary primer, written down from outside the generator — the
+   * sequence page does this when a primer is made from a selection.
+   *
+   * It takes the next PR number from the list as it stands, names the primer
+   * the way the generator would, and adds that one row. Nothing else in the
+   * list is read back or rewritten, so it cannot disturb a primer somebody
+   * else has just added. Resolves to the record as the generator will see it.
+   */
+  async function addRegular(fields) {
+    const f = fields || {};
+    const sequence = String(f.sequence || '').replace(/[^A-Za-z]/g, '').toUpperCase();
+    if (!sequence) throw new Error('A primer needs a sequence.');
+    const description = String(f.description || '').trim();
+    const h = host();
+    const regular = h ? rowsOf(h, 'regular').map(fromRow) : lsGet(LS.regular);
+    const number = counters([], regular).regCounter;
+    const rec = {
+      id: newId(), number: number,
+      name: 'PR' + number + (description ? '_' + description.substring(0, 20) : ''),
+      sequence: sequence, length: sequence.length, tm: listTm(sequence),
+      description: description,
+      orientation: f.orientation === 'Rev' ? 'Rev' : 'Frw',
+      freezer: f.freezer || 'AE_Freezer 1 (-20C)', shelf: f.shelf || 'A', box: f.box || '1',
+      vendor: f.vendor || 'IDT', status: f.status || 'Designed'
+    };
+    if (!h) { lsSet(LS.regular, regular.concat([rec])); return rec; }
+    const user = (h.currentUser && h.currentUser()) || null;
+    await h.DB.upsertInventory(CATEGORY, toRow('regular', rec, user ? user.name : null));
+    return rec;
+  }
+
+  return { load, save, flat, isShared, toRow, fromRow, counters, rowId, newId, addRegular, listTm, CATEGORY };
 }));

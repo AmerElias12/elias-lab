@@ -297,10 +297,50 @@ await check('the next primer number carries on from the list', () => {
   assert.equal(c.regCounter, 5);
 });
 
+console.log('\nA primer made on the sequence page');
+
+await check('it takes the next PR number and the generator\u2019s kind of name', async () => {
+  const inv = host();
+  await store.save('regular', [regular({ number: 4, name: 'PR4_x' })]);
+  const made = await store.addRegular({ sequence: 'acgt acgt ACGTACGTAC', description: 'ATP7B exon 8 forward primer', orientation: 'Rev' });
+  assert.equal(made.number, 5);
+  assert.equal(made.name, 'PR5_ATP7B exon 8 forward');
+  assert.equal(made.sequence, 'ACGTACGTACGTACGTAC');
+  assert.equal(made.length, 18);
+  assert.equal(made.orientation, 'Rev');
+  assert.match(String(made.id), ANY_UUID);
+  assert.equal(inv.primers.length, 2);
+});
+
+await check('the generator reads it back as one of its own', async () => {
+  host();
+  const made = await store.addRegular({ sequence: 'ACGTACGTACGTACGTAC', description: 'demo' });
+  const state = await store.load();
+  assert.equal(state.regular.length, 1);
+  assert.equal(state.regular[0].name, made.name);
+  assert.equal(state.regCounter, made.number + 1);
+  assert.equal(store.flat()[0].seq, 'ACGTACGTACGTACGTAC');
+});
+
+await check('adding one writes one row and removes none', async () => {
+  host();
+  await store.save('regular', [regular({ number: 1 }), regular({ number: 2, id: 2 })]);
+  const before = { ...calls };
+  await store.addRegular({ sequence: 'ACGTACGTACGTACGTAC', description: 'demo' });
+  assert.equal(calls.upsert - before.upsert, 1);
+  assert.equal(calls.remove, before.remove, 'nobody else\u2019s primer may be touched');
+});
+
+await check('a refused write is an error, not a primer', async () => {
+  host({ failWith: 'row-level security' });
+  await assert.rejects(store.addRegular({ sequence: 'ACGTACGTACGTACGTAC', description: 'demo' }), /row-level security/);
+  await assert.rejects(store.addRegular({ sequence: '', description: 'demo' }), /sequence/);
+});
+
 await check('the cache-busting versions were bumped with the code', () => {
   const nb = read('notebook.html');
-  assert.match(nb, /js\/primer-store\.js\?v=([2-9]|\d\d)/, 'primer-store.js ?v= is stale in notebook.html');
-  assert.match(gen, /primer-store\.js\?v=([2-9]|\d\d)/, 'primer-store.js ?v= is stale in the generator');
+  assert.match(nb, /js\/primer-store\.js\?v=([3-9]|\d\d)/, 'primer-store.js ?v= is stale in notebook.html');
+  assert.match(gen, /primer-store\.js\?v=([3-9]|\d\d)/, 'primer-store.js ?v= is stale in the generator');
 });
 
 console.log(`\n${pass} checks passed`);

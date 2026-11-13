@@ -12,7 +12,7 @@
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
     <link rel="stylesheet" href="css/notebook.css?v=34">
-    <link rel="stylesheet" href="css/plasmid.css?v=28">
+    <link rel="stylesheet" href="css/plasmid.css?v=30">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -71,6 +71,7 @@
         <div class="ln-nav-item" onclick="lnShow('inv-plasmids')"><span class="ni">⭕</span><span>Plasmids</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-cdnas')"><span class="ni">〰️</span><span>cDNAs</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-genes')"><span class="ni">🧬</span><span>Genes</span></div>
+        <div class="ln-nav-item" onclick="lnShow('inv-blocks')"><span class="ni">🧱</span><span>DNA Blocks</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-stocks')"><span class="ni">🧊</span><span>Glycerol Stocks</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-cells')"><span class="ni">🧫</span><span>Tissue Culture</span></div>
         <div class="ln-nav-item" onclick="lnShow('inv-requests')"><span class="ni">🛒</span><span>Order Requests</span></div>
@@ -150,7 +151,7 @@
         <!-- Primers is the Primer Generator app rather than a table. -->
         <div id="ln-inv-primers" class="ln-section">
           <div class="ln-section-header"><div><h2>Primers</h2><p>Design, store and export primers with the lab's Primer Generator</p></div><a class="ln-add-btn ln-add-link" href="tools/grna-primer-generator.html" target="_blank" rel="noopener">Open in a new tab ↗</a></div>
-          <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html" title="Primer Generator"></iframe>
+          <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html?v=2" title="Primer Generator"></iframe>
         </div>
         <div id="ln-inv-plasmids" class="ln-section">
           <div class="ln-section-header"><div><h2>Plasmids</h2><p>Sequence, maps and annotations for every construct — open one for its full map and molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportPlasmidsCSV()">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid()">+ New Plasmid</button></div></div>
@@ -168,6 +169,12 @@
           <div class="ln-section-header"><div><h2>Genes</h2><p>Full genes and genomic loci — the reference sequence the lab works against</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('genes')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('gene')">+ New Gene</button></div></div>
           <input class="ln-search" id="ln-invsearch-genes" placeholder="🔍 Search genes..." oninput="renderInventory('genes')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-genes"></div>
+        </div>
+
+        <div id="ln-inv-blocks" class="ln-section">
+          <div class="ln-section-header"><div><h2>DNA Blocks</h2><p>Synthesised fragments — gBlocks, gene fragments and ordered inserts — with the same map and molecular tools as a plasmid</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('blocks')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('block')">+ New DNA Block</button></div></div>
+          <input class="ln-search" id="ln-invsearch-blocks" placeholder="🔍 Search DNA blocks..." oninput="renderInventory('blocks')" style="margin-bottom:1.5rem;">
+          <div id="ln-invtable-blocks"></div>
         </div>
         <div id="ln-inv-stocks" class="ln-section">
           <div class="ln-section-header"><div><h2>Glycerol Stocks</h2><p>Bacterial glycerol stocks — what is in them, sequencing QC, and exactly where they are stored at -80°C</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('stocks')">↓ CSV</button><button class="ln-add-btn" onclick="openInventoryModal()">+ Add Glycerol Stock</button></div></div>
@@ -230,16 +237,16 @@
 
   <script src="vendor/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx"></script>
   <script src="vendor/seqviz.min.js" integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"></script>
-  <script src="js/plasmid.js?v=22"></script>
-  <script src="js/vector-viewer.js?v=26"></script>
+  <script src="js/plasmid.js?v=23"></script>
+  <script src="js/vector-viewer.js?v=27"></script>
   <script src="js/plasmid-import.js?v=21"></script>
-  <script src="js/primer-store.js?v=2"></script>
+  <script src="js/primer-store.js?v=3"></script>
   <script src="js/tabs.js?v=2"></script>
   <script src="js/plates.js?v=1"></script>
-  <script src="js/mentions.js?v=3"></script>
-  <script src="js/plasmid-ui.js?v=29"></script>
+  <script src="js/mentions.js?v=4"></script>
+  <script src="js/plasmid-ui.js?v=30"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=23"></script>
-  <script src="js/notebook.js?v=42"></script>
+  <script src="js/notebook.js?v=43"></script>
 </body>
 </html>
