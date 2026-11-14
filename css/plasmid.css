@@ -261,3 +261,60 @@
 .pl-primer-glyph.rev .pl-primer-tag{fill:#0f8a6c;}
 .pl-primer-name{font:600 10.5px system-ui,-apple-system,sans-serif;fill:#fff;}
 .pl-annotated{display:inline-block;padding:.35rem .5rem;font-size:12px;color:#0f8a6c;font-weight:600;white-space:nowrap;}
+
+/* The agarose gel. The drawing carries its own styles so a downloaded copy
+   still looks like a gel; these are only the controls around it. */
+.ln-modal.gel{max-width:960px;}
+.pl-gel-lanes{display:flex;flex-direction:column;gap:.5rem;margin:.9rem 0 .6rem;}
+.pl-gel-lane{display:flex;align-items:flex-start;gap:.5rem;flex-wrap:wrap;
+  background:rgba(12,74,68,.04);border:1px solid rgba(22,36,31,.08);border-radius:10px;padding:.5rem .6rem;}
+.pl-gel-rec{flex:1 1 220px;min-width:180px;max-width:320px;font:inherit;font-size:13px;
+  padding:.4rem .5rem;border:1.5px solid #ddd;border-radius:8px;background:#fff;}
+.pl-gel-picks{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;flex:2 1 300px;}
+.pl-gel-chip{font:inherit;font-size:12px;font-weight:600;border:1px solid rgba(12,74,68,.25);
+  background:rgba(12,74,68,.08);color:#0c4a44;border-radius:999px;padding:.25rem .55rem;cursor:pointer;}
+.pl-gel-chip:hover{background:rgba(140,30,30,.1);border-color:rgba(140,30,30,.35);color:#8f2a2a;}
+.pl-gel-add{font:inherit;font-size:12.5px;padding:.3rem .45rem;border:1.5px dashed rgba(22,36,31,.25);
+  border-radius:8px;background:#fff;color:#4a5a52;max-width:200px;}
+.pl-gel-wrap{margin:1rem 0;padding:.6rem;background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:14px;}
+.pl-gel{display:block;max-width:100%;height:auto;}
+@media print{.pl-gel-lanes,.pl-gel-add{display:none !important;}}
+
+/* A sequence that has just arrived and matches things in the library. The
+   features are not added until somebody has looked at them. */
+.pl-ann-offer{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.6rem 0;
+  padding:.55rem .8rem;border-radius:10px;font-size:13px;color:#0c4a44;
+  background:rgba(16,176,126,.1);border:1px solid rgba(16,176,126,.3);}
+.pl-ann-offer span{flex:1 1 auto;}
+@media print{.pl-ann-offer{display:none !important;}}
+
+/* The empty sequence box takes the keyboard, so it has to look like it can. */
+.pl-empty-seq{outline:none;cursor:text;}
+.pl-empty-seq:focus{border-color:#10b07e;box-shadow:0 0 0 2px rgba(16,176,126,.18);}
+
+/* The primer as it would be ordered: the tail pale, the annealing part solid. */
+.np-full{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.5;
+  word-break:break-all;padding:.5rem .6rem;background:#fff;border:1px solid rgba(22,36,31,.14);border-radius:8px;}
+
+/* Saved enzyme sets, above the enzyme table. */
+.pl-enz-sets{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 .2rem;}
+.pl-enz-sets select{font:inherit;font-size:13px;padding:.35rem .5rem;border:1.5px solid #ddd;border-radius:8px;background:#fff;}
+
+/* Sequencing: where the reads sit, and what disagrees. */
+.pl-cov-wrap{margin:.8rem 0;padding:.6rem;background:#fbfaf5;border:1px solid rgba(22,36,31,.1);border-radius:12px;}
+.pl-cov{display:block;max-width:100%;height:auto;}
+.pl-cov-read{fill:#7fb8a0;}
+.pl-cov-read.diff{fill:#c9a227;}
+.pl-cov-tick{fill:#8f2a2a;}
+.pl-cov-clean{color:#0f8a6c;font-weight:600;}
+.pl-diff{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  padding:.1rem .35rem;margin:.1rem .15rem .1rem 0;border-radius:5px;background:rgba(143,42,42,.1);color:#8f2a2a;white-space:nowrap;}
+.pl-diff.insertion{background:rgba(12,74,68,.1);color:#0c4a44;}
+.pl-diff.deletion{background:rgba(166,98,12,.12);color:#a6620c;}
+
+/* Golden Gate: one row per part. */
+.pl-gg-parts{display:flex;flex-direction:column;gap:.5rem;margin:.8rem 0 .5rem;}
+.pl-gg-part{display:flex;align-items:flex-end;gap:.6rem;flex-wrap:wrap;
+  background:rgba(12,74,68,.04);border:1px solid rgba(22,36,31,.08);border-radius:10px;padding:.5rem .6rem;}
+.pl-gg-part .ln-form-row{flex:1 1 200px;margin:0;}
+.pl-gg-part code{font-size:12px;}

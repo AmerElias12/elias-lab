@@ -17,7 +17,7 @@
   var plDraft = null;         // a working copy: edits only reach the inventory on Save
   var plDirty = false;
   var plSel = null;           // { start, end } of the selected bases, 0-based
-  var plOpts = { wrap: 60, find: '', enzymes: 'unique', frame: 'off', enzymeNames: [] };
+  var plOpts = { wrap: 60, find: '', enzymes: 'unique', frame: 'off', enzymeNames: [], cds: true, history: false };
   var plImport = null;        // files waiting in the import dialog
 
   // The record being edited. Everything on the page changes this copy, so
@@ -55,7 +55,7 @@
     if (held) {
       plRestore(held);
     } else {
-      plSel = null; plDirty = false;
+      plSel = null; plDirty = false; plAnnOffer = null;
       plCaret = 0; plAnchor = 0; plNote = ''; plUndo = []; plRedo = [];
       startDraft();
       recomputeSites();
@@ -189,6 +189,7 @@
           '<div class="ln-pl-meta-wrap">' + metaHtml(it) + '</div></div>' +
           '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring, or drag the sequence below.</div>'
         : '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>') +
+      historyHtml(it) +
       primersHtml(p) +
       seqPanelHtml(p) +
       // The feature table is a reference list, read far less often than the
@@ -219,8 +220,17 @@
     [plMap, plSeqMap].forEach(function (v) { if (v) { try { v.destroy(); } catch (e) {} } });
     plMap = null; plSeqMap = null;
   }
+  /* The origin shading is drawn, never stored: it is a way of looking at the
+     record, not an annotation somebody made, and writing it into the feature
+     list would put six made-up features into every GenBank file this plasmid
+     ever exports. */
   function mapPayload(p) {
-    return { name: p.name, seq: p.seq, topology: p.topology, features: p.features };
+    var feats = p.features;
+    if (plOpts.history) {
+      var extra = historyAnnotations(rec());
+      if (extra.length) feats = extra.concat(feats);
+    }
+    return { name: p.name, seq: p.seq, topology: p.topology, features: feats };
   }
   // The enzymes the menu is asking for, by name, for SeqViz to mark.
   function shownEnzymeNames() {
@@ -232,9 +242,30 @@
     return out;
   }
   // The Frame menu, as the reading frames SeqViz translates.
+  /* Amino acids under every coding feature, which is the thing you are
+     really reading a CDS for: whether the fusion is in frame, and where the
+     stop actually falls. Having to pick the right frame off a menu first
+     means knowing the answer before you can see it.
+
+     Only features that do not cross the origin, because a translation that
+     wraps has no single span to hand the viewer, and only the first dozen —
+     a plasmid annotated with thirty genes would otherwise be a wall of
+     letters with the bases lost somewhere inside it.
+
+     The Frame menu still works and sits on top of this: it is for reading a
+     stretch that nobody has annotated yet. */
+  function cdsTranslations(p) {
+    if (!plOpts.cds) return [];
+    return (p.features || []).filter(function (f) {
+      return /^(cds|gene)$/i.test(f.type) && !P.wraps(f) && P.featureLen(f, p.seq.length) >= 3;
+    }).slice(0, 12).map(function (f) {
+      return { start: f.start, end: f.end, direction: f.strand === -1 ? -1 : 1 };
+    });
+  }
   function shownTranslations(p) {
     var fs = frameSpec(p);
-    return fs ? [{ start: fs.from, end: fs.to, direction: fs.strand }] : [];
+    var out = cdsTranslations(p);
+    return fs ? out.concat([{ start: fs.from, end: fs.to, direction: fs.strand }]) : out;
   }
   function seqViewOpts(p) {
     return { enzymes: shownEnzymeNames(), search: plOpts.find || '', translations: shownTranslations(p),
@@ -813,6 +844,13 @@
     var d = diffSeq(burst.seq, now);
     // Typed and taken back again before the question was asked.
     if (!d.removed.length && !d.inserted.length) { dropEditBurst(); return; }
+    /* Filling an empty record is not a change to a sequence, it is the
+       sequence arriving. The question exists to stop a stray keystroke
+       quietly rewriting a plasmid somebody already has; with nothing there
+       before, there is nothing to protect and nothing to undo to, and
+       asking turns the ordinary way of starting a record — paste it in —
+       into a dialog. */
+    if (!burst.seq.length) { dropEditBurst(); return; }
     plEditPending = { burst: burst, diff: d };
     plEditBurst = null;
     document.getElementById('ln-modal-content').innerHTML =
@@ -997,17 +1035,22 @@
           [['off', 'Off'], ['atg', 'From first ATG'], ['1', '+1'], ['2', '+2'], ['3', '+3'], ['-1', '\u22121'], ['-2', '\u22122'], ['-3', '\u22123']]
             .map(function (o) { return '<option value="' + o[0] + '"' + (plOpts.frame === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
+        '<label class="ln-pl-check" title="Show the amino acids under every CDS and gene feature">' +
+          '<input type="checkbox" id="pl-cds"' + (plOpts.cds ? ' checked' : '') + '> Translate CDS</label>' +
         '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
         '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
         '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
+        '<button class="ln-add-btn ghost" title="Align sequencing reads to this record" onclick="openSeqCheck()">✓ Sequencing</button>' +
         '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
       '</div></div>';
     var sum = Object.keys(counts).length;
     return head +
+      plAnnOfferHtml() +
       '<div class="pl-edbar">' + editorNote(p, shown, sum) + '</div>' +
       (len
         ? '<div class="ln-pl-seqmap" id="pl-seq-map" tabindex="0" role="textbox" aria-label="Plasmid sequence"></div>'
-        : '<div class="pl-empty-seq" id="pl-seq-empty">Type or paste a sequence here, drop a GenBank, SnapGene or FASTA file ' +
+        : '<div class="pl-empty-seq" id="pl-seq-empty" tabindex="0" role="textbox" aria-label="Empty sequence \u2014 type or paste here">' +
+          'Type or paste a sequence here, drop a GenBank, SnapGene or FASTA file ' +
           'anywhere on this page, or use <strong>Import sequence file</strong>.</div>') +
       '</div>';
   }
@@ -1237,7 +1280,10 @@
     var bases = P.clean(text);
     if (!bases) { plNote = 'Nothing in the clipboard looked like a sequence.'; renderSequenceOnly(); return; }
     var at = plSel ? plSel.start : plCaret, del = plSel ? plSel.end - plSel.start : 0;
+    var bare = !((rec() && rec().features) || []).length;
     edEdit(at, del, bases);
+    // A pasted sequence is the moment to look it up, not every keystroke after.
+    if (bare && bases.length >= 40) { offerAnnotate(); renderSequenceOnly(); }
   }
   /* Copy the selection as bases, as transcript, or as protein — either strand.
      P.copyForm does the conversion and says what it produced; this only has to
@@ -1324,6 +1370,36 @@
     return P.BUILTIN_FEATURES.concat(P.labLibrary(getInventory().plasmids || [], skipId));
   }
   var plProposed = null;
+  /* A sequence that has just arrived with nothing marked on it.
+
+     The point the video makes is that pasting a sequence should leave you
+     looking at an annotated plasmid, not at four thousand letters. Doing it
+     silently is the wrong half of that: these are guesses from a library,
+     some of them wrong, and features written into somebody's record without
+     being shown to them are features nobody ever checks.
+
+     So the match runs by itself and the result is offered. One click to see
+     what was found, one to dismiss it. It runs only when a sequence lands
+     on a record with nothing on it yet, because that is the only moment the
+     answer is both cheap and interesting. */
+  var plAnnOffer = null;
+  function offerAnnotate() {
+    plAnnOffer = null;
+    var it = rec();
+    if (!it || (it.features || []).length) return;
+    var p = asPlasmid(it);
+    if (p.seq.length < 40) return;
+    var found = P.annotate(p, libraries(it.id));
+    if (found.length) plAnnOffer = { n: found.length };
+  }
+  function plAnnOfferDismiss() { plAnnOffer = null; renderSequenceOnly(); }
+  function plAnnOfferHtml() {
+    if (!plAnnOffer) return '';
+    return '<div class="pl-ann-offer"><span><strong>' + plAnnOffer.n + '</strong> known element' +
+      (plAnnOffer.n === 1 ? '' : 's') + ' recognised in this sequence — nothing has been added yet.</span>' +
+      '<button type="button" class="ln-icon-btn" onclick="openAnnotate()">Review and add</button>' +
+      '<button type="button" class="ln-icon-btn" onclick="plAnnOfferDismiss()">Not now</button></div>';
+  }
   function openAnnotate() {
     var it = rec(); if (!it) return;
     var p = asPlasmid(it);
@@ -1364,6 +1440,7 @@
       return { name: f.name, type: f.type, start: f.start, end: f.end, strand: f.strand, color: f.color, note: f.note || '' };
     }));
     plProposed = null;
+    plAnnOffer = null;
     closeModal(); markPlDirty(); renderPlasmid();
   }
 
@@ -1715,6 +1792,68 @@
       return true;
     });
   }
+  /* ---- saved enzyme sets ----
+
+     The enzymes a lab reasons with are a handful, not two hundred: the six
+     in its multiple cloning site, the two it screens every miniprep with.
+     Finding them again by scrolling and ticking, every time, on every
+     plasmid, is the kind of small repeated cost that ends with everybody
+     using whatever is quickest instead of whatever is right.
+
+     A set is a name and a list of enzyme names, kept in the shared
+     inventory, so it is the lab's set and not this browser's. */
+  var ENZSET_CAT = 'enzymesets';
+  function enzSets() {
+    return ((getInventory()[ENZSET_CAT]) || []).slice().sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true });
+    });
+  }
+  function plEnzSetsHtml() {
+    var sets = enzSets();
+    return '<div class="pl-enz-sets">' +
+      (sets.length
+        ? '<select id="pl-enz-set" onchange="plEnzSetLoad(this.value)"><option value="">Saved sets…</option>' +
+          sets.map(function (st) {
+            return '<option value="' + esc(st.id) + '">' + esc(st.name) + ' · ' +
+              (st.enzymes || []).length + '</option>';
+          }).join('') + '</select>' +
+          '<button type="button" class="ln-icon-btn danger" title="Delete the set chosen above" onclick="plEnzSetDelete()">✕</button>'
+        : '<span class="hint">No saved sets yet.</span>') +
+      '<button type="button" class="ln-icon-btn" onclick="plEnzSetSave()">★ Save what is ticked</button>' +
+      '</div>';
+  }
+  function plEnzSetLoad(id) {
+    var st = enzSets().filter(function (x) { return x.id === id; })[0];
+    if (!st) return;
+    // Replaces what is ticked rather than adding to it: a set is the whole
+    // answer to "which enzymes", and merging two of them silently is not.
+    plEnzPicked = (st.enzymes || []).slice();
+    plEnzHtml();
+    var sel = document.getElementById('pl-enz-set');
+    if (sel) sel.value = id;
+  }
+  function plEnzSetSave() {
+    if (!plEnzPicked.length) { alert('Tick the enzymes first, then save them as a set.'); return; }
+    var name = (prompt('Call this set of ' + plEnzPicked.length + ' enzymes:', '') || '').trim();
+    if (!name) return;
+    var existing = enzSets().filter(function (x) {
+      return String(x.name || '').toLowerCase() === name.toLowerCase();
+    })[0];
+    if (existing && !confirm('A set called “' + existing.name + '” already exists. Replace it?')) return;
+    var me = currentUser() ? currentUser().name : 'Unknown';
+    var st = { id: existing ? existing.id : uid(), name: name, enzymes: plEnzPicked.slice(),
+      addedBy: existing ? existing.addedBy : me };
+    DB.upsertInventory(ENZSET_CAT, st).then(function () { plEnzHtml(); },
+      function (e) { alert('Could not save the set: ' + e.message); });
+  }
+  function plEnzSetDelete() {
+    var sel = document.getElementById('pl-enz-set');
+    var st = sel && enzSets().filter(function (x) { return x.id === sel.value; })[0];
+    if (!st) { alert('Choose a saved set first.'); return; }
+    if (!confirm('Delete the set “' + st.name + '”? The enzymes themselves are not affected.')) return;
+    DB.removeInventory(ENZSET_CAT, st.id).then(function () { plEnzHtml(); },
+      function (e) { alert('Could not delete the set: ' + e.message); });
+  }
   function plEnzHtml() {
     var it = rec(); if (!it) return;
     var sum = P.enzymeSummary(asPlasmid(it));
@@ -1736,6 +1875,7 @@
         tab('none', 'Never cuts', groups.none) + tab('one', 'Cuts once', groups.one) +
         tab('two', 'Cuts twice', groups.two) + tab('many', 'Three or more', groups.many) + tab('all', 'Every enzyme', sum.length) +
       '</div>' +
+      plEnzSetsHtml() +
       '<input class="ln-search sm" id="pl-enz-search" placeholder="🔍 Enzyme or site" value="' + esc(plEnzSearch) + '" oninput="plEnzSearchSet(this.value)" style="margin:.6rem 0;width:100%;">' +
       '<div style="max-height:40vh;overflow:auto;"><table class="ln-table"><thead><tr>' +
       '<th><input type="checkbox" id="pl-enz-all" title="Tick every enzyme listed" onchange="plEnzAll(this.checked)"></th>' +
@@ -2180,9 +2320,24 @@
     if (!res || !res.ok) return;
     var name = g('pl-clone-name') || 'New construct';
     var me = currentUser() ? currentUser().name : 'Unknown';
+    var made = cloneParts();
+    var ids = [clone.vec.id || plId].concat(clone.inserts.map(function (x) { return x.id || ''; }));
+    /* Every enzyme that made an end, read off the pieces themselves. The
+       junction list holds only the joins between consecutive pieces, so on
+       a circular ligation the join that closes the circle is not in it —
+       taking the enzymes from there recorded a two-enzyme clone as a
+       one-enzyme one, which is exactly the detail somebody comes back to
+       this panel for. */
+    var enzymes = {};
+    (res.pieces || []).forEach(function (f) {
+      if (f.left && f.left.enzyme) enzymes[f.left.enzyme] = true;
+      if (f.right && f.right.enzyme) enzymes[f.right.enzyme] = true;
+    });
     var item = { id: uid(), name: name, seq: res.seq, topology: 'circular', len: res.seq.length,
       features: res.features.map(function (f) { return P.normFeature(f, res.seq.length); }).filter(Boolean),
       owner: me, addedBy: me,
+      history: historyRecord('Restriction cloning', Object.keys(enzymes).sort().join(' + '),
+        historyPieces((res.pieces || []).map(function (f) { return f.seq; }), (made && made.names) || [], ids)),
       notes: 'Built by restriction cloning in the Lab Notebook on ' + new Date().toISOString().slice(0, 10) + '.' };
     DB.upsertInventory('plasmids', item).then(function () {
       clone = null;
@@ -2190,6 +2345,78 @@
       renderInventory('plasmids');
       openPlasmid(item.id);
     }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
+  /* ---------- how a construct was made ----------
+
+     A plasmid that came out of the cloning tools knows what it was built
+     from, and that knowledge is worth more than the sentence in the notes
+     field it used to leave behind. Six months later the question is never
+     "was this a Gibson" — it is "which of the two pTEST backbones is this
+     actually on, and where does the insert start".
+
+     So the pieces are recorded with their spans and the id of the record
+     each came from: enough to colour the map by origin, and enough to walk
+     back to the parent even after somebody has renamed it. The parent is
+     not frozen into a copy, because a copy would go stale; the name is
+     kept alongside the id only so a deleted parent can still be named. */
+  var HISTORY_COLORS = ['#cfe3ff', '#d6f0dd', '#ffe6c7', '#eadcff', '#ffd9e0', '#d3f3f0'];
+  function historyPieces(seqs, names, ids) {
+    var at = 0;
+    return seqs.map(function (seq, i) {
+      var piece = { name: names[i] || ('piece ' + (i + 1)), start: at, end: at + seq.length,
+        sourceId: ids[i] || '', sourceName: names[i] || '' };
+      at += seq.length;
+      return piece;
+    });
+  }
+  function historyRecord(method, detail, pieces) {
+    return { method: method, detail: detail || '', pieces: pieces || [],
+      on: new Date().toISOString().slice(0, 10),
+      by: currentUser() ? currentUser().name : 'Unknown' };
+  }
+  // The pieces as map annotations, for the "where did this come from" view.
+  function historyAnnotations(it) {
+    var h = it && it.history;
+    if (!h || !h.pieces || !h.pieces.length) return [];
+    return h.pieces.map(function (pc, i) {
+      return { name: pc.name, type: 'source', start: pc.start, end: pc.end, strand: 0,
+        color: HISTORY_COLORS[i % HISTORY_COLORS.length],
+        note: 'From ' + (pc.sourceName || 'an earlier record') };
+    });
+  }
+  function historyHtml(it) {
+    var h = it && it.history;
+    if (!h) return '';
+    var live = getInventory().plasmids || [];
+    return '<div class="ln-pl-panel" id="pl-history"><div class="ln-pl-panel-head">' +
+      '<h3>How it was made</h3><div class="ln-header-actions">' +
+        '<label class="ln-pl-check" title="Shade the map by which piece each stretch came from">' +
+          '<input type="checkbox" id="pl-history-colour"' + (plOpts.history ? ' checked' : '') +
+          ' onchange="plHistoryColour(this.checked)"> Colour by origin</label></div></div>' +
+      '<p class="ln-bulk-intro">' + esc(h.method) + (h.detail ? ' · ' + esc(h.detail) : '') +
+        ' · ' + esc(h.by) + ' on ' + esc(h.on) + '</p>' +
+      (h.pieces.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
+        '<th></th><th>Piece</th><th>Came from</th><th class="ln-nowrap">Here</th><th class="ln-nowrap">Length</th>' +
+        '</tr></thead><tbody>' + h.pieces.map(function (pc, i) {
+          var src = pc.sourceId && live.filter(function (x) { return x.id === pc.sourceId; })[0];
+          var from = src
+            ? '<a href="#plasmid/' + esc(src.id) + '" class="ln-box-link" onclick="openPlasmid(\'' + esc(src.id) + '\');return false;">' + esc(src.name || 'Untitled') + '</a>'
+            : '<span class="hint">' + esc(pc.sourceName || 'not recorded') +
+              (pc.sourceId ? ' — no longer in the notebook' : '') + '</span>';
+          return '<tr><td><span class="pl-swatch" style="background:' +
+            esc(HISTORY_COLORS[i % HISTORY_COLORS.length]) + '"></span></td>' +
+            '<td>' + esc(pc.name) + '</td><td>' + from + '</td>' +
+            '<td class="ln-nowrap">' + (pc.start + 1) + '–' + pc.end + '</td>' +
+            '<td class="ln-nowrap">' + (pc.end - pc.start).toLocaleString() + ' bp</td></tr>';
+        }).join('') + '</tbody></table></div>' : '') + '</div>';
+  }
+  function plHistoryColour(on) {
+    plOpts.history = !!on;
+    var it = rec(); if (!it) return;
+    var p = asPlasmid(it);
+    refreshMap(p);
+    refreshSeqMap();
   }
 
   // ---------- primers ----------
@@ -2229,6 +2456,7 @@
       '<div class="ln-header-actions">' +
         '<button class="ln-add-btn ghost" onclick="openPcr()">⟶ Expected PCR</button>' +
         '<button class="ln-add-btn ghost" onclick="openGibson()">Gibson assembly</button>' +
+        '<button class="ln-add-btn ghost" title="Assemble with a Type IIS enzyme" onclick="openGoldenGate()">Golden Gate</button>' +
         '<button class="ln-add-btn ghost" onclick="openPrimerModal()">+ Attach primer</button></div></div>' +
       (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
@@ -2470,6 +2698,31 @@
      The list is shared and is written straight away; the attachment is part
      of this page and waits for Save like every other edit to it. */
   var plNewPrimer = null;
+  /* The sites people actually add to a primer, with the four spare bases in
+     front that most of these enzymes need in order to cut that close to the
+     end of a fragment — a site flush with the 5′ end is a site that does
+     not get cut, and it is the classic way a cloning primer fails. */
+  var TAIL_CLAMP = 'AAAA';
+  var TAIL_SITES = [
+    { name: 'EcoRI', site: 'GAATTC' }, { name: 'BamHI', site: 'GGATCC' },
+    { name: 'HindIII', site: 'AAGCTT' }, { name: 'XhoI', site: 'CTCGAG' },
+    { name: 'SalI', site: 'GTCGAC' }, { name: 'XbaI', site: 'TCTAGA' },
+    { name: 'SpeI', site: 'ACTAGT' }, { name: 'NheI', site: 'GCTAGC' },
+    { name: 'NdeI', site: 'CATATG' }, { name: 'NotI', site: 'GCGGCCGC' },
+    { name: 'KpnI', site: 'GGTACC' }, { name: 'SacI', site: 'GAGCTC' }
+  ];
+  function plNewPrimerSite(site) {
+    var box = document.getElementById('np-tail');
+    if (!box || !site) return;
+    box.value = TAIL_CLAMP + site;
+    document.getElementById('np-site').selectedIndex = 0;
+    plNewPrimerStats();
+  }
+  // The annealing part and the tail, as the primer would be ordered.
+  function plNewPrimerParts() {
+    var tail = P.clean(g('np-tail') || ''), anneal = P.clean(g('np-seq') || '');
+    return { tail: tail, anneal: anneal, full: tail + anneal };
+  }
   function plNewPrimerModal() {
     var it = rec(); if (!it || !plSel) return;
     if (!window.PrimerStore || !window.PrimerStore.addRegular) { alert('The lab’s primer list is not available on this page.'); return; }
@@ -2488,8 +2741,22 @@
         '<div class="ln-form-row"><label>Orientation</label><select id="np-dir" onchange="plNewPrimerFlip()">' +
           '<option value="Frw">Forward — reads as selected</option><option value="Rev">Reverse — reverse complement</option></select></div>' +
         '<div class="ln-form-row"><label>Description</label><input id="np-desc" placeholder="e.g. ATP7B exon 8" oninput="plNewPrimerStats()"></div></div>' +
-      '<div class="ln-form-row"><label>Sequence (5′→3′)</label><input id="np-seq" value="' + esc(plNewPrimer.fwd) + '" oninput="plNewPrimerStats()" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;">' +
-        '<div class="hint" id="np-stats"></div></div>' +
+      '<div class="ln-form-row"><label>Anneals to the template (5′→3′)</label><input id="np-seq" value="' + esc(plNewPrimer.fwd) + '" oninput="plNewPrimerStats()" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;"></div>' +
+      /* The 5′ tail: a restriction site for cloning, a Kozak, an overhang.
+         It hangs free in the first round and is in every copy after, which
+         is why its bases are kept apart from the annealing ones — the two
+         have different melting temperatures and only one of them decides
+         the annealing step. */
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>5′ extension (optional)</label>' +
+          '<input id="np-tail" placeholder="e.g. a restriction site" oninput="plNewPrimerStats()" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;"></div>' +
+        '<div class="ln-form-row"><label>Add a site</label><select id="np-site" onchange="plNewPrimerSite(this.value)">' +
+          '<option value="">Choose an enzyme…</option>' +
+          TAIL_SITES.map(function (e) {
+            return '<option value="' + esc(e.site) + '">' + esc(e.name) + ' · ' + esc(e.site) + '</option>';
+          }).join('') + '</select></div></div>' +
+      '<div class="ln-form-row"><label>The primer as ordered</label>' +
+        '<div class="np-full" id="np-full"></div><div class="hint" id="np-stats"></div></div>' +
       '<div class="ln-form-grid">' +
         '<div class="ln-form-row"><label>Vendor</label><input id="np-vendor" value="IDT"></div>' +
         '<div class="ln-form-row"><label>Status</label><select id="np-status">' + opts(['Designed', 'Ordered', 'Received'], 'Designed') + '</select></div></div>' +
@@ -2511,15 +2778,32 @@
   }
   function plNewPrimerStats() {
     var out = document.getElementById('np-stats'); if (!out) return;
-    var seq = P.clean(g('np-seq'));
-    out.textContent = seq.length + ' nt' + (seq.length ? ' · GC ' + P.gc(seq).toFixed(0) + '%' : '') +
-      (seq.length >= 14 ? ' · Tm ' + P.tm(seq).toFixed(1) + ' °C' : '') +
-      ' · it will be given the next PR number' + (g('np-desc') ? ', as PR…_' + g('np-desc').slice(0, 20) : '');
+    var parts = plNewPrimerParts();
+    var full = document.getElementById('np-full');
+    if (full) {
+      // The tail is shown pale, the way it is everywhere else on this page.
+      full.innerHTML = (parts.tail ? '<span class="pcr-tailtext">' + esc(parts.tail) + '</span>' : '') +
+        esc(parts.anneal) || '<span class="hint">nothing yet</span>';
+    }
+    var bits = [parts.full.length + ' nt'];
+    if (parts.tail) bits.push(parts.tail.length + ' nt tail + ' + parts.anneal.length + ' nt annealing');
+    if (parts.full.length) bits.push('GC ' + P.gc(parts.full).toFixed(0) + '%');
+    /* The annealing temperature is the one that sets the PCR, and for a
+       primer with a tail it is not the melting temperature of the whole
+       thing — quoting one number here is how a tailed primer ends up run
+       at the wrong temperature for its first two cycles. */
+    if (parts.anneal.length >= 14) {
+      bits.push('Tm ' + P.tm(parts.anneal).toFixed(1) + ' °C' + (parts.tail ? ' annealing' : ''));
+    }
+    if (parts.tail && parts.full.length >= 14) bits.push(P.tm(parts.full).toFixed(1) + ' °C whole');
+    out.textContent = bits.join(' · ') +
+      ' · next PR number' + (g('np-desc') ? ', as PR…_' + g('np-desc').slice(0, 20) : '');
   }
   function plSaveNewPrimer() {
     var it = rec(); if (!it) return;
-    var seq = P.clean(g('np-seq')), desc = g('np-desc');
-    if (seq.length < 10) { alert('That is too short to be a primer.'); return; }
+    var parts = plNewPrimerParts(), seq = parts.full, desc = g('np-desc');
+    if (parts.anneal.length < 10) { alert('The annealing part is too short to be a primer.'); return; }
+    if (seq.length > 150) { alert('That is ' + seq.length + ' bases with the extension, which is too long to order.'); return; }
     if (!desc) { alert('Give the primer a description — it becomes part of its name.'); document.getElementById('np-desc').focus(); return; }
     var annotate = document.getElementById('np-annotate').checked;
     var btn = document.getElementById('np-save');
@@ -2694,15 +2978,461 @@
     if (!res) return;
     var me = currentUser() ? currentUser().name : 'Unknown';
     var seq = res.product.seq;
+    var frags = gibFragments().filter(Boolean);
     var item = { id: uid(), name: g('gib-name') || 'Gibson product', seq: seq, topology: 'circular', len: seq.length,
       features: res.product.features.map(function (f) { return P.normFeature(f, seq.length); }).filter(Boolean),
       owner: me, addedBy: me,
       primers: res.primers.map(function (pr) { return { name: pr.name, seq: pr.seq }; }),
+      history: historyRecord('Gibson assembly', res.overlap + ' base overlaps',
+        historyPieces(frags.map(function (f) { return f.seq; }),
+          frags.map(function (f) { return f.name; }),
+          gib.pieces.map(function (pc) { return pc.id; }))),
       notes: 'Designed as a Gibson assembly of ' + res.pieces + ' pieces with ' + res.overlap +
         ' base overlaps in the Lab Notebook on ' + new Date().toISOString().slice(0, 10) + '.' };
     DB.upsertInventory('plasmids', item).then(function () {
       gib = null; closeModal(); renderInventory('plasmids'); openPlasmid(item.id);
     }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
+  /* ---------- Golden Gate ----------
+
+     Unlike the restriction cloning screen, the order is not chosen here:
+     one Type IIS enzyme cuts everything, and the overhangs decide what
+     joins what. So the screen asks for the pieces and the enzyme, and then
+     reports the order it worked out — or which part of the design makes
+     that order impossible. */
+  var gg = null;
+  function openGoldenGate() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence first.'); return; }
+    var others = (getInventory().plasmids || []).filter(function (x) { return x.id !== it.id && P.clean(x.seq || '').length; });
+    gg = { enzyme: 'BsaI', parts: [
+      { id: it.id, pick: 0 },
+      { id: others.length ? others[0].id : '', pick: 0 }
+    ] };
+    document.getElementById('ln-modal-content').className = 'ln-modal gel';
+    plGoldenHtml();
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function ggSources() {
+    var it = rec();
+    return [it].concat((getInventory().plasmids || []).filter(function (x) {
+      return x.id !== it.id && P.clean(x.seq || '').length;
+    }));
+  }
+  // Each part digested with the chosen enzyme, and the pieces it could give.
+  function ggDigest(part) {
+    var src = ggSources().filter(function (x) { return x.id === part.id; })[0];
+    if (!src) return null;
+    var p = asPlasmid(src);
+    var d = P.digest(p, [gg.enzyme]);
+    return { src: src, p: p, fragments: d.fragments, sites: d.sites };
+  }
+  /* Only pieces with an overhang at both ends can take part, so those are
+     what the menu offers — a backbone with one cut end and one plain end
+     cannot be in a Golden Gate and listing it only invites the question. */
+  function ggUsable(d) {
+    return (d ? d.fragments : []).map(function (f, i) { return { f: f, i: i }; })
+      .filter(function (x) { return x.f.left.ohang && x.f.right.ohang; });
+  }
+  function plGoldenHtml() {
+    var all = ggSources();
+    var chosen = [], problems = [];
+    var rows = gg.parts.map(function (part, n) {
+      var d = ggDigest(part);
+      var usable = ggUsable(d);
+      if (d && !usable.length) {
+        problems.push('“' + (d.src.name || 'Untitled') + '” has no piece with a ' + esc(gg.enzyme) +
+          ' overhang at both ends — ' + (d.sites.length ? 'it is cut ' + d.sites.length + ' time' +
+          (d.sites.length === 1 ? '' : 's') + ', but not in a way that releases a piece' : 'it is not cut at all') + '.');
+      }
+      var at = usable.filter(function (x) { return x.i === part.pick; })[0] || usable[0];
+      if (at) chosen.push({ name: (d.src.name || 'Untitled'), frag: at.f, id: d.src.id });
+      return '<div class="pl-gg-part">' +
+        '<div class="ln-form-row"><label>' + (n === 0 ? 'Vector' : 'Part ' + n) + '</label>' +
+          '<select onchange="plGoldenSet(' + n + ',\'id\',this.value)">' +
+            all.map(function (x) {
+              return '<option value="' + esc(x.id) + '"' + (x.id === part.id ? ' selected' : '') + '>' +
+                esc(x.name || 'Untitled') + '</option>';
+            }).join('') + '</select></div>' +
+        '<div class="ln-form-row"><label>Piece</label>' +
+          (usable.length
+            ? '<select onchange="plGoldenSet(' + n + ',\'pick\',this.value)">' +
+              usable.map(function (x) {
+                return '<option value="' + x.i + '"' + (at && x.i === at.i ? ' selected' : '') + '>' +
+                  x.f.len.toLocaleString() + ' bp · ' + esc(x.f.left.ohang) + '…' + esc(x.f.right.ohang) + '</option>';
+              }).join('') + '</select>'
+            : '<span class="hint">nothing usable</span>') + '</div>' +
+        (gg.parts.length > 2 ? '<button type="button" class="ln-icon-btn danger" onclick="plGoldenDrop(' + n + ')">✕</button>' : '') +
+        '</div>';
+    }).join('');
+
+    var res = chosen.length >= 2 ? P.goldenGate(chosen, gg.enzyme) : null;
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Golden Gate assembly</h3>' +
+      '<p class="ln-bulk-intro">One Type IIS enzyme cuts every piece, and the four-base overhangs decide what joins ' +
+      'what — so the order is worked out here rather than chosen. Each piece is the stretch between two of the ' +
+      'enzyme’s sites.</p>' +
+      '<div class="ln-form-row"><label>Enzyme</label><select onchange="plGoldenSet(-1,\'enzyme\',this.value)">' +
+        P.TYPE_IIS.map(function (n) {
+          var e = P.ENZYMES.filter(function (x) { return x.n === n; })[0];
+          return '<option value="' + esc(n) + '"' + (n === gg.enzyme ? ' selected' : '') + '>' + esc(n) +
+            ' · ' + esc(e ? e.s : '') + '</option>';
+        }).join('') + '</select></div>' +
+      '<div class="pl-gg-parts">' + rows + '</div>' +
+      '<button type="button" class="ln-icon-btn" onclick="plGoldenAdd()">+ Add a part</button>' +
+      (problems.length ? '<div class="ln-bulk-note error">' + problems.join('<br>') + '</div>' : '') +
+      (res ? plGoldenResult(res) : '') +
+      '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
+        (res && res.ok ? '<button class="ln-modal-save" onclick="plGoldenCreate()">Create the plasmid</button>' : '') +
+      '</div>';
+    gg.result = res && res.ok ? res : null;
+  }
+  function plGoldenResult(res) {
+    if (!res.ok) return '<div class="ln-bulk-note error">' + esc(res.error) + '</div>';
+    var total = res.product.seq.length;
+    return '<div class="ln-bulk-note ok"><strong>' + total.toLocaleString() + ' bp</strong> circular · ' +
+        res.order.length + ' pieces · ' + res.product.features.length + ' feature' +
+        (res.product.features.length === 1 ? '' : 's') + ' carried over</div>' +
+      (res.warnings.length ? '<div class="ln-bulk-note error">' + res.warnings.map(esc).join('<br>') + '</div>' : '') +
+      '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Order</th><th>Piece</th>' +
+        '<th class="ln-nowrap">Starts</th><th class="ln-nowrap">Ends</th><th class="ln-nowrap">Length</th>' +
+        '</tr></thead><tbody>' + res.order.map(function (o, i) {
+          return '<tr><td class="ln-nowrap">' + (i + 1) + '</td><td>' + esc(o.name) + '</td>' +
+            '<td class="ln-nowrap"><code>' + esc(o.left) + '</code></td>' +
+            '<td class="ln-nowrap"><code>' + esc(o.right) + '</code></td>' +
+            '<td class="ln-nowrap">' + o.len.toLocaleString() + ' bp</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+      '<div class="ln-form-row"><label>Name for the new plasmid</label><input id="gg-name" value="' +
+        esc(res.order.map(function (o) { return o.name; }).join(' + ').slice(0, 80)) + '"></div>';
+  }
+  function plGoldenSet(n, field, value) {
+    if (n < 0) { gg[field] = value; gg.parts.forEach(function (p) { p.pick = 0; }); }
+    else {
+      var part = gg.parts[n]; if (!part) return;
+      part[field] = field === 'pick' ? parseInt(value, 10) : value;
+      if (field === 'id') part.pick = 0;
+    }
+    plGoldenHtml();
+  }
+  function plGoldenAdd() {
+    var all = ggSources();
+    gg.parts.push({ id: all.length > 1 ? all[1].id : all[0].id, pick: 0 });
+    plGoldenHtml();
+  }
+  function plGoldenDrop(n) { gg.parts.splice(n, 1); plGoldenHtml(); }
+  function plGoldenCreate() {
+    var res = gg && gg.result;
+    if (!res || !res.ok) return;
+    var me = currentUser() ? currentUser().name : 'Unknown';
+    var seq = res.product.seq;
+    var item = { id: uid(), name: g('gg-name') || 'Golden Gate product', seq: seq,
+      topology: 'circular', len: seq.length, kind: 'plasmid',
+      features: res.product.features.map(function (f) { return P.normFeature(f, seq.length); }).filter(Boolean),
+      owner: me, addedBy: me,
+      history: historyRecord('Golden Gate', res.enzyme, res.order.map(function (o) {
+        return { name: o.name, start: o.start, end: o.end, sourceId: o.id || '', sourceName: o.name };
+      })),
+      notes: 'Assembled with ' + res.enzyme + ' in the Lab Notebook on ' + new Date().toISOString().slice(0, 10) + '.' };
+    DB.upsertInventory('plasmids', item).then(function () {
+      gg = null; closeModal(); renderInventory('plasmids'); openPlasmid(item.id);
+    }, function (e) { alert('Could not create the plasmid: ' + e.message); });
+  }
+
+  /* ---------- checking the sequencing ----------
+
+     The last step: the reads came back, does the construct say what it was
+     designed to say. Reads are not stored on the record — they are evidence
+     about one preparation on one day, and the place for that is the
+     experiment entry, not a field on the plasmid that nobody updates when
+     the next miniprep is sequenced. What this does is answer the question
+     while you have the file open. */
+  var seqCheck = null;
+  function openSeqCheck() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('There is no sequence here to check the reads against.'); return; }
+    seqCheck = { reads: [], results: null, note: '' };
+    plSeqCheckHtml();
+    document.getElementById('ln-modal-content').className = 'ln-modal gel';
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  function plSeqCheckHtml() {
+    var it = rec(); if (!it) return;
+    var res = seqCheck.results;
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Check the sequencing</h3>' +
+      '<p class="ln-bulk-intro">Paste the reads, or choose the files your sequencing service sent. Each one is ' +
+      'placed on <strong>' + esc(it.name || 'this record') + '</strong>, on whichever strand fits, and anything that ' +
+      'disagrees is listed with its position. Plain sequence or FASTA — a trace file (.ab1) is not read here, ' +
+      'so export the sequence from it first.</p>' +
+      '<div class="ln-form-row"><label>Reads</label>' +
+        '<textarea id="sc-text" rows="5" spellcheck="false" placeholder="Paste a sequence, or several in FASTA:&#10;>GFP_F&#10;ACGT…" ' +
+        'style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;"></textarea></div>' +
+      '<div class="ln-form-row"><input type="file" id="sc-files" multiple accept=".fa,.fasta,.seq,.txt,.fas" onchange="plSeqCheckFiles(this)">' +
+        '<div class="hint">The file name becomes the read name, which is usually the primer.</div></div>' +
+      (seqCheck.note ? '<div class="ln-bulk-note">' + esc(seqCheck.note) + '</div>' : '') +
+      '<div class="ln-modal-actions" style="margin-bottom:.6rem;">' +
+        '<button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
+        '<button class="ln-modal-save" onclick="plSeqCheckRun()">Align the reads</button></div>' +
+      (res ? plSeqCheckResults(it, res) : '');
+  }
+  async function plSeqCheckFiles(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    if (!files.length) return;
+    var added = 0;
+    for (var i = 0; i < files.length; i++) {
+      var text = await files[i].text();
+      var reads = P.parseReads(text);
+      reads.forEach(function (r, n) {
+        // A one-read file is named after the file; a FASTA keeps its own names.
+        seqCheck.reads.push({ name: reads.length === 1 ? files[i].name.replace(/\.[^.]+$/, '') : r.name, seq: r.seq });
+        added++;
+      });
+    }
+    seqCheck.note = added ? added + ' read' + (added === 1 ? '' : 's') + ' read from ' +
+      files.length + ' file' + (files.length === 1 ? '' : 's') + '. Press "Align the reads".'
+      : 'Nothing in those files looked like a sequence.';
+    plSeqCheckHtml();
+  }
+  function plSeqCheckRun() {
+    var it = rec(); if (!it) return;
+    var typed = P.parseReads(document.getElementById('sc-text').value || '');
+    var all = seqCheck.reads.concat(typed);
+    if (!all.length) { alert('Paste a read, or choose a file.'); return; }
+    var p = asPlasmid(it);
+    seqCheck.results = all.map(function (r) {
+      var out = P.alignRead(p, r.seq, {});
+      out.name = r.name || 'read';
+      out.readLength = P.clean(r.seq).length;
+      return out;
+    });
+    seqCheck.note = '';
+    plSeqCheckHtml();
+  }
+  function plSeqCheckResults(it, res) {
+    var ok = res.filter(function (r) { return r.ok; });
+    var bad = res.filter(function (r) { return !r.ok; });
+    var p = asPlasmid(it);
+    var diffs = ok.reduce(function (n, r) { return n + r.differences.length; }, 0);
+    /* The headline is the thing somebody is actually asking, said plainly.
+       A clean result still says what it did not cover, because "no
+       differences" over half the plasmid is not the same answer as "no
+       differences" over all of it. */
+    var covered = coveredBases(ok, P.clean(it.seq).length);
+    var pct = (covered / P.clean(it.seq).length) * 100;
+    var head = !ok.length ? '<div class="ln-bulk-note error">None of those reads could be placed on this record.</div>'
+      : '<div class="ln-bulk-note ' + (diffs ? 'error' : 'ok') + '">' +
+        (diffs ? '<strong>' + diffs + ' difference' + (diffs === 1 ? '' : 's') + '</strong> from the expected sequence'
+               : '<strong>No differences</strong> where the reads cover it') +
+        ' · ' + ok.length + ' read' + (ok.length === 1 ? '' : 's') + ' placed · ' +
+        pct.toFixed(0) + '% of the ' + P.clean(it.seq).length.toLocaleString() + ' bases covered' +
+        (pct < 99.5 ? ' — the rest is unchecked' : '') + '</div>';
+
+    return head +
+      '<div class="pl-cov-wrap">' + P.alignmentSvg(p, ok, { width: 860 }) + '</div>' +
+      (ok.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Read</th><th>Strand</th>' +
+        '<th class="ln-nowrap">Covers</th><th class="ln-nowrap">Identity</th><th class="ln-nowrap">Trimmed</th>' +
+        '<th>Differences</th></tr></thead><tbody>' +
+        ok.map(function (r) {
+          return '<tr><td>' + esc(r.name) + '</td>' +
+            '<td class="ln-nowrap">' + (r.strand === -1 ? '← reverse' : '→ forward') + '</td>' +
+            '<td class="ln-nowrap">' + (r.start + 1) + '–' + r.end + (r.wraps ? ' <em>(crosses origin)</em>' : '') + '</td>' +
+            '<td class="ln-nowrap">' + (r.identity * 100).toFixed(1) + '%</td>' +
+            '<td class="ln-nowrap hint">' + (r.trimmedStart + r.trimmedEnd) + ' nt</td>' +
+            '<td>' + (r.differences.length
+              ? r.differences.slice(0, 12).map(function (d) {
+                  return '<span class="pl-diff ' + esc(d.kind) + '">' + esc(P.diffText(d)) + '</span>';
+                }).join(' ') + (r.differences.length > 12 ? ' <span class="hint">and ' + (r.differences.length - 12) + ' more</span>' : '')
+              : '<span class="pl-cov-clean">clean</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '') +
+      (bad.length ? '<div class="ln-bulk-note">' + bad.map(function (r) {
+        return esc(r.name || 'A read') + ' — ' + esc(r.reason);
+      }).join('<br>') + '</div>' : '') +
+      '<div class="hint">Ends are trimmed where the read stops agreeing, which is a weaker rule than the quality ' +
+      'scores in a trace file — a difference in the first or last few bases of a read is worth looking at in the ' +
+      'trace before believing it.</div>';
+  }
+  /* How much of the record the reads actually sit on, counted once per base
+     so two reads over the same stretch do not add up to twice the plasmid. */
+  function coveredBases(results, len) {
+    if (!len) return 0;
+    var seen = new Uint8Array(len);
+    results.forEach(function (r) {
+      var spans = r.wraps ? [[r.start, len], [0, r.end]] : [[r.start, r.end]];
+      spans.forEach(function (sp) {
+        for (var i = Math.max(0, sp[0]); i < Math.min(len, sp[1]); i++) seen[i] = 1;
+      });
+    });
+    var n = 0;
+    for (var k = 0; k < len; k++) if (seen[k]) n++;
+    return n;
+  }
+
+  /* ---------- the agarose gel ----------
+
+     A gel is the one tool here that is about several records at once: you
+     run the clone beside its parent and beside a ladder, and the question
+     is whether the pattern matches. So it opens from the list pages rather
+     than from inside one record, and every lane picks its own record.
+
+     The lanes are a plan, not a result. Nothing is saved: the point is to
+     decide which digest to set up, and a plan worth keeping is written into
+     the experiment entry where the real photograph will go beside it. */
+  var gel = null;
+  function gelRecords() {
+    return (getInventory().plasmids || []).filter(function (x) { return P.clean(x.seq || '').length; });
+  }
+  function gelRecord(id) {
+    return gelRecords().filter(function (x) { return x.id === id; })[0] || null;
+  }
+  function openGel(prefillId) {
+    var all = gelRecords();
+    if (!all.length) {
+      alert('Nothing has a sequence yet. Add or import one and it can be run on a gel.');
+      return;
+    }
+    var first = (prefillId && gelRecord(prefillId)) || all[0];
+    gel = { percent: 1, ladder: '1 kb', lanes: [{ id: first.id, enzymes: [] }] };
+    // Several lanes side by side need more room than a form does; closeModal
+    // puts the box back to its usual width afterwards.
+    document.getElementById('ln-modal-content').className = 'ln-modal gel';
+    plGelHtml();
+    document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  // Every lane as P.gelLane wants it, the ladder first where there is one.
+  function gelLaneSpecs() {
+    var out = [];
+    if (gel.ladder) out.push(P.gelLane({ ladder: gel.ladder }, { percent: gel.percent }));
+    gel.lanes.forEach(function (ln) {
+      var src = gelRecord(ln.id);
+      if (!src) return;
+      var p = asPlasmid(src);
+      out.push(P.gelLane({ name: src.name || 'Untitled', seq: p.seq, topology: p.topology,
+        features: p.features, enzymes: ln.enzymes }, { percent: gel.percent }));
+    });
+    return out;
+  }
+  /* The records to choose from, grouped the way the sidebar groups them, so
+     a cDNA is found under cDNAs rather than in one long list of everything. */
+  function gelRecordOptions(chosen) {
+    var all = gelRecords(), groups = {};
+    all.forEach(function (x) {
+      var tab = cloningTab(kindOf(x));
+      (groups[tab] = groups[tab] || []).push(x);
+    });
+    return CLONING_TABS.filter(function (t) { return groups[t]; }).map(function (tab) {
+      return '<optgroup label="' + esc(INV_LABELS[tab].many) + '">' +
+        groups[tab].map(function (x) {
+          return '<option value="' + esc(x.id) + '"' + (x.id === chosen ? ' selected' : '') + '>' +
+            esc(x.name || 'Untitled') + ' · ' + P.clean(x.seq || '').length.toLocaleString() + ' bp</option>';
+        }).join('') + '</optgroup>';
+    }).join('');
+  }
+  /* The enzymes offered for a lane are the ones that actually cut it, fewest
+     cuts first — a diagnostic digest wants the enzyme that gives two clean
+     bands, and hunting for it down an alphabetical list of two hundred is
+     how people give up and use the one they always use. */
+  function gelEnzymeOptions(lane) {
+    var src = gelRecord(lane.id);
+    if (!src) return '';
+    var sum = P.enzymeSummary(asPlasmid(src), P.ENZYMES).filter(function (e) {
+      return e.count > 0 && lane.enzymes.indexOf(e.name) < 0;
+    }).sort(function (a, b) { return a.count - b.count || a.name.localeCompare(b.name); });
+    return sum.map(function (e) {
+      return '<option value="' + esc(e.name) + '">' + esc(e.name) + ' · ' + e.count +
+        ' cut' + (e.count === 1 ? '' : 's') + '</option>';
+    }).join('');
+  }
+  function plGelHtml() {
+    var lanes = gelLaneSpecs();
+    var svg = P.gelSvg(lanes, { run: 340 });
+    window.__gelSvg = svg;
+    var samples = lanes.filter(function (l) { return l.kind === 'sample'; });
+    document.getElementById('ln-modal-content').innerHTML =
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Agarose gel</h3>' +
+      '<p class="ln-bulk-intro">What the digest would look like before you set it up. Bands are drawn by mass, ' +
+      'so a small fragment is faint because on the real gel it is faint; two fragments too close to separate ' +
+      'are drawn as the one band you would actually see.</p>' +
+      '<div class="ln-form-grid">' +
+        '<div class="ln-form-row"><label>Agarose</label><select onchange="plGelOpt(\'percent\', this.value)">' +
+          P.GEL_RANGES.map(function (g) {
+            return '<option value="' + g.pct + '"' + (g.pct === gel.percent ? ' selected' : '') + '>' +
+              g.pct.toFixed(1) + '% · resolves ' + P.gelBpLabel(g.lo) + '–' + P.gelBpLabel(g.hi) + '</option>';
+          }).join('') + '</select></div>' +
+        '<div class="ln-form-row"><label>Ladder</label><select onchange="plGelOpt(\'ladder\', this.value)">' +
+          P.LADDERS.map(function (l) {
+            return '<option value="' + esc(l.name) + '"' + (l.name === gel.ladder ? ' selected' : '') + '>' + esc(l.name) + '</option>';
+          }).join('') + '<option value="">No ladder</option></select></div>' +
+      '</div>' +
+      '<div class="pl-gel-lanes">' + gel.lanes.map(function (ln, i) {
+        return '<div class="pl-gel-lane">' +
+          '<select class="pl-gel-rec" onchange="plGelSet(' + i + ',\'id\',this.value)">' + gelRecordOptions(ln.id) + '</select>' +
+          '<div class="pl-gel-picks">' +
+            ln.enzymes.map(function (n) {
+              return '<button type="button" class="pl-gel-chip" title="Take ' + esc(n) + ' out of this lane" ' +
+                'onclick="plGelDropEnzyme(' + i + ',\'' + esc(n) + '\')">' + esc(n) + ' ×</button>';
+            }).join('') +
+            '<select class="pl-gel-add" onchange="plGelAddEnzyme(' + i + ',this.value)">' +
+              '<option value="">' + (ln.enzymes.length ? '+ another enzyme' : '+ enzyme (uncut)') + '</option>' +
+              gelEnzymeOptions(ln) + '</select>' +
+          '</div>' +
+          (gel.lanes.length > 1 ? '<button type="button" class="ln-icon-btn danger" title="Remove this lane" onclick="plGelDropLane(' + i + ')">✕</button>' : '') +
+        '</div>';
+      }).join('') + '</div>' +
+      '<button type="button" class="ln-icon-btn" onclick="plGelAddLane()">+ Add lane</button>' +
+      '<div class="pl-gel-wrap">' + svg + '</div>' +
+      /* Numbered to match the picture, so "lane 3" means the same thing in
+         the drawing, in this table and at the bench. */
+      (samples.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Lane</th><th>Record</th><th>Digest</th>' +
+        '<th class="ln-nowrap">Pieces</th><th>Sizes (bp)</th></tr></thead><tbody>' +
+        lanes.map(function (l, i) {
+          if (l.kind !== 'sample') return '';
+          return '<tr><td class="ln-nowrap">' + (i + 1) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.note || '—') + '</td>' +
+            '<td class="ln-nowrap">' + (l.uncut ? '—' : l.lengths.length) + '</td>' +
+            '<td>' + l.lengths.map(function (n) { return n.toLocaleString(); }).join(', ') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '') +
+      '<div class="ln-modal-actions">' +
+        '<button class="ln-modal-cancel" style="margin-right:auto;" onclick="plGelDownload()">↓ Download the gel (SVG)</button>' +
+        '<button class="ln-modal-cancel" onclick="closeModal()">Close</button></div>';
+  }
+  function plGelOpt(field, value) {
+    gel[field] = field === 'percent' ? parseFloat(value) : value;
+    plGelHtml();
+  }
+  function plGelSet(i, field, value) {
+    var lane = gel.lanes[i]; if (!lane) return;
+    lane[field] = value;
+    // The enzymes belonged to the record that has just been swapped out; an
+    // enzyme that cut the old one may not cut this one at all.
+    if (field === 'id') lane.enzymes = [];
+    plGelHtml();
+  }
+  function plGelAddEnzyme(i, name) {
+    var lane = gel.lanes[i];
+    if (!lane || !name || lane.enzymes.indexOf(name) >= 0) { plGelHtml(); return; }
+    lane.enzymes.push(name);
+    plGelHtml();
+  }
+  function plGelDropEnzyme(i, name) {
+    var lane = gel.lanes[i]; if (!lane) return;
+    lane.enzymes = lane.enzymes.filter(function (n) { return n !== name; });
+    plGelHtml();
+  }
+  function plGelAddLane() {
+    var last = gel.lanes[gel.lanes.length - 1];
+    // The same record again, undigested: the next lane is nearly always the
+    // same plasmid with another enzyme, or its uncut control.
+    gel.lanes.push({ id: last ? last.id : (gelRecords()[0] || {}).id, enzymes: [] });
+    plGelHtml();
+  }
+  function plGelDropLane(i) {
+    gel.lanes.splice(i, 1);
+    if (!gel.lanes.length) gel.lanes.push({ id: (gelRecords()[0] || {}).id, enzymes: [] });
+    plGelHtml();
+  }
+  function plGelDownload() {
+    download('agarose-gel-' + new Date().toISOString().slice(0, 10) + '.svg',
+      window.__gelSvg || '', 'image/svg+xml');
   }
 
   // ---------- saving ----------
@@ -2781,6 +3511,8 @@
     if (!it.name || /^untitled/i.test(it.name)) it.name = res.plasmid.name;
     plCaret = 0; plSel = null; plUndo = []; plRedo = [];
     recomputeSites();
+    // A FASTA or a raw sequence arrives with nothing marked on it.
+    offerAnnotate();
     markPlDirty(); renderPlasmid();
   }
   function plImportIntoThis() {
@@ -2968,6 +3700,7 @@
         seqMapOptions(); return;
       }
       if (e.target.id === 'pl-frame') { plOpts.frame = e.target.value; seqMapOptions(); return; }
+      if (e.target.id === 'pl-cds') { plOpts.cds = e.target.checked; seqMapOptions(); return; }
       if (e.target.closest('.ln-pl-meta')) markPlDirty();
     });
     box.addEventListener('mousedown', function (e) { if (e.target.closest('#pl-seq-map')) edMouseDown(e); });
@@ -2977,8 +3710,14 @@
   /* The sequence view is a div SeqViz fills, so "is it focused" means the
      focus is somewhere inside it — its own event router takes focus when you
      click the bases. */
+  /* Either box: the viewer once there are bases, and the empty box before
+     there are any. The empty one used to say "type or paste a sequence
+     here" while being unable to receive either — it was not focusable, so
+     the keyboard and paste handlers, which both ask whether the sequence
+     has focus, never heard anything. A new record could only be filled from
+     a file, which is not what the box said. */
   function seqHasFocus() {
-    var host = document.getElementById('pl-seq-map');
+    var host = document.getElementById('pl-seq-map') || document.getElementById('pl-seq-empty');
     return !!host && (document.activeElement === host || host.contains(document.activeElement));
   }
   document.addEventListener('keydown', function (e) {
@@ -3053,6 +3792,7 @@
 
   window.openAnnotate = openAnnotate;
   window.plAnnToggleAll = plAnnToggleAll;
+  window.plAnnOfferDismiss = plAnnOfferDismiss;
   window.plAddAnnotations = plAddAnnotations;
   window.openOrfs = openOrfs;
   window.plOrfRefresh = plOrfRefresh;
@@ -3072,6 +3812,9 @@
   window.plEnzSet = plEnzSet;
   window.plEnzSearchSet = plEnzSearchSet;
   window.plEnzApply = plEnzApply;
+  window.plEnzSetLoad = plEnzSetLoad;
+  window.plEnzSetSave = plEnzSetSave;
+  window.plEnzSetDelete = plEnzSetDelete;
   window.plEnzPick = plEnzPick;
   window.plEnzAll = plEnzAll;
   window.openClone = openClone;
@@ -3102,10 +3845,27 @@
   window.plNewPrimerModal = plNewPrimerModal;
   window.plNewPrimerFlip = plNewPrimerFlip;
   window.plNewPrimerStats = plNewPrimerStats;
+  window.plNewPrimerSite = plNewPrimerSite;
   window.plSaveNewPrimer = plSaveNewPrimer;
   window.openPcr = openPcr;
   window.plPcrDraw = plPcrDraw;
   window.openGibson = openGibson;
+  window.openGel = openGel;
+  window.openSeqCheck = openSeqCheck;
+  window.openGoldenGate = openGoldenGate;
+  window.plGoldenSet = plGoldenSet;
+  window.plGoldenAdd = plGoldenAdd;
+  window.plGoldenDrop = plGoldenDrop;
+  window.plGoldenCreate = plGoldenCreate;
+  window.plSeqCheckRun = plSeqCheckRun;
+  window.plSeqCheckFiles = plSeqCheckFiles;
+  window.plGelOpt = plGelOpt;
+  window.plGelSet = plGelSet;
+  window.plGelAddEnzyme = plGelAddEnzyme;
+  window.plGelDropEnzyme = plGelDropEnzyme;
+  window.plGelAddLane = plGelAddLane;
+  window.plGelDropLane = plGelDropLane;
+  window.plGelDownload = plGelDownload;
   window.plGibsonSet = plGibsonSet;
   window.plGibsonSrc = plGibsonSrc;
   window.plGibsonRange = plGibsonRange;
@@ -3113,6 +3873,7 @@
   window.plGibsonDrop = plGibsonDrop;
   window.plGibsonRun = plGibsonRun;
   window.plGibsonCreate = plGibsonCreate;
+  window.plHistoryColour = plHistoryColour;
   window.openPlasmid = openPlasmid;
   window.routePlasmid = routePlasmid;
   window.renderPlasmid = renderPlasmid;

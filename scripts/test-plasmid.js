@@ -303,10 +303,26 @@ check('a type IIS enzyme cuts outside its site, on the strand it reads from', fu
   var fwd = P.findSites('AAAAA' + 'GGTCTC' + 'ACGTACGTAA', 'linear').filter(function (x) { return x.name === 'BsaI'; })[0];
   assert.equal(fwd.strand, 1);
   assert.deepEqual([fwd.cutTop, fwd.cutBottom], [12, 16]);   // 5 + 7 and 5 + 11
-  // the same site written backwards is found on the other strand, cutting the other way
+  /* The same site written backwards is found on the other strand and cuts
+     the other way. The strand the enzyme reads is then this sequence's
+     bottom strand, so the enzyme's own first offset gives the BOTTOM cut
+     here and its second gives the top: 16 - 7 = 9 on the bottom, 16 - 11 =
+     5 on the top.
+
+     This used to be recorded the other way about, which made BsaI appear to
+     leave a 5' overhang when its site faced one way and a 3' overhang when
+     it faced the other. BsaI leaves a 5' overhang either way, and two
+     pieces cut by the same enzyme from sites facing opposite ways are
+     exactly what a Golden Gate assembly joins — under the old reading they
+     were held to be unjoinable. */
   var rev = P.findSites('AAAAAAAAAA' + 'GAGACC' + 'AAAAA', 'linear').filter(function (x) { return x.name === 'BsaI'; })[0];
   assert.equal(rev.strand, -1);
-  assert.deepEqual([rev.cutTop, rev.cutBottom], [9, 5]);     // 16 - 7 and 16 - 11
+  assert.deepEqual([rev.cutTop, rev.cutBottom], [5, 9]);
+  // Which is to say: a 5' overhang, the same as the forward-facing site.
+  var left = P.digest({ seq: 'AAAAAAAAAA' + 'GAGACC' + 'AAAAA', topology: 'linear', features: [] }, ['BsaI']);
+  assert.equal(left.fragments[0].right.type, "5'");
+  assert.equal(P.digest({ seq: 'AAAAA' + 'GGTCTC' + 'ACGTACGTAA', topology: 'linear', features: [] }, ['BsaI'])
+    .fragments[0].right.type, "5'");
 });
 check('ambiguous letters in a site match any of their bases', function () {
   var hits = P.findSites('GGTCACC', 'linear').filter(function (x) { return x.name === 'BstEII'; });  // GGTNACC

@@ -133,7 +133,7 @@ create table if not exists public.presentations (
 
 create table if not exists public.inventory_items (
   id uuid primary key default gen_random_uuid(),
-  category text not null,                 -- enzymes | primers | plasmids | stocks | cells | kits
+  category text not null,                 -- enzymes | primers | plasmids | stocks | cells | kits | boxes | requests | grants | expenses | enzymesets
   data jsonb not null default '{}'::jsonb,
   added_by text,
   created_at timestamptz not null default now()

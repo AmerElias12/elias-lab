@@ -28,8 +28,10 @@
      they live in `plasmids` and differ by a `kind`, because they are the same
      record with different columns. requests, grants and expenses are their
      own, because they are not. */
+  // 'enzymesets' holds named groups of restriction enzymes somebody picked
+  // once and wants back — a name and a list of enzyme names, nothing else.
   var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes',
-    'requests', 'grants', 'expenses'];
+    'requests', 'grants', 'expenses', 'enzymesets'];
 
   /* An inventory saved before a category existed has no array for it, so
      adding the first item of a new category would throw. Fill in whatever is
