@@ -2906,15 +2906,9 @@
   }
 
   // ---------- exporting ----------
+  // Through js/save-file.js, which also copes with a window that may not download.
   function download(filename, text, type) {
-    var url = URL.createObjectURL(new Blob([(type === 'text/csv' ? '\ufeff' : '') + text], { type: (type || 'text/plain') + ';charset=utf-8' }));
-    var a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    /* Not straight away. The browser fetches the file after this function
-       has returned, and withdrawing the address in the same breath leaves
-       Safari with nothing to fetch: the menu closed and no file arrived. */
-    setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+    return window.LabSave.save(filename, (type === 'text/csv' ? '\ufeff' : '') + text, (type || 'text/plain') + ';charset=utf-8');
   }
   function safeName(s) { return String(s || 'plasmid').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-|-$/g, '') || 'plasmid'; }
   function plExportMenu(btn) {

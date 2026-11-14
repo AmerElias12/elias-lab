@@ -400,9 +400,12 @@ function exportProtocolWord(id) {
     (p.steps ? '<h2>Protocol Steps</h2><pre>' + esc(p.steps) + '</pre>' : '') +
     (p.notes ? '<h2>Notes &amp; Troubleshooting</h2><pre>' + esc(p.notes) + '</pre>' : '') +
     '</body></html>';
-  var blob = new Blob(['﻿', html], { type: 'application/msword' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a'); a.href = url; a.download = p.title.replace(/[^a-z0-9]/gi, '_') + '.doc'; a.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+  saveFile(p.title.replace(/[^a-z0-9]/gi, '_') + '.doc', '\ufeff' + html, 'application/msword');
+}
+/* Every file the notebook hands over goes through js/save-file.js, which
+   knows what to do in a window that is not allowed to download. */
+function saveFile(filename, text, type) {
+  return window.LabSave.save(filename, text, type);
 }
 
 /* ---- importing a folder of protocols at once ----
@@ -2210,12 +2213,7 @@ function exportInventoryCSV(cat) {
   }));
   var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
   // BOM so Excel reads the UTF-8 in °C, 5'→3' and G↓AATTC correctly.
-  var url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'elias-lab-' + cat + '-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+  saveFile('elias-lab-' + cat + '-' + new Date().toISOString().slice(0, 10) + '.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
 }
 function csvCell(v) {
   // A leading = + - or @ makes Excel treat the cell as a formula; prefix it.
@@ -2726,11 +2724,7 @@ function exportBoxCSV(key) {
     return [b.name, (b.def && b.def.layout) || BOX_DEFAULT_LAYOUT, row.pos].concat(cols.map(function (c) { return String(row.v.item[c.f] == null ? '' : row.v.item[c.f]); }));
   }));
   var csv = lines.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
-  var url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }));
-  var a = document.createElement('a');
-  a.href = url; a.download = 'elias-lab-box-' + b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+  saveFile('elias-lab-box-' + b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
 }
 
 function selectBoxCell(key) { boxSelected = boxSelected === key ? null : key; renderBoxes(); }
@@ -4166,11 +4160,7 @@ function downloadExpenseTemplate() {
       gs.length ? gs[0].name : '', c.he, '', '']);
   });
   var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
-  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
-  var a = document.createElement('a');
-  a.href = url; a.download = 'elias-lab-expenses-template.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+  saveFile('elias-lab-expenses-template.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
 }
 
 async function previewExpenseImport(input) {
@@ -4245,12 +4235,7 @@ function exportFinancesCSV() {
     });
   if (rows.length === 1) { alert('No expenses recorded yet.'); return; }
   var csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
-  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'elias-lab-finances-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function () { URL.revokeObjectURL(url); }, 40000);
+  saveFile('elias-lab-finances-' + new Date().toISOString().slice(0, 10) + '.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
 }
 
 // ── BOOT ───────────────────────────────────────────────────
