@@ -12,7 +12,7 @@
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
     <link rel="stylesheet" href="css/notebook.css?v=34">
-    <link rel="stylesheet" href="css/plasmid.css?v=30">
+    <link rel="stylesheet" href="css/plasmid.css?v=37">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -154,25 +154,25 @@
           <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html?v=3" title="Primer Generator"></iframe>
         </div>
         <div id="ln-inv-plasmids" class="ln-section">
-          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Sequence, maps and annotations for every construct — open one for its full map and molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportPlasmidsCSV()">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid()">+ New Plasmid</button></div></div>
+          <div class="ln-section-header"><div><h2>Plasmids</h2><p>Sequence, maps and annotations for every construct — open one for its full map and molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportPlasmidsCSV()">↓ CSV</button><button class="ln-add-btn ghost" title="Simulate an agarose gel of these records" onclick="openGel()">▦ Gel</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid()">+ New Plasmid</button></div></div>
           <input class="ln-search" id="ln-invsearch-plasmids" placeholder="🔍 Search plasmids..." oninput="renderInventory('plasmids')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-plasmids"></div>
         </div>
 
         <div id="ln-inv-cdnas" class="ln-section">
-          <div class="ln-section-header"><div><h2>cDNAs</h2><p>Coding sequences, with the vector they arrived in — open one for its full map and the molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cdnas')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('cdna')">+ New cDNA</button></div></div>
+          <div class="ln-section-header"><div><h2>cDNAs</h2><p>Coding sequences, with the vector they arrived in — open one for its full map and the molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('cdnas')">↓ CSV</button><button class="ln-add-btn ghost" title="Simulate an agarose gel of these records" onclick="openGel()">▦ Gel</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('cdna')">+ New cDNA</button></div></div>
           <input class="ln-search" id="ln-invsearch-cdnas" placeholder="🔍 Search cDNAs..." oninput="renderInventory('cdnas')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-cdnas"></div>
         </div>
 
         <div id="ln-inv-genes" class="ln-section">
-          <div class="ln-section-header"><div><h2>Genes</h2><p>Full genes and genomic loci — the reference sequence the lab works against</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('genes')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('gene')">+ New Gene</button></div></div>
+          <div class="ln-section-header"><div><h2>Genes</h2><p>Full genes and genomic loci — the reference sequence the lab works against</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('genes')">↓ CSV</button><button class="ln-add-btn ghost" title="Simulate an agarose gel of these records" onclick="openGel()">▦ Gel</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('gene')">+ New Gene</button></div></div>
           <input class="ln-search" id="ln-invsearch-genes" placeholder="🔍 Search genes..." oninput="renderInventory('genes')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-genes"></div>
         </div>
 
         <div id="ln-inv-blocks" class="ln-section">
-          <div class="ln-section-header"><div><h2>DNA Blocks</h2><p>Synthesised fragments — gBlocks, gene fragments and ordered inserts — with the same map and molecular tools as a plasmid</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('blocks')">↓ CSV</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('block')">+ New DNA Block</button></div></div>
+          <div class="ln-section-header"><div><h2>DNA Blocks</h2><p>Synthesised fragments — gBlocks, gene fragments and ordered inserts — with the same map and molecular tools as a plasmid</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="exportInventoryCSV('blocks')">↓ CSV</button><button class="ln-add-btn ghost" title="Simulate an agarose gel of these records" onclick="openGel()">▦ Gel</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid('block')">+ New DNA Block</button></div></div>
           <input class="ln-search" id="ln-invsearch-blocks" placeholder="🔍 Search DNA blocks..." oninput="renderInventory('blocks')" style="margin-bottom:1.5rem;">
           <div id="ln-invtable-blocks"></div>
         </div>
@@ -238,16 +238,16 @@
   <script src="vendor/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx"></script>
   <script src="vendor/seqviz.min.js" integrity="sha384-DC85VXIJ5mCuWR5xbBNpTXzPgV13jqBg8cJ+NWQtITy57e0vYKXvFYPFUty60qSz"></script>
   <script src="js/save-file.js?v=1"></script>
-  <script src="js/plasmid.js?v=23"></script>
+  <script src="js/plasmid.js?v=25"></script>
   <script src="js/vector-viewer.js?v=27"></script>
   <script src="js/plasmid-import.js?v=21"></script>
   <script src="js/primer-store.js?v=3"></script>
   <script src="js/tabs.js?v=2"></script>
   <script src="js/plates.js?v=1"></script>
   <script src="js/mentions.js?v=4"></script>
-  <script src="js/plasmid-ui.js?v=31"></script>
+  <script src="js/plasmid-ui.js?v=41"></script>
   <script src="js/config.js?v=20"></script>
-  <script src="js/data.js?v=23"></script>
-  <script src="js/notebook.js?v=44"></script>
+  <script src="js/data.js?v=24"></script>
+  <script src="js/notebook.js?v=45"></script>
 </body>
 </html>

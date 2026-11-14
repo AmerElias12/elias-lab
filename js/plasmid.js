@@ -873,10 +873,22 @@
           var at = m.index;
           re.lastIndex = at + 1;                 // overlapping sites count too
           if (at >= len) break;
-          // Cuts are measured from the start of the site as written, so a site
-          // found on the bottom strand is measured back from its far end.
-          var top = pair[1] === 1 ? at + e.t : at + pair[0].length - e.t;
-          var bot = pair[1] === 1 ? at + e.b : at + pair[0].length - e.b;
+          /* Cuts are measured from the start of the site as written, so a
+             site found on the bottom strand is measured back from its far
+             end — and the two offsets change places with it. The enzyme's
+             `t` is the cut in the strand it reads; for a site on the bottom
+             strand that strand is our bottom one, so `t` gives this
+             sequence's bottom cut and `b` its top.
+
+             Swapping them matters only for an enzyme whose site is not its
+             own reverse complement, which in practice means the Type IIS
+             enzymes — and for those it was deciding that a site facing one
+             way left a 5' overhang and the same enzyme facing the other way
+             left a 3'. BsaI leaves a 5' overhang whichever way round its
+             site sits, and two pieces cut by one enzyme are exactly what
+             Golden Gate joins together. */
+          var top = pair[1] === 1 ? at + e.t : at + pair[0].length - e.b;
+          var bot = pair[1] === 1 ? at + e.b : at + pair[0].length - e.t;
           if (!circular && (top < 0 || top > len || bot < 0 || bot > len)) continue;
           out.push({ name: e.n, site: e.s, start: at % len, end: (at + pair[0].length) % len || len,
             cutTop: ((top % len) + len) % len, cutBottom: ((bot % len) + len) % len,
@@ -1297,6 +1309,714 @@
       junctions: junctions, overlap: overlap, pieces: parts.length };
   }
 
+  /* ---------- Golden Gate ----------
+
+     Golden Gate is restriction cloning with the awkward part removed: a
+     Type IIS enzyme cuts outside its own recognition site, so the overhang
+     it leaves is whatever sequence you put there. Every piece is cut with
+     the same enzyme, in the same tube, and what decides which piece joins
+     which is the overhangs alone.
+
+     That is why this is not just the restriction cloning screen with a
+     different enzyme list. There, you choose the order; here the order is
+     a consequence of the design, and the useful thing a computer can do is
+     work it out and then tell you the three ways the design is wrong:
+
+       - an overhang that appears twice, so two pieces compete for the same
+         junction and the assembly is a mixture rather than a plasmid;
+       - an overhang that is its own reverse complement, so pieces join to
+         each other back to front;
+       - a recognition site left inside a piece, so the enzyme cuts the
+         finished plasmid straight back open again.
+
+     None of these show up as an error at the bench. They show up as white
+     colonies that are wrong, a week later. */
+  var TYPE_IIS = ['BsaI', 'BbsI', 'BsmBI', 'SapI'];
+
+  function isTypeIIS(name) { return TYPE_IIS.indexOf(name) >= 0; }
+
+  /**
+   * Work out the order a set of cut pieces assemble in, and check it.
+   *
+   * `chosen` is [{ name, frag }] where frag came from digest(); the first
+   * is treated as the vector, because the product is described relative to
+   * it. Returns { ok, error?, order, product, warnings }.
+   */
+  function goldenGate(chosen, enzymeName) {
+    var list = (chosen || []).filter(function (c) { return c && c.frag; });
+    if (list.length < 2) return { ok: false, error: 'Golden Gate needs a vector and at least one insert.' };
+    var enzyme = ENZYMES.filter(function (e) { return e.n === enzymeName; })[0];
+    if (!enzyme) return { ok: false, error: 'Choose the Type IIS enzyme the pieces were designed for.' };
+
+    var warnings = [], i;
+    for (i = 0; i < list.length; i++) {
+      var f = list[i].frag;
+      if (!f.left || !f.right || !f.left.ohang || !f.right.ohang) {
+        return { ok: false, error: '“' + list[i].name + '” does not have a ' + enzymeName +
+          ' overhang at both ends. Pick the piece that sits between two ' + enzymeName + ' sites.' };
+      }
+    }
+
+    // A site left inside a piece is a plasmid that gets cut open again.
+    list.forEach(function (c) {
+      if (findSites(c.frag.seq, 'linear', [enzyme]).length) {
+        warnings.push('“' + c.name + '” still contains a ' + enzymeName +
+          ' site, so the assembled plasmid would be cut again in the same tube.');
+      }
+    });
+
+    // An overhang equal to its own reverse complement joins either way round.
+    var seenPalindrome = {};
+    list.forEach(function (c) {
+      [c.frag.left, c.frag.right].forEach(function (end) {
+        var o = end.ohang || '';
+        if (o && o === revcomp(o) && !seenPalindrome[o]) {
+          seenPalindrome[o] = true;
+          warnings.push('The overhang ' + o + ' is its own reverse complement, so pieces carrying it can join back to front.');
+        }
+      });
+    });
+
+    // Two pieces offering the same overhang: the assembly is a mixture.
+    var byLeft = {};
+    list.forEach(function (c) {
+      var k = c.frag.left.ohang;
+      (byLeft[k] || (byLeft[k] = [])).push(c.name);
+    });
+    var clash = Object.keys(byLeft).filter(function (k) { return byLeft[k].length > 1; });
+    if (clash.length) {
+      return { ok: false, error: 'The overhang ' + clash[0] + ' starts both “' + byLeft[clash[0]][0] +
+        '” and “' + byLeft[clash[0]][1] + '”, so there is no single order these can assemble in. ' +
+        'Redesign one of them with a different overhang.' };
+    }
+
+    /* Follow the overhangs from the vector. Each step has exactly one
+       answer or the design is broken, which is the whole point of checking
+       for repeats first. */
+    var order = [list[0]], used = {};
+    used[0] = true;
+    var current = list[0].frag;
+    while (order.length < list.length) {
+      var next = -1;
+      for (i = 1; i < list.length; i++) {
+        if (used[i]) continue;
+        if (endsMatch(current.right, list[i].frag.left)) { next = i; break; }
+      }
+      if (next < 0) {
+        return { ok: false, error: 'Nothing follows “' + order[order.length - 1].name + '”: its ' +
+          current.right.ohang + ' overhang does not match the start of any remaining piece.' };
+      }
+      used[next] = true;
+      order.push(list[next]);
+      current = list[next].frag;
+    }
+    if (!endsMatch(current.right, list[0].frag.left)) {
+      return { ok: false, error: 'The pieces line up but do not close into a circle: “' +
+        order[order.length - 1].name + '” ends with ' + current.right.ohang + ' and the vector starts with ' +
+        list[0].frag.left.ohang + '.' };
+    }
+
+    var res = ligate(order.map(function (c) { return { frag: c.frag, flip: false }; }), true);
+    if (!res.ok) return { ok: false, error: res.error };
+
+    var at = 0;
+    var steps = order.map(function (c) {
+      var step = { name: c.name, start: at, end: at + c.frag.seq.length,
+        left: c.frag.left.ohang, right: c.frag.right.ohang, len: c.frag.seq.length, id: c.id || '' };
+      at += c.frag.seq.length;
+      return step;
+    });
+
+    return {
+      ok: true,
+      enzyme: enzymeName,
+      order: steps,
+      warnings: warnings,
+      product: { seq: res.seq, features: res.features, topology: 'circular' }
+    };
+  }
+
+  /* ---------- aligning sequencing reads ----------
+
+     The last step of every cloning job: the sequencing came back, does it
+     say what the plan said it would. The answer is a position and a base,
+     so the alignment has to be one that can report an insertion as an
+     insertion. A mismatch-only comparison is cheaper and would be wrong in
+     the one case that matters most — a single base dropped by the synthesis
+     reads as a run of twenty mismatches, which looks like a bad read, and
+     the frameshift that is actually there goes unnoticed.
+
+     Reads are found before they are aligned. A 900 base read against a
+     10 kb plasmid is a needle in a haystack, and aligning the whole of one
+     against the whole of the other is both slow and prone to finding a
+     better-scoring piece of nonsense somewhere else. So: exact k-mers vote
+     on where the read sits, and the alignment is then done in a narrow band
+     around that diagonal. This is what real aligners do, for the same two
+     reasons.
+
+     Nothing here reads a trace file. A .ab1 carries per-base quality, and
+     quality is what tells a real difference from a bad base call at the end
+     of a read; without it the ends are trimmed by agreement instead, which
+     is a weaker rule and is described as such wherever it is shown. */
+  var ALIGN_K = 12;
+
+  /* Where the read probably sits: the diagonal that the most exact k-mers
+     agree on. Returns null when nothing agrees, which is the honest answer
+     for a read from a different plasmid. */
+  function anchorRead(template, read, k) {
+    k = k || ALIGN_K;
+    if (read.length < k || template.length < k) return null;
+    var index = {}, i;
+    for (i = 0; i + k <= template.length; i++) {
+      var key = template.substr(i, k);
+      (index[key] || (index[key] = [])).push(i);
+    }
+    var votes = {}, best = null, bestN = 0;
+    // Every few bases is enough to find the diagonal and keeps this linear.
+    var step = Math.max(1, Math.floor(k / 3));
+    for (i = 0; i + k <= read.length; i += step) {
+      var hits = index[read.substr(i, k)];
+      if (!hits || hits.length > 50) continue;      // a repeat votes for nothing
+      for (var h = 0; h < hits.length; h++) {
+        var diag = hits[h] - i;
+        var n = (votes[diag] = (votes[diag] || 0) + 1);
+        if (n > bestN) { bestN = n; best = diag; }
+      }
+    }
+    return bestN >= 2 ? { diagonal: best, votes: bestN } : null;
+  }
+
+  /* Banded global alignment of the read against a window of the template.
+     The band is what makes this affordable; a read whose true alignment
+     wanders further from the diagonal than the band allows is reported as
+     a poor alignment rather than quietly mis-aligned.
+
+     `offset` is where the diagonal actually runs: template base i pairs
+     with read base i - offset. It has to be given, because the window is
+     opened a little before the read is expected to start, and a band
+     centred on i = j would then put the true alignment along its very
+     edge — where the first inserted or deleted base falls straight out of
+     it and the read comes back as a hundred spurious insertions. */
+  /* Gaps are affine: opening one costs a great deal more than making an
+     existing one longer. A flat gap penalty leaves the twenty-odd spare
+     template bases at the end of a window free to be scattered through the
+     last stretch of the read, because each gap it moves past buys back a
+     base that happens to match — the scores tie exactly and the arrangement
+     that wins is whichever the comparison happened to prefer. The read then
+     ends in a shower of invented one-base gaps. Affine gaps settle it the
+     way biology does: one event of twenty-four bases, not twenty-four
+     events of one. */
+  function bandedAlign(t, r, band, offset) {
+    band = band || 24;
+    offset = offset || 0;
+    var n = t.length, m = r.length;
+    var NEG = -1e9, MATCH = 2, MISS = -3, OPEN = -6, EXTEND = -1;
+    var i, j;
+    function lowest(row) { return Math.max(0, row - offset - band); }
+    function highest(row) { return Math.min(m, row - offset + band); }
+
+    // Three states per cell: the two bases paired, a gap in the read, a gap
+    // in the template. Only the previous row is kept; the pointers are kept
+    // for every row, but only across the band, so this stays linear.
+    var pM = new Float64Array(m + 1), pD = new Float64Array(m + 1), pI = new Float64Array(m + 1);
+    var cM = new Float64Array(m + 1), cD = new Float64Array(m + 1), cI = new Float64Array(m + 1);
+    var ptrM = [], ptrD = [], ptrI = [], los = [];
+    var endBest = -Infinity, endRow = n, endState = 'M';
+    function fill(a) { for (var k = 0; k <= m; k++) a[k] = NEG; }
+    fill(pM); fill(pD); fill(pI);
+    pM[0] = 0;
+    for (j = Math.max(1, lowest(0)); j <= highest(0); j++) pI[j] = OPEN + (j - 1) * EXTEND;
+    los.push(lowest(0));
+
+    for (i = 1; i <= n; i++) {
+      var lo = lowest(i), hi = highest(i);
+      var width = hi - lo + 1;
+      var rM = new Uint8Array(width + 1), rD = new Uint8Array(width + 1), rI = new Uint8Array(width + 1);
+      fill(cM); fill(cD); fill(cI);
+      if (lo === 0) {
+        /* Template bases consumed before the read has started, and they are
+           free. The window is deliberately opened before the read is
+           expected to begin, so charging for that padding would be charging
+           the read for where this function chose to start looking. */
+        cD[0] = 0;
+        rD[0] = i > 1 ? 2 : 1;
+      }
+      for (j = Math.max(1, lo); j <= hi; j++) {
+        var k = j - lo;
+        var sub = (t[i - 1] === r[j - 1]) ? MATCH : MISS;
+        var fromM = pM[j - 1], fromD = pD[j - 1], fromI = pI[j - 1];
+        var bestPrev = fromM, whence = 1;
+        if (fromD > bestPrev) { bestPrev = fromD; whence = 2; }
+        if (fromI > bestPrev) { bestPrev = fromI; whence = 3; }
+        cM[j] = bestPrev + sub;
+        rM[k] = whence;
+
+        var openD = pM[j] + OPEN, extD = pD[j] + EXTEND;
+        if (extD > openD) { cD[j] = extD; rD[k] = 2; } else { cD[j] = openD; rD[k] = 1; }
+
+        var openI = cM[j - 1] + OPEN, extI = cI[j - 1] + EXTEND;
+        if (extI > openI) { cI[j] = extI; rI[k] = 2; } else { cI[j] = openI; rI[k] = 1; }
+      }
+      ptrM.push(rM); ptrD.push(rD); ptrI.push(rI); los.push(lo);
+      /* Where the read could finish: any row, as long as every one of its
+         bases has been used. The template bases after that are the window's
+         own padding and cost nothing.
+
+         Ending only at the far corner is what strands the read's last base
+         twenty-odd columns from its neighbours whenever that column happens
+         to carry the same letter — the two readings score the same, and the
+         one that wins is an accident. Finishing at the earliest row with the
+         best score ends the alignment on the last base that really lines up. */
+      if (m >= lo && m <= hi) {
+        if (cM[m] > endBest) { endBest = cM[m]; endRow = i; endState = 'M'; }
+        if (cD[m] > endBest) { endBest = cD[m]; endRow = i; endState = 'D'; }
+      }
+      var s;
+      s = pM; pM = cM; cM = s;
+      s = pD; pD = cD; cD = s;
+      s = pI; pI = cI; cI = s;
+    }
+
+    var out = { t: '', r: '', score: endBest };
+    // Template left over past the end of the alignment: the window's padding.
+    var ti = endRow, rj = m, state = endState, guard = (n + m) * 2 + 10;
+    for (var tail = n; tail > endRow; tail--) { out.t = t[tail - 1] + out.t; out.r = '-' + out.r; }
+    while ((ti > 0 || rj > 0) && guard-- > 0) {
+      if (ti === 0) { out.t = '-' + out.t; out.r = r[rj - 1] + out.r; rj--; continue; }
+      if (rj === 0 && state !== 'D') { state = 'D'; continue; }
+      var k2 = rj - los[ti];
+      if (k2 < 0 || k2 >= ptrM[ti - 1].length) break;     // outside the band
+      var p;
+      if (state === 'M') {
+        p = ptrM[ti - 1][k2];
+        out.t = t[ti - 1] + out.t; out.r = r[rj - 1] + out.r;
+        ti--; rj--;
+        state = p === 2 ? 'D' : p === 3 ? 'I' : 'M';
+      } else if (state === 'D') {
+        p = ptrD[ti - 1][k2];
+        out.t = t[ti - 1] + out.t; out.r = '-' + out.r;
+        ti--;
+        state = p === 2 ? 'D' : 'M';
+      } else {
+        p = ptrI[ti - 1][k2];
+        out.t = '-' + out.t; out.r = r[rj - 1] + out.r;
+        rj--;
+        state = p === 2 ? 'I' : 'M';
+      }
+    }
+    while (ti > 0) { out.t = t[ti - 1] + out.t; out.r = '-' + out.r; ti--; }
+    while (rj > 0) { out.t = '-' + out.t; out.r = r[rj - 1] + out.r; rj--; }
+    return out;
+  }
+
+  /* The ends of a Sanger read are noise. With no quality scores to go on,
+     the rule is agreement: walk in from each end until a window of bases
+     mostly matches, and call everything before that untrimmed. It is a
+     weaker rule than a quality trim and the number of trimmed bases is
+     always reported, so nobody mistakes it for one. */
+  function trimEnds(cols, win) {
+    win = win || 10;
+    var n = cols.length, i, j, ok, from = -1, to = -1;
+    /* The core begins at the first run of `win` bases that all agree, and
+       ends at the last one. Allowing a few disagreements inside that run
+       instead would let the ragged edge creep in a base or two, and those
+       bases are then reported as differences at a position nobody has any
+       confidence in — the ends of a Sanger read are where the machine is
+       guessing. A real difference sits inside a stretch that agrees, which
+       is what this keeps. */
+    for (i = 0; i + win <= n; i++) {
+      ok = true;
+      for (j = 0; j < win; j++) if (!cols[i + j]) { ok = false; break; }
+      if (ok) { from = i; break; }
+    }
+    if (from < 0) return { from: 0, to: n };     // nowhere agrees: show it all
+    for (i = n; i - win >= 0; i--) {
+      ok = true;
+      for (j = 0; j < win; j++) if (!cols[i - 1 - j]) { ok = false; break; }
+      if (ok) { to = i; break; }
+    }
+    return to > from ? { from: from, to: to } : { from: 0, to: n };
+  }
+
+  /**
+   * Align one read to a plasmid, on whichever strand fits.
+   *
+   * Returns { ok, reason?, strand, start, end, identity, differences: [...],
+   *           aligned: { t, r }, trimmedStart, trimmedEnd, length }
+   * with start/end as 0-based half-open template coordinates.
+   */
+  function alignRead(p, readSeq, opts) {
+    opts = opts || {};
+    var seq = clean(p.seq || ''), len = seq.length;
+    var raw = clean(readSeq || '');
+    if (!len) return { ok: false, reason: 'The record has no sequence to align against.' };
+    if (raw.length < 20) return { ok: false, reason: 'That read is too short to place (' + raw.length + ' bases).' };
+    var circular = p.topology === 'circular';
+    // A read can run across the origin, so the template is doubled for the
+    // search the same way a primer search doubles it.
+    var hay = circular && len > raw.length ? seq + seq.slice(0, Math.min(len, raw.length + 50)) : seq;
+
+    var band = opts.band || 24;
+    var tries = [{ strand: 1, read: raw }, { strand: -1, read: revcomp(raw) }];
+    var best = null;
+    tries.forEach(function (attempt) {
+      var anchor = anchorRead(hay, attempt.read, opts.k || ALIGN_K);
+      if (!anchor) return;
+      var from = Math.max(0, anchor.diagonal - band);
+      var to = Math.min(hay.length, anchor.diagonal + attempt.read.length + band);
+      if (to <= from) return;
+      var window = hay.slice(from, to);
+      // Where the diagonal runs inside the window, which is what the band
+      // is centred on.
+      var al = bandedAlign(window, attempt.read, band, anchor.diagonal - from);
+      if (!best || al.score > best.al.score) {
+        best = { al: al, from: from, strand: attempt.strand, read: attempt.read, votes: anchor.votes };
+      }
+    });
+    if (!best) {
+      return { ok: false, reason: 'This read does not match anywhere in the record. It may be from a different plasmid, or too poor to place.' };
+    }
+
+    /* Walk the alignment once: it is the single source of the coordinates,
+       the identity and the list of differences, so they cannot disagree. */
+    var al = best.al, tPos = best.from, cols = [], recs = [];
+    for (var i = 0; i < al.t.length; i++) {
+      var tb = al.t[i], rb = al.r[i];
+      var at = tPos;
+      if (tb !== '-') tPos++;
+      if (tb === '-') recs.push({ col: i, kind: 'insertion', at: at, from: '', to: rb });
+      else if (rb === '-') recs.push({ col: i, kind: 'deletion', at: at, from: tb, to: '' });
+      else if (tb !== rb) recs.push({ col: i, kind: 'mismatch', at: at, from: tb, to: rb });
+      cols.push(tb !== '-' && rb !== '-' && tb === rb);
+    }
+    var cut = trimEnds(cols);
+    // Where the trimmed core sits on the template, and how much was dropped.
+    var tBefore = 0, rBefore = 0, k;
+    for (k = 0; k < cut.from; k++) { if (al.t[k] !== '-') tBefore++; if (al.r[k] !== '-') rBefore++; }
+    var rAfter = 0;
+    for (k = cut.to; k < al.r.length; k++) if (al.r[k] !== '-') rAfter++;
+    var core = cols.slice(cut.from, cut.to);
+    var same = core.filter(Boolean).length;
+    var diffs = recs.filter(function (d) { return d.col >= cut.from && d.col < cut.to; })
+      .map(function (d) {
+        // Back onto the real plasmid, for a read that ran past the origin.
+        return { kind: d.kind, at: d.at % len, from: d.from, to: d.to };
+      });
+    var start = tBefore + best.from;
+    var tCore = 0;
+    for (k = cut.from; k < cut.to; k++) if (al.t[k] !== '-') tCore++;
+
+    return {
+      ok: true,
+      strand: best.strand,
+      start: start % len,
+      end: ((start + tCore - 1) % len) + 1,
+      spans: tCore,
+      wraps: circular && start + tCore > len,
+      identity: core.length ? same / core.length : 0,
+      differences: diffs,
+      trimmedStart: rBefore,
+      trimmedEnd: rAfter,
+      length: best.read.length,
+      aligned: { t: al.t.slice(cut.from, cut.to), r: al.r.slice(cut.from, cut.to) }
+    };
+  }
+
+  /* The coverage picture: the record as a line, each read as a bar where it
+     sits, every difference as a tick on it. This is the view that answers
+     the question people actually open sequencing with — is the insert
+     covered, and is anything wrong inside it. */
+  function alignmentSvg(p, results, opts) {
+    opts = opts || {};
+    var len = clean(p.seq || '').length;
+    if (!len) return '';
+    var rows = (results || []).filter(function (r) { return r && r.ok; });
+    var W = opts.width || 860, padL = 8, padR = 8, laneH = 20;
+    var featH = (p.features && p.features.length) ? 16 : 0;
+    var H = 34 + featH + Math.max(1, rows.length) * laneH + 16;
+    var x = function (pos) { return padL + (pos / len) * (W - padL - padR); };
+    var svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H +
+      '" width="100%" role="img" aria-label="Where the reads sit" class="pl-cov">'];
+
+    // The record, with its features as a thin band for orientation.
+    svg.push('<line x1="' + padL + '" y1="14" x2="' + (W - padR) + '" y2="14" class="pl-axis"/>');
+    svg.push('<text x="' + padL + '" y="8" class="pl-ticklabel" style="text-anchor:start;">1</text>');
+    svg.push('<text x="' + (W - padR) + '" y="8" class="pl-ticklabel end">' + len.toLocaleString() + ' bp</text>');
+    (p.features || []).forEach(function (f) {
+      if (wraps(f)) return;
+      svg.push('<rect x="' + round(x(f.start)) + '" y="22" width="' + round(Math.max(1, x(f.end) - x(f.start))) +
+        '" height="10" rx="2" fill="' + esc(f.color || '#d7d7d7') + '" opacity="0.85"><title>' +
+        esc(f.name) + '</title></rect>');
+    });
+
+    rows.forEach(function (r, i) {
+      var y = 34 + featH + i * laneH;
+      /* A read that runs across the origin is drawn as the two pieces it
+         covers, because one bar from 3800 to 400 would be drawn backwards
+         and read as covering everything in between. */
+      var spans = r.wraps ? [[r.start, len], [0, r.end]] : [[r.start, r.end]];
+      spans.forEach(function (sp) {
+        var w = Math.max(2, x(sp[1]) - x(sp[0]));
+        svg.push('<rect x="' + round(x(sp[0])) + '" y="' + y + '" width="' + round(w) +
+          '" height="10" rx="3" class="pl-cov-read' + (r.differences.length ? ' diff' : '') + '"><title>' +
+          esc(r.name || 'read') + ' · ' + (r.start + 1) + '–' + r.end + ' · ' +
+          (r.strand === -1 ? 'reverse' : 'forward') + ' · ' + (r.identity * 100).toFixed(1) + '% identity' +
+          '</title></rect>');
+      });
+      r.differences.forEach(function (d) {
+        svg.push('<rect x="' + round(x(d.at) - 1) + '" y="' + (y - 2) + '" width="2.5" height="14" class="pl-cov-tick">' +
+          '<title>' + esc(diffText(d)) + '</title></rect>');
+      });
+    });
+    svg.push('</svg>');
+    return svg.join('');
+  }
+  /* One difference in words, at 1-based positions the way the rest of the
+     notebook counts. */
+  function diffText(d) {
+    var at = d.at + 1;
+    if (d.kind === 'mismatch') return at + ': ' + d.from + ' → ' + d.to;
+    if (d.kind === 'deletion') return at + ': ' + d.from + ' missing from the read';
+    return at + ': ' + d.to + ' extra in the read';
+  }
+
+  /* Reads out of a pasted blob or a file: FASTA if it looks like FASTA,
+     otherwise one read per run of bases. */
+  function parseReads(text) {
+    var s = String(text == null ? '' : text);
+    var out = [];
+    if (/^\s*>/.test(s)) {
+      s.split(/^>/m).forEach(function (chunk) {
+        if (!chunk.trim()) return;
+        var nl = chunk.indexOf('\n');
+        var name = (nl < 0 ? chunk : chunk.slice(0, nl)).trim() || 'read';
+        var body = nl < 0 ? '' : chunk.slice(nl);
+        var bases = clean(body);
+        if (bases.length) out.push({ name: name, seq: bases });
+      });
+      return out;
+    }
+    var bases = clean(s);
+    if (bases.length) out.push({ name: 'Pasted read', seq: bases });
+    return out;
+  }
+
+  /* ---------- agarose gels ----------
+
+     What a digest would look like on a gel, which is the form the answer is
+     actually wanted in: nobody checks a clone by reading a list of fragment
+     lengths, they look at a photograph and ask whether the pattern is the
+     one they expected.
+
+     Migration is log-linear in length over the range a gel resolves and
+     flat outside it — fragments far too big to be separated stack just
+     below the well, fragments far too small run with the dye. The range is
+     what the agarose percentage buys you, which is why the percentage is a
+     control here and not a constant.
+
+     Brightness is mass, not molarity. A digest gives every fragment in
+     equimolar amounts, so a 300 bp piece carries a tenth of the stain of a
+     3 kb piece: the commonest reason a band somebody expected "is missing"
+     is that it is there and faint. Drawing every band equally bright would
+     hide exactly that.
+
+     Nothing here models supercoiling. An uncut circular plasmid runs ahead
+     of where its length says, often as two or three bands, and a lane that
+     says so in words is honest where one that draws a single confident
+     band would not be. */
+  var GEL_RANGES = [
+    { pct: 0.5, hi: 30000, lo: 1000 },
+    { pct: 0.7, hi: 20000, lo: 400 },
+    { pct: 1.0, hi: 10000, lo: 200 },
+    { pct: 1.2, hi: 7000, lo: 150 },
+    { pct: 1.5, hi: 4000, lo: 80 },
+    { pct: 2.0, hi: 2000, lo: 50 },
+    { pct: 3.0, hi: 1000, lo: 20 }
+  ];
+  /* The ladders the lab actually has in the drawer. `bright` are the heavy
+     reference bands — the ones you count from without thinking. */
+  var LADDERS = [
+    { name: '1 kb', bands: [10000, 8000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 500], bright: [3000, 1000] },
+    { name: '1 kb Plus', bands: [10000, 8000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 700, 500, 400, 300, 200, 100], bright: [3000, 1000, 500] },
+    { name: '100 bp', bands: [1517, 1200, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100], bright: [500] },
+    { name: 'λ HindIII', bands: [23130, 9416, 6557, 4361, 2322, 2027, 564, 125], bright: [4361] }
+  ];
+  function gelRange(pct) {
+    var want = Number(pct) || 1, best = GEL_RANGES[0];
+    GEL_RANGES.forEach(function (g) { if (Math.abs(g.pct - want) < Math.abs(best.pct - want)) best = g; });
+    return best;
+  }
+  /* How far down the gel a fragment runs, as a fraction of the run: 0 at the
+     well, 1 at the dye front.
+
+     Inside the resolving range this is the log-linear march everyone reads
+     sizes off. Outside it the bands crowd instead of marching on, which is
+     what makes 10 kb and 20 kb one fat band near the well of a 1% gel.
+
+     The crowding is a curve that flattens, not a clamp. A clamp puts every
+     oversized fragment at exactly the same height, and then two bands that
+     a real gel shows as one slightly fat band are drawn as one band with
+     one of them silently gone — the order of the fragments is lost at the
+     very point where somebody is squinting at the top of the gel trying to
+     decide whether their 12 kb backbone is there. Everything keeps its
+     place; the distances just become too small to read, which is the true
+     answer and is also what merges them into one drawn band downstream. */
+  var GEL_EDGE = 0.012;
+  function gelMigrate(bp, pct) {
+    var g = gelRange(pct), n = Math.max(1, Number(bp) || 1);
+    var f = (Math.log(g.hi) - Math.log(n)) / (Math.log(g.hi) - Math.log(g.lo));
+    if (f < 0) return GEL_EDGE * Math.exp(f * 2.5);
+    if (f > 1) return (1 - GEL_EDGE) + GEL_EDGE * (1 - Math.exp(-(f - 1) * 2.5));
+    return GEL_EDGE + f * (1 - 2 * GEL_EDGE);
+  }
+  /* A length the way it would be said out loud. Rounded to a tenth of a kb,
+     with no trailing zero, so 2000 and 2005 are both "2 kb" rather than
+     "2 kb" and "2.0 kb" — two spellings of one number read as two numbers. */
+  function gelBpLabel(bp) {
+    if (bp < 1000) return bp + ' bp';
+    return (Math.round(bp / 100) / 10) + ' kb';
+  }
+  /* Lengths into bands. Two fragments closer together than the gel can
+     separate are one band carrying both, which is why a digest that should
+     give five bands routinely shows four. */
+  function gelBands(lengths, pct) {
+    var rows = (lengths || []).slice().sort(function (a, b) { return b - a; }).map(function (bp) {
+      return { bp: bp, bps: [bp], y: gelMigrate(bp, pct), mass: bp };
+    });
+    var out = [];
+    rows.forEach(function (r) {
+      var prev = out[out.length - 1];
+      if (prev && Math.abs(prev.y - r.y) < 0.008) {
+        prev.bps = prev.bps.concat(r.bps);
+        prev.mass += r.mass;
+        prev.y = (prev.y + r.y) / 2;
+        return;
+      }
+      out.push(r);
+    });
+    var top = out.reduce(function (m, r) { return Math.max(m, r.mass); }, 1);
+    out.forEach(function (r) {
+      r.intensity = Math.max(0.14, Math.min(1, r.mass / top));
+      r.bps.sort(function (a, b) { return b - a; });
+      r.bp = r.bps[0];
+      /* One band gets the short name. A band that is really two says both
+         lengths exactly: "2 kb + 2 kb" would look like a mistake, and the
+         whole point of the merge is that these two are not the same piece. */
+      r.label = r.bps.length > 1 ? r.bps.join(' + ') + ' bp' : gelBpLabel(r.bp);
+    });
+    return out;
+  }
+  /* One lane: a ladder, or a record cut with the enzymes chosen for it. */
+  function gelLane(spec, opts) {
+    opts = opts || {};
+    var pct = opts.percent || 1;
+    spec = spec || {};
+    if (spec.ladder) {
+      var L = LADDERS.filter(function (x) { return x.name === spec.ladder; })[0] || LADDERS[0];
+      return { kind: 'ladder', name: L.name, note: 'ladder', lengths: L.bands.slice(),
+        bands: L.bands.map(function (bp) {
+          return { bp: bp, bps: [bp], y: gelMigrate(bp, pct),
+            intensity: L.bright.indexOf(bp) >= 0 ? 1 : 0.6, label: gelBpLabel(bp) };
+        }) };
+    }
+    var name = spec.name || 'sample';
+    var p = { seq: clean(spec.seq || ''), features: spec.features || [],
+      topology: spec.topology === 'linear' ? 'linear' : 'circular' };
+    if (!p.seq.length) return { kind: 'sample', name: name, bands: [], lengths: [], note: 'no sequence yet' };
+    var picked = (spec.enzymes || []).filter(Boolean);
+    var d = picked.length ? digest(p, picked) : { fragments: [] };
+    var lengths, note, uncut = !d.fragments.length;
+    if (!uncut) {
+      lengths = d.fragments.map(function (f) { return f.len; });
+      note = picked.join(' + ');
+    } else {
+      lengths = [p.seq.length];
+      note = picked.length ? 'not cut by ' + picked.join(' + ') : 'uncut';
+      if (p.topology === 'circular') note += ' · circular, so the real gel runs supercoiled DNA ahead of this';
+    }
+    return { kind: 'sample', name: name, note: note, uncut: uncut,
+      lengths: lengths.slice().sort(function (a, b) { return b - a; }),
+      bands: gelBands(lengths, pct) };
+  }
+  /* The photograph. Dark, because that is what comes off the transilluminator
+     and what the pattern is recognised against. */
+  function gelSvg(lanes, opts) {
+    opts = opts || {};
+    lanes = lanes || [];
+    if (!lanes.length) return '';
+    /* Lanes are as wide as the names they have to carry, between a sensible
+       floor and ceiling. Fixed-width lanes either waste half the picture on
+       a gel of short names or run two long ones into each other, and a lane
+       header that collides with its neighbour is worse than one truncated. */
+    var NAME_MAX = 18, CHARW = 6.15;
+    var longest = lanes.reduce(function (m, l) {
+      return Math.max(m, Math.min(NAME_MAX, (l.name || '').length));
+    }, 6);
+    var laneW = opts.laneW || Math.max(92, Math.min(150, Math.round(longest * CHARW) + 16));
+    var padL = 54, padR = 16, headH = 52, wellH = 7, RUN = opts.run || 360;
+    var W = padL + lanes.length * laneW + padR;
+    var H = headH + wellH + RUN + 30;
+    var wellY = headH;
+    var laneX = function (i) { return padL + i * laneW; };
+    var bandY = function (y) { return wellY + wellH + y * RUN; };
+    /* The styles travel inside the drawing rather than in the page's
+       stylesheet, so the file somebody downloads for a figure or a thesis
+       looks like the gel they were shown and not like an empty rectangle. */
+    var svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H +
+      '" width="100%" role="img" aria-label="Simulated agarose gel" class="pl-gel">',
+      '<style>' +
+        '.pl-gel-bg{fill:#10211c;}' +
+        '.pl-gel-well{fill:#061210;stroke:#2c4a42;stroke-width:.6;}' +
+        '.pl-gel-band{fill:#d6f5e4;}' +
+        '.pl-gel-guide{stroke:#7fe3b8;stroke-opacity:.14;stroke-width:1;stroke-dasharray:3 4;}' +
+        '.pl-gel-size{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;fill:#7a877f;text-anchor:end;}' +
+        '.pl-gel-head{font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:11px;font-weight:600;fill:#16241f;text-anchor:middle;}' +
+        '.pl-gel-sub{font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:9px;fill:#7a877f;text-anchor:middle;}' +
+        '.pl-gel-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;fill:#9aa8a0;text-anchor:middle;}' +
+      '</style>'];
+    svg.push('<rect x="' + (padL - 8) + '" y="' + (wellY - 4) + '" width="' + (lanes.length * laneW + 8 + padR - 8) +
+      '" height="' + (wellH + RUN + 16) + '" rx="4" class="pl-gel-bg"/>');
+
+    // Faint guides across the gel at the ladder's bands, to read sizes off.
+    var ref = lanes.filter(function (l) { return l.kind === 'ladder'; })[0];
+    if (ref) {
+      ref.bands.forEach(function (b) {
+        svg.push('<line x1="' + (padL - 8) + '" y1="' + round(bandY(b.y)) + '" x2="' + (W - padR) +
+          '" y2="' + round(bandY(b.y)) + '" class="pl-gel-guide"/>');
+        svg.push('<text x="' + (padL - 12) + '" y="' + round(bandY(b.y) + 3) + '" class="pl-gel-size">' +
+          esc(gelBpLabel(b.bp)) + '</text>');
+      });
+    }
+
+    var fit = Math.max(6, Math.floor((laneW - 6) / CHARW));
+    var clip = function (s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+    lanes.forEach(function (lane, i) {
+      var x = laneX(i), mid = round(x + laneW / 2), inner = laneW - 18;
+      /* Numbered, because that is how a gel is talked about: "the extra band
+         in lane 3". Two lanes of the same plasmid cut two ways are otherwise
+         two identical headings. */
+      svg.push('<text x="' + mid + '" y="14" class="pl-gel-num">' + (i + 1) + '</text>');
+      svg.push('<text x="' + mid + '" y="30" class="pl-gel-head">' + esc(clip(lane.name, fit)) +
+        '<title>' + esc(lane.name + (lane.note ? ' — ' + lane.note : '')) + '</title></text>');
+      var sub = lane.kind === 'ladder' ? 'ladder' : (lane.note || '');
+      if (sub) {
+        svg.push('<text x="' + mid + '" y="43" class="pl-gel-sub">' +
+          esc(clip(sub, Math.floor(fit * 1.15))) + '<title>' + esc(sub) + '</title></text>');
+      }
+      svg.push('<rect x="' + round(x + 9) + '" y="' + wellY + '" width="' + inner + '" height="' + wellH +
+        '" rx="1.5" class="pl-gel-well"/>');
+      lane.bands.forEach(function (b) {
+        var h = 3.2 + b.intensity * 2.6;
+        svg.push('<rect x="' + round(x + 9) + '" y="' + round(bandY(b.y) - h / 2) + '" width="' + inner +
+          '" height="' + round(h) + '" rx="1.6" class="pl-gel-band" opacity="' + round(0.25 + b.intensity * 0.75) + '">' +
+          '<title>' + esc(lane.name + ' · ' + b.label +
+            (b.bps.length > 1 ? ' (' + b.bps.length + ' fragments, one band)' : '')) + '</title></rect>');
+      });
+    });
+    svg.push('</svg>');
+    return svg.join('');
+  }
+
   // ---------- maps ----------
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1482,6 +2202,11 @@
     describeEnd: describeEnd, enzymeSummary: enzymeSummary, sliceCirc: sliceCirc,
     ENZYMES: ENZYMES, findSites: findSites, siteCounts: siteCounts, filterSites: filterSites, nonCutters: nonCutters, siteRegex: siteRegex,
     linearMapSvg: linearMapSvg, circularMapSvg: circularMapSvg,
+    TYPE_IIS: TYPE_IIS, isTypeIIS: isTypeIIS, goldenGate: goldenGate,
+    anchorRead: anchorRead, bandedAlign: bandedAlign, trimEnds: trimEnds,
+    alignRead: alignRead, parseReads: parseReads, alignmentSvg: alignmentSvg, diffText: diffText,
+    GEL_RANGES: GEL_RANGES, LADDERS: LADDERS, gelRange: gelRange, gelMigrate: gelMigrate,
+    gelBpLabel: gelBpLabel, gelBands: gelBands, gelLane: gelLane, gelSvg: gelSvg,
     xmlElements: xmlElements, unescapeXml: unescapeXml
   };
 }));

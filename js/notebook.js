@@ -3167,7 +3167,13 @@ async function runImport() {
 }
 
 // ── MODALS ─────────────────────────────────────────────────
-function closeModal() { document.getElementById('ln-modal-bg').classList.remove('open'); }
+/* A dialog that widened itself for its own content — the gel is the one so
+   far — hands the box back at its usual width, so the next thing to open in
+   it is not wearing the last one's shape. */
+function closeModal() {
+  document.getElementById('ln-modal-bg').classList.remove('open');
+  document.getElementById('ln-modal-content').className = 'ln-modal';
+}
 
 function userSelect(fieldId, selectedName) {
   var names = getApprovedUserNames();
