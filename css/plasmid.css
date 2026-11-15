@@ -318,3 +318,89 @@
   background:rgba(12,74,68,.04);border:1px solid rgba(22,36,31,.08);border-radius:10px;padding:.5rem .6rem;}
 .pl-gg-part .ln-form-row{flex:1 1 200px;margin:0;}
 .pl-gg-part code{font-size:12px;}
+
+
+/* ===========================================================================
+   The workspace
+
+   The record used to be one long page: ring, details, primers, sequence,
+   features, each under the last, and working on the sequence meant scrolling
+   past everything else to reach it. Now the sequence has the screen. What
+   else there is to see opens beside it from the rail, one panel at a time,
+   and the bar along the bottom says what is selected. Only the thing being
+   read scrolls.
+   ======================================================================== */
+#ln-plasmid.ln-section{max-width:none;padding:0;}
+.pl-ws{display:flex;flex-direction:column;min-height:440px;background:#fff;}
+.pl-ws-top{display:flex;align-items:center;gap:.5rem .9rem;flex-wrap:wrap;padding:.5rem 1rem;
+  background:#fbfaf5;border-bottom:1px solid rgba(22,36,31,.12);}
+.pl-ws-top .ln-back-link{margin:0;}
+.pl-ws-top .ln-pl-name{font-size:19px;margin:0;max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pl-ws-top .ln-pl-stats{margin:0;gap:.3rem;}
+.pl-ws-top .ln-header-actions{margin-left:auto;position:relative;}
+.pl-ws-top .ln-add-btn{padding:.42rem .9rem;font-size:12px;}
+.pl-ws-main{flex:1;min-height:0;display:flex;}
+
+/* the sequence */
+.pl-ws-seq{flex:1;min-width:0;display:flex;flex-direction:column;}
+.pl-ws-seq #pl-seq-panel{flex:1;min-height:0;display:flex;flex-direction:column;margin:0;padding:0;border:none;border-radius:0;background:#fff;}
+.pl-ws-seq .ln-pl-panel-head{margin:0;padding:.4rem .8rem;background:#f4f7f3;border-bottom:1px solid rgba(22,36,31,.1);}
+.pl-ws-seq .ln-pl-panel-head h3{display:none;}
+.pl-ws-seq .ln-pl-panel-head .ln-header-actions{flex:1;align-items:center;position:relative;}
+.pl-ws-seq .ln-pl-panel-head .ln-add-btn{padding:.38rem .85rem;font-size:12px;}
+.pl-ws-seq .ln-pl-panel-head .ln-search.sm{margin:0;}
+.pl-tool-gap{flex:1;}
+.pl-menu-btn{border-radius:8px !important;}
+.pl-ws-seq .ln-pl-seqmap{flex:1;min-height:0;height:auto;border:none;border-radius:0;}
+.pl-ws-seq .ln-pl-seqmap:focus,.pl-ws-seq .ln-pl-seqmap:focus-within{box-shadow:inset 0 0 0 2px rgba(16,176,126,.35);}
+.pl-ws-seq .pl-empty-seq{flex:1;}
+.pl-ws-seq .pl-ann-offer{margin:.5rem .8rem;}
+
+/* the bar under the bases */
+.pl-ws-seq .pl-edbar{order:9;margin:0;border-radius:0;display:flex;align-items:center;flex-wrap:wrap;gap:.25rem 1.1rem;
+  padding:.4rem .8rem;min-height:38px;background:#f4f7f3;border-top:1px solid rgba(22,36,31,.12);
+  font-family:var(--mono,ui-monospace,monospace);font-size:12px;color:#16241f;position:relative;}
+.pl-st b{font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7a877f;margin-right:.4rem;}
+.pl-st-hint{color:#7a877f;margin-left:auto;font-family:var(--sans,system-ui,sans-serif);}
+.pl-st-actions{margin-left:auto;display:flex;gap:.3rem;flex-wrap:wrap;font-family:var(--sans,system-ui,sans-serif);}
+.pl-ws-seq .pl-edbar .ln-icon-btn{margin:0;}
+
+/* the panel beside it */
+.pl-ws-sidepane{width:min(560px,44%);min-height:0;display:flex;flex-direction:column;background:#fbfaf5;border-left:1px solid rgba(22,36,31,.12);}
+.pl-ws[data-side="map"] .pl-ws-sidepane{width:min(470px,38%);}
+.pl-ws:not([data-side]) .pl-ws-sidepane{display:none;}
+.pl-side{display:none;flex:1;min-height:0;overflow:auto;padding:.9rem 1rem;}
+.pl-ws[data-side="map"] .pl-side[data-side="map"]{display:flex;flex-direction:column;padding:.4rem;}
+.pl-ws[data-side="features"] .pl-side[data-side="features"],
+.pl-ws[data-side="primers"] .pl-side[data-side="primers"],
+.pl-ws[data-side="history"] .pl-side[data-side="history"],
+.pl-ws[data-side="info"] .pl-side[data-side="info"]{display:block;}
+.pl-side .ln-pl-mapbox{flex:1;min-height:280px;height:auto;border:none;border-radius:0;background:transparent;padding:0;}
+.pl-side .ln-pl-mapsel{margin:.4rem .5rem;}
+.pl-side .ln-pl-panel{border:none;border-radius:0;background:transparent;padding:0;margin:0;}
+.pl-side .ln-pl-panel-head .ln-add-btn{padding:.38rem .8rem;font-size:12px;}
+
+/* the rail */
+.pl-ws-rail{width:66px;flex:none;display:flex;flex-direction:column;gap:2px;padding:.4rem .3rem;background:#eef2ec;border-left:1px solid rgba(22,36,31,.12);}
+.pl-rail-btn{display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.5rem 0;border:none;border-radius:9px;background:none;cursor:pointer;color:#4a5a52;font:inherit;}
+.pl-rail-btn .ic{font-size:18px;line-height:1;}
+.pl-rail-btn .lb{font-size:10px;letter-spacing:.02em;}
+.pl-rail-btn:hover{background:rgba(12,74,68,.08);color:#0c4a44;}
+.pl-rail-btn.on{background:#0c4a44;color:#f4f1e8;}
+
+@media(max-width:900px){
+  .pl-ws-main{flex-direction:column;}
+  .pl-ws-rail{order:-1;width:auto;flex-direction:row;border-left:none;border-bottom:1px solid rgba(22,36,31,.12);}
+  .pl-rail-btn{flex:1;}
+  .pl-ws-seq .ln-pl-seqmap{flex:none;height:460px;}
+  .pl-ws-sidepane,.pl-ws[data-side="map"] .pl-ws-sidepane{width:auto;border-left:none;border-top:1px solid rgba(22,36,31,.12);}
+  .pl-side .ln-pl-mapbox{height:380px;flex:none;}
+}
+@media print{
+  .pl-ws{height:auto !important;display:block;}
+  .pl-ws-main{display:block;}
+  .pl-ws-rail,.pl-ws-top .ln-header-actions,.pl-ws-top .ln-back-link{display:none !important;}
+  .pl-ws-sidepane{display:block !important;width:auto !important;border:none;background:#fff;}
+  .pl-side{display:block !important;overflow:visible;padding:0;margin-top:10px;}
+  .pl-ws-seq .ln-pl-seqmap{height:460px;flex:none;}
+}

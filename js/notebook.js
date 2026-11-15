@@ -558,24 +558,89 @@ async function saveProtocolImport() {
 }
 
 // ── EXPERIMENT NOTEBOOKS ───────────────────────────────────
+/* One notebook per person. The page used to be a single list of every
+   entry anybody had written, newest first, and finding your own work meant
+   reading past everyone else's. Now each researcher has a notebook of their
+   own, listed down the left like the files in a project, and the entries
+   inside it on the right. The notebook an entry belongs to is the
+   researcher named on it, which every entry already carries — so nothing
+   has to be filed by hand, and entries written before this are already in
+   the right place. */
+var nbOpen = null;      // the researcher whose notebook is open; '*' is everyone's
+var nbNewFor = '';      // who a new entry is for, when started from a notebook
+var nbFilter = '';
+function nbOwner(n) { return (n.researcher || '').trim() || 'Unassigned'; }
+function nbPick(i) {
+  var names = nbNames();
+  nbOpen = i < 0 ? '*' : names[i];
+  renderNotebooks(nbFilter);
+}
+// Everybody with a notebook: you first, then the rest by name.
+function nbNames() {
+  var me = (currentUser() || {}).name || '', seen = {}, out = [];
+  getNotebooks().forEach(function (n) { var o = nbOwner(n); if (!seen[o]) { seen[o] = true; out.push(o); } });
+  out.sort(function (x, y) { return x.localeCompare(y); });
+  if (me) out = [me].concat(out.filter(function (x) { return x !== me; }));
+  return out;
+}
+// Used once: the next new entry started some other way is the writer's own.
+function nbTakeNewFor() { var who = nbNewFor; nbNewFor = ''; return who; }
+function nbNewEntry() {
+  nbNewFor = nbOpen && nbOpen !== '*' && nbOpen !== 'Unassigned' ? nbOpen : '';
+  openEntry();
+}
 function renderNotebooks(filter) {
-  filter = filter || '';
-  var nbs = getNotebooks();
-  if (filter) nbs = nbs.filter(function (n) { return (n.title || '').toLowerCase().indexOf(filter.toLowerCase()) >= 0 || (n.researcher || '').toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
+  nbFilter = filter || '';
+  var q = nbFilter.toLowerCase();
   var el = document.getElementById('ln-notebooks-list');
   var isAdmin = DB.isAdmin();
-  if (!nbs.length) { el.innerHTML = '<div class="ln-empty">No experiment entries yet.</div>'; return; }
-  el.innerHTML = nbs.slice().reverse().map(function (n) {
-    return '<div class="ln-card" style="' + (n.archived ? 'opacity:.65;' : '') + '"><div class="ln-card-header"><div>' +
-      '<div class="ln-card-title">' + esc(n.title) + ' ' + (n.archived ? '<span class="ln-badge archived">Archived</span>' : '') + '</div>' +
-      '<div class="ln-card-meta">👤 ' + esc(n.researcher) + ' · 📅 ' + esc(n.date) + (n.body ? ' · \ud83d\udcc4 notebook page' : '') + '</div></div>' +
-      '<div class="ln-card-actions"><button class="ln-icon-btn" onclick="openEntry(\'' + n.id + '\')">Open</button>' +
-      '<a class="ln-icon-btn" href="#entry/' + n.id + '" target="_blank" rel="noopener" title="Open in a new tab">\u2197</a>' +
-      (isAdmin ? '<button class="ln-icon-btn" onclick="archiveNotebook(\'' + n.id + '\')">' + (n.archived ? 'Restore' : 'Archive') + '</button>' : '') +
-      (isAdmin ? '<button class="ln-icon-btn danger" onclick="deleteNotebook(\'' + n.id + '\')">✕ Delete</button>' : '') +
-      '</div></div><div style="font-size:13px;color:#555;">' + (n.hypothesis ? '<strong>Hypothesis:</strong> ' + esc(n.hypothesis).slice(0, 120) + (n.hypothesis.length > 120 ? '…' : '') : '') + '</div>' +
-      renderAttachments(n.files) + '</div>';
+  var me = (currentUser() || {}).name || '';
+  var all = getNotebooks();
+  var names = nbNames();
+  if (nbOpen === null || (nbOpen !== '*' && names.indexOf(nbOpen) < 0)) nbOpen = me || names[0] || '*';
+  function hit(n) {
+    return !q || (n.title || '').toLowerCase().indexOf(q) >= 0 || nbOwner(n).toLowerCase().indexOf(q) >= 0;
+  }
+  var counts = {};
+  all.forEach(function (n) { if (hit(n)) counts[nbOwner(n)] = (counts[nbOwner(n)] || 0) + 1; });
+  var total = all.filter(hit).length;
+
+  var tree = '<button type="button" class="nb-file' + (nbOpen === '*' ? ' on' : '') + '" onclick="nbPick(-1)">' +
+    '<span class="ic">🗂</span><span class="nm">All notebooks</span><span class="ct">' + total + '</span></button>' +
+    '<div class="nb-tree-label">Notebooks</div>' +
+    names.map(function (name, i) {
+      return '<button type="button" class="nb-file' + (nbOpen === name ? ' on' : '') + '" onclick="nbPick(' + i + ')">' +
+        '<span class="ic">📓</span><span class="nm">' + esc(name) + (name === me ? ' <em>(you)</em>' : '') + '</span>' +
+        '<span class="ct">' + (counts[name] || 0) + '</span></button>';
+    }).join('');
+
+  var shown = all.filter(function (n) { return hit(n) && (nbOpen === '*' || nbOwner(n) === nbOpen); });
+  // Newest experiment first; the date is the day it was done, not the day it was typed up.
+  shown.sort(function (x, y) { return String(y.date || '').localeCompare(String(x.date || '')); });
+  var mine = nbOpen === me;
+  var head = '<div class="nb-head"><div><h3>' + (nbOpen === '*' ? 'All notebooks' : esc(nbOpen) + (mine ? ' — your notebook' : '')) + '</h3>' +
+    '<p>' + shown.length + ' entr' + (shown.length === 1 ? 'y' : 'ies') + (q ? ' matching “' + esc(nbFilter) + '”' : '') + '</p></div>' +
+    '<button class="ln-add-btn" onclick="nbNewEntry()">+ New entry' + (nbOpen !== '*' && !mine ? ' for ' + esc(nbOpen) : '') + '</button></div>';
+  var rows = shown.map(function (n) {
+    var nFiles = (n.files || []).length;
+    return '<div class="nb-entry" style="' + (n.archived ? 'opacity:.65;' : '') + '">' +
+      '<button type="button" class="nb-entry-main" onclick="openEntry(\'' + n.id + '\')">' +
+        '<span class="ic">📄</span><span class="tx"><span class="ti">' + esc(n.title || 'Untitled') +
+          (n.archived ? ' <span class="ln-badge archived">Archived</span>' : '') + '</span>' +
+        '<span class="me">' + esc(n.date || 'no date') + (nbOpen === '*' ? ' · ' + esc(nbOwner(n)) : '') +
+          (nFiles ? ' · 📎 ' + nFiles : '') +
+          (n.hypothesis ? ' · ' + esc(n.hypothesis.slice(0, 90)) + (n.hypothesis.length > 90 ? '…' : '') : '') + '</span></span></button>' +
+      '<div class="ln-card-actions">' +
+        '<a class="ln-icon-btn" href="#entry/' + n.id + '" target="_blank" rel="noopener" title="Open in a new tab">↗</a>' +
+        (isAdmin ? '<button class="ln-icon-btn" onclick="archiveNotebook(\'' + n.id + '\')">' + (n.archived ? 'Restore' : 'Archive') + '</button>' : '') +
+        (isAdmin ? '<button class="ln-icon-btn danger" onclick="deleteNotebook(\'' + n.id + '\')">✕ Delete</button>' : '') +
+      '</div></div>';
   }).join('');
+  var empty = '<div class="ln-empty">' + (q ? 'Nothing here matches that search.'
+    : mine ? 'Your notebook is empty. Start it with <strong>+ New entry</strong>.'
+    : 'No entries in this notebook yet.') + '</div>';
+  el.innerHTML = '<div class="nb-ws"><div class="nb-tree">' + tree + '</div>' +
+    '<div class="nb-list">' + head + (rows || empty) + '</div></div>';
 }
 async function deleteNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can delete experiments.'); return; } if (confirm('Permanently delete this experiment entry?')) { await DB.remove('notebooks', id); renderNotebooks(); renderDashboard(); } }
 async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can archive experiments.'); return; } var n = getNotebooks().find(function (x) { return x.id === id; }); if (n) { n.archived = !n.archived; await DB.upsert('notebooks', n); renderNotebooks(); } }
@@ -833,7 +898,7 @@ function renderEntry(id) {
     '<article class="ln-paper" id="ln-paper">' +
       '<input id="e-title" class="ln-paper-title" placeholder="Untitled experiment" value="' + esc(n.title || '') + '">' +
       '<div class="ln-paper-meta">' +
-        '<div class="ln-paper-metaitem"><label>Researcher</label>' + userSelect('e-researcher', n.researcher || (user ? user.name : '')) + '</div>' +
+        '<div class="ln-paper-metaitem"><label>Researcher</label>' + userSelect('e-researcher', n.researcher || (!id && nbTakeNewFor()) || (user ? user.name : '')) + '</div>' +
         '<div class="ln-paper-metaitem"><label>Date</label><input type="date" id="e-date" value="' + esc(n.date || today) + '"></div>' +
         (n.archived ? '<span class="ln-badge archived">Archived</span>' : '') +
       '</div>' +

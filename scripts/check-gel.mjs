@@ -206,7 +206,8 @@ check('the enzyme panel offers it, where the enzymes are actually chosen', () =>
 });
 
 check('the record page offers it too', () => {
-  assert.match(ui, /onclick="plGelFromHere\(\)"/);
+  // It is an entry in the Analyze menu now, not a button of its own.
+  assert.match(ui, /\['Virtual gel', 'plGelFromHere\(\)'\]/);
   const fn = ui.slice(ui.indexOf('function plGelFromHere'), ui.indexOf('// Every lane as P.gelLane'));
   assert.match(fn, /plOpts\.enzymes === 'custom' \? plOpts\.enzymeNames : \[\]/,
     'enzymes chosen by hand come along; a menu of twenty does not');

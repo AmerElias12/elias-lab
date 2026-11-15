@@ -155,6 +155,68 @@
     });
   }
 
+  // ---------- the workspace around it ----------
+  /* Which panel is open beside the sequence. Remembered per browser, as a
+     convenience only: somebody who always works with the feature list open
+     gets it back. `null` is the sequence alone. */
+  var plSide = 'map';
+  try { var plSideKept = localStorage.getItem('elias_pl_side'); if (plSideKept !== null) plSide = plSideKept || null; } catch (e) { /* blocked */ }
+  // What can actually be shown for this record: a linear one has no ring.
+  function plSideFor(ring, hasHistory) {
+    if (plSide === 'map' && !ring) return 'info';
+    if (plSide === 'history' && !hasHistory) return ring ? 'map' : 'info';
+    return plSide;
+  }
+  function plSidePick(key) {
+    var ws = document.querySelector('.pl-ws'); if (!ws) return;
+    plSide = ws.getAttribute('data-side') === key ? null : key;
+    try { localStorage.setItem('elias_pl_side', plSide || ''); } catch (e) { /* blocked */ }
+    if (plSide) ws.setAttribute('data-side', plSide); else ws.removeAttribute('data-side');
+    Array.prototype.forEach.call(ws.querySelectorAll('.pl-rail-btn'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-side') === plSide);
+    });
+    // The viewers measure the box they are in; both boxes have just changed.
+    window.dispatchEvent(new Event('resize'));
+    schedulePrimerPaint();
+  }
+  /* The workspace is exactly as tall as the room under the tab strip, so the
+     sequence scrolls inside it and the bars stay put. On a narrow screen it
+     goes back to being an ordinary page. */
+  function fitWs() {
+    var ws = document.querySelector('.pl-ws'); if (!ws) return;
+    var main = ws.closest('.ln-main');
+    if (!main || window.matchMedia('(max-width: 900px)').matches) { ws.style.height = ''; return; }
+    /* Where its top edge sits when nothing is scrolled, whichever of the
+       window and the main column turns out to be the one that scrolls. */
+    var top = ws.getBoundingClientRect().top + main.scrollTop + (document.scrollingElement ? document.scrollingElement.scrollTop : 0);
+    var h = window.innerHeight - top;
+    ws.style.height = Math.max(440, h) + 'px';
+  }
+  window.addEventListener('resize', fitWs);
+  /* The tools, gathered into three menus the way the work divides: making
+     something on the sequence, asking a question of it, and building a new
+     construct out of it. */
+  var PL_MENUS = {
+    create: [['Feature from selection', 'plFeatureModal(-1)'], ['Primer from selection', 'plNewPrimerModal()'],
+      ['Attach a lab primer…', 'openPrimerModal()'], ['Find ORFs…', 'openOrfs()'],
+      ['Auto-annotate…', 'openAnnotate()'], ['Import sequence file…', 'plImportIntoThis()']],
+    analyze: [['Restriction enzymes…', 'openEnzymePanel()'], ['Virtual gel', 'plGelFromHere()'],
+      ['Expected PCR', 'openPcr()'], ['CRISPR guides…', 'openGuides()'], ['Check sequencing reads…', 'openSeqCheck()']],
+    assemble: [['Restriction cloning…', 'openClone()'], ['Gibson assembly…', 'openGibson()'], ['Golden Gate…', 'openGoldenGate()']]
+  };
+  function plToolMenu(btn, which) {
+    var old = document.getElementById('pl-tool-menu');
+    if (old) { var same = old.getAttribute('data-which') === which; old.remove(); if (same) return; }
+    var menu = document.createElement('div');
+    menu.id = 'pl-tool-menu';
+    menu.className = 'ln-pl-menu';
+    menu.setAttribute('data-which', which);
+    menu.innerHTML = PL_MENUS[which].map(function (o) {
+      return '<button type="button" onclick="this.parentNode.remove();' + o[1] + '">' + o[0] + '</button>';
+    }).join('');
+    dropMenu(btn, menu);
+  }
+
   // ---------- the page ----------
   function renderPlasmid() {
     var el = document.getElementById('ln-plasmid-body');
@@ -166,35 +228,57 @@
       return;
     }
     var p = asPlasmid(it), len = p.seq.length;
+    var ring = !!len && p.topology === 'circular';
+    var hist = historyHtml(it);
+    var side = plSideFor(ring, !!hist);
+    function railBtn(key, icon, label, title) {
+      return '<button type="button" class="pl-rail-btn' + (side === key ? ' on' : '') + '" data-side="' + key + '" title="' + title +
+        '" onclick="plSidePick(\'' + key + '\')"><span class="ic">' + icon + '</span><span class="lb">' + label + '</span></button>';
+    }
+    /* A workspace rather than a page. The sequence is what you work in, so
+       it has the screen; the ring, the feature list, the primers, the
+       history and the record's details each open beside it from the rail on
+       the right, one at a time, and the bar under the bases says what is
+       selected. Nothing scrolls except the thing you are reading. Every
+       panel stays in the page while hidden, so the form fields, the map and
+       the tables behave exactly as they did when they were stacked. */
     el.innerHTML =
-      '<div class="ln-entry-bar">' +
+      '<div class="pl-ws"' + (side ? ' data-side="' + side + '"' : '') + '>' +
+      '<div class="pl-ws-top">' +
         '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-' + cloningTab(it.kind) + '\');return false;">← ' +
           { plasmids: 'Plasmids', cdnas: 'cDNAs', genes: 'Genes', blocks: 'DNA Blocks' }[cloningTab(it.kind)] + '</a>' +
+        '<h2 class="ln-pl-name">' + esc(it.name || 'Untitled plasmid') + '</h2>' +
         '<span id="ln-pl-status" class="ln-entry-status">' + (plDirty ? 'Unsaved changes' : 'Saved') + '</span>' +
+        '<div class="ln-pl-stats">' + statsHtml(p, it) + '</div>' +
         '<div class="ln-header-actions">' +
-          '<a class="ln-add-btn ghost ln-add-link" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">Open in a browser window ↗</a>' +
+          '<a class="ln-add-btn ghost ln-add-link" title="Open in a browser window" href="#plasmid/' + esc(it.id) + '" target="_blank" rel="noopener">↗ Window</a>' +
           '<button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button>' +
           '<button class="ln-add-btn ghost" title="Make a copy of this record, named “' + esc(it.name || 'Untitled') + ' copy”" onclick="plCopyThis()">⧉ Copy</button>' +
           '<button class="ln-add-btn ghost" onclick="plExportMenu(this)">↓ Export</button>' +
           '<button class="ln-add-btn" id="ln-pl-save" onclick="savePlasmid()">Save</button>' +
         '</div></div>' +
-      '<h2 class="ln-pl-name">' + esc(it.name || 'Untitled plasmid') + '</h2>' +
-      '<div class="ln-pl-stats">' + statsHtml(p, it) + '</div>' +
-      /* The linear view now lives in the Sequence panel, where the bases are
-         actually read, so the ring no longer needs the width of the page and
-         the details go back beside it. A linear construct has no ring to
-         draw, and its details take the whole row. */
-      (len && p.topology === 'circular'
-        ? '<div class="ln-pl-maps"><div class="ln-pl-mapbox" id="pl-map"></div>' +
-          '<div class="ln-pl-meta-wrap">' + metaHtml(it) + '</div></div>' +
-          '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring, or drag the sequence below.</div>'
-        : '<div class="ln-pl-maps"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>') +
-      historyHtml(it) +
-      primersHtml(p) +
-      seqPanelHtml(p) +
-      // The feature table is a reference list, read far less often than the
-      // map and the sequence, so it sits below both rather than between them.
-      featuresHtml(p);
+      '<div class="pl-ws-main">' +
+        '<div class="pl-ws-seq">' + seqPanelHtml(p) + '</div>' +
+        '<div class="pl-ws-sidepane">' +
+          '<div class="pl-side" data-side="map">' +
+            (ring ? '<div class="ln-pl-mapbox" id="pl-map"></div>' +
+              '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring, or drag the sequence.</div>' : '') +
+          '</div>' +
+          '<div class="pl-side" data-side="features">' + featuresHtml(p) + '</div>' +
+          '<div class="pl-side" data-side="primers">' + primersHtml(p) + '</div>' +
+          '<div class="pl-side" data-side="history">' + hist + '</div>' +
+          '<div class="pl-side" data-side="info"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>' +
+        '</div>' +
+        '<div class="pl-ws-rail" role="toolbar" aria-label="Panels">' +
+          (ring ? railBtn('map', '◎', 'Map', 'Plasmid map') : '') +
+          railBtn('features', '▤', 'Features', 'Annotations on this sequence') +
+          railBtn('primers', '⇄', 'Primers', 'Primers attached to this sequence') +
+          (hist ? railBtn('history', '⏱', 'History', 'How this construct was made') : '') +
+          railBtn('info', 'ⓘ', 'Details', 'Name, storage, notes and the rest of the record') +
+        '</div>' +
+      '</div></div>';
+    fitWs();
+    setTimeout(fitWs, 0);
     wire();
     plApplyFields();
     mountMap(p);
@@ -1037,12 +1121,10 @@
         '</select></label>' +
         '<label class="ln-pl-check" title="Show the amino acids under every CDS and gene feature">' +
           '<input type="checkbox" id="pl-cds"' + (plOpts.cds ? ' checked' : '') + '> Translate CDS</label>' +
-        '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
-        '<button class="ln-add-btn ghost" title="Run this record on a simulated gel" onclick="plGelFromHere()">\u25a6 Gel</button>' +
-        '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
-        '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
-        '<button class="ln-add-btn ghost" title="Align sequencing reads to this record" onclick="openSeqCheck()">✓ Sequencing</button>' +
-        '<button class="ln-add-btn ghost" onclick="plImportIntoThis()">⇪ Import sequence file</button>' +
+        '<span class="pl-tool-gap"></span>' +
+        '<button class="ln-add-btn ghost pl-menu-btn" onclick="plToolMenu(this,\'create\')">Create ▾</button>' +
+        '<button class="ln-add-btn ghost pl-menu-btn" onclick="plToolMenu(this,\'analyze\')">Analyze ▾</button>' +
+        '<button class="ln-add-btn ghost pl-menu-btn" onclick="plToolMenu(this,\'assemble\')">Assemble ▾</button>' +
       '</div></div>';
     var sum = Object.keys(counts).length;
     return head +
@@ -1181,21 +1263,25 @@
   }
 
   function editorNote(p, shown, cutters) {
-    if (plNote) return '<span class="warn">' + esc(plNote) + '</span>';
+    function cell(label, value) { return '<span class="pl-st"><b>' + label + '</b>' + value + '</span>'; }
+    var bases = cell('Bases', p.seq.length);
+    if (plNote) return bases + '<span class="warn">' + esc(plNote) + '</span>';
     if (plSel) {
       var sub = p.seq.slice(plSel.start, plSel.end);
-      return '<strong>' + (plSel.start + 1) + '–' + plSel.end + '</strong> · ' + sub.length + ' bp · GC ' +
-        P.gc(sub).toFixed(1) + '% · Tm ' + P.tm(sub).toFixed(1) + ' °C' +
+      return bases + cell('Start', plSel.start + 1) + cell('End', plSel.end) + cell('Length', sub.length) +
+        cell('GC', P.gc(sub).toFixed(1) + '%') + cell('Tm', P.tm(sub).toFixed(1) + ' °C') +
+        '<span class="pl-st-actions">' +
         '<button class="ln-icon-btn" onclick="plFeatureModal(-1)">+ Make a feature</button>' +
         '<button class="ln-icon-btn" onclick="plNewPrimerModal()">+ Make a new primer</button>' +
         '<button class="ln-icon-btn" onclick="plCopySelection()">Copy</button>' +
-        '<button class="ln-icon-btn" onclick="plCopyMenu(this)">Copy as ▾</button>';
+        '<button class="ln-icon-btn" onclick="plCopyMenu(this)">Copy as ▾</button></span>';
     }
-    var where = p.seq.length ? 'Position <strong>' + (plCaret + 1) + '</strong>' : 'Empty';
-    var enz = plOpts.enzymes === 'none' ? '' : ' · ' + shown.length + ' site' + (shown.length === 1 ? '' : 's') +
-      ' from ' + cutters + ' enzyme' + (cutters === 1 ? '' : 's') + ' shown';
+    var enz = plOpts.enzymes === 'none' ? '' : shown.length + ' site' + (shown.length === 1 ? '' : 's') +
+      ' from ' + cutters + ' enzyme' + (cutters === 1 ? '' : 's');
     var fs = frameSpec(p);
-    return where + ' · type to edit, drag to select' + enz + (fs ? ' · amino acids ' + esc(fs.label) : '');
+    return bases + (p.seq.length ? cell('Caret', plCaret + 1) : '') + (enz ? cell('Sites', enz) : '') +
+      (fs ? cell('Frame', esc(fs.label)) : '') +
+      '<span class="pl-st-hint">Type to edit · drag to select</span>';
   }
 
   // ---- caret, selection and typing ----
@@ -1329,6 +1415,11 @@
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     host.appendChild(menu);
     menu.style.top = (btn.offsetTop + btn.offsetHeight) + 'px';
+    // From the bar at the bottom of the workspace there is nowhere to drop to.
+    var br = btn.getBoundingClientRect();
+    if (br.bottom + menu.offsetHeight + 10 > window.innerHeight && br.top > menu.offsetHeight + 10) {
+      menu.style.top = (btn.offsetTop - menu.offsetHeight - 10) + 'px';
+    }
     var left = btn.offsetLeft + btn.offsetWidth - menu.offsetWidth;
     menu.style.left = Math.max(0, Math.min(left, host.clientWidth - menu.offsetWidth)) + 'px';
     function close(e) {
@@ -2734,7 +2825,8 @@
     return { tail: tail, anneal: anneal, full: tail + anneal };
   }
   function plNewPrimerModal() {
-    var it = rec(); if (!it || !plSel) return;
+    var it = rec(); if (!it) return;
+    if (!plSel) { alert('Drag across the bases the primer should anneal to, then choose this again.'); return; }
     if (!window.PrimerStore || !window.PrimerStore.addRegular) { alert('The lab’s primer list is not available on this page.'); return; }
     var sub = P.clean(it.seq).slice(plSel.start, plSel.end);
     if (sub.length < 10) { alert('Select at least 10 bases to make a primer from — ' + sub.length + ' selected.'); return; }
@@ -3931,6 +4023,8 @@
   window.plPreviewImport = plPreviewImport;
   window.plRunImport = plRunImport;
   window.plExportMenu = plExportMenu;
+  window.plSidePick = plSidePick;
+  window.plToolMenu = plToolMenu;
   window.plExport = plExport;
   window.exportPlasmidsCSV = exportPlasmidsCSV;
   window.plCopySelection = plCopySelection;

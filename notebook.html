@@ -11,8 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=34">
-    <link rel="stylesheet" href="css/plasmid.css?v=37">
+    <link rel="stylesheet" href="css/notebook.css?v=35">
+    <link rel="stylesheet" href="css/plasmid.css?v=38">
 </head>
 <body>
   <div id="ln-mode-banner"></div>
@@ -113,8 +113,8 @@
         </div>
         <!-- NOTEBOOKS -->
         <div id="ln-notebooks" class="ln-section">
-          <div class="ln-section-header"><div><h2>Experiment Notebooks</h2><p>Detailed experiment documentation</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn" onclick="openEntry()">+ New Entry</button></div></div>
-          <input class="ln-search" placeholder="🔍 Search experiments..." oninput="renderNotebooks(this.value)" style="margin-bottom:1.5rem;">
+          <div class="ln-section-header"><div><h2>Experiment Notebooks</h2><p>A notebook for each researcher, with their experiments inside</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button></div></div>
+          <input class="ln-search" placeholder="🔍 Search experiments or people..." oninput="renderNotebooks(this.value)" style="margin-bottom:1.5rem;">
           <div id="ln-notebooks-list"></div>
         </div>
         <!-- PRESENTATIONS -->
@@ -245,9 +245,9 @@
   <script src="js/tabs.js?v=2"></script>
   <script src="js/plates.js?v=1"></script>
   <script src="js/mentions.js?v=4"></script>
-  <script src="js/plasmid-ui.js?v=42"></script>
+  <script src="js/plasmid-ui.js?v=43"></script>
   <script src="js/config.js?v=20"></script>
   <script src="js/data.js?v=24"></script>
-  <script src="js/notebook.js?v=45"></script>
+  <script src="js/notebook.js?v=46"></script>
 </body>
 </html>
