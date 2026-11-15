@@ -1038,6 +1038,7 @@
         '<label class="ln-pl-check" title="Show the amino acids under every CDS and gene feature">' +
           '<input type="checkbox" id="pl-cds"' + (plOpts.cds ? ' checked' : '') + '> Translate CDS</label>' +
         '<button class="ln-add-btn ghost" onclick="openEnzymePanel()">Enzymes…</button>' +
+        '<button class="ln-add-btn ghost" title="Run this record on a simulated gel" onclick="plGelFromHere()">\u25a6 Gel</button>' +
         '<button class="ln-add-btn ghost" onclick="openClone()">✂ Clone</button>' +
         '<button class="ln-add-btn ghost" onclick="openGuides()">CRISPR</button>' +
         '<button class="ln-add-btn ghost" title="Align sequencing reads to this record" onclick="openSeqCheck()">✓ Sequencing</button>' +
@@ -1893,6 +1894,7 @@
       '<div id="pl-enz-split" class="pl-split-wrap"></div>' +
       '<div class="ln-modal-actions"><span class="hint" id="pl-enz-count" style="margin-right:auto;"></span>' +
       '<button class="ln-modal-cancel" onclick="closeModal()">Close</button>' +
+      '<button class="ln-modal-cancel" id="pl-enz-gel" onclick="plEnzOnGel()">\u25a6 See it on a gel</button>' +
       '<button class="ln-modal-save" onclick="plEnzApply()">Mark the ticked ones</button></div>';
     plEnzHead();
     plEnzSplit();
@@ -1903,6 +1905,14 @@
     plEnzHtml();
     var box = document.getElementById('pl-enz-search');
     if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  }
+  /* Straight from the digest to the gel, carrying the enzymes that made it.
+     This is the question the fragment list raises and could not answer. */
+  function plEnzOnGel() {
+    if (!plEnzPicked.length) { alert('Tick the enzymes you cut with first.'); return; }
+    var id = plId, picked = plEnzPicked.slice();
+    closeModal();
+    openGel(id, picked);
   }
   function plEnzApply() {
     // From what is ticked, not from what is on screen: a filtered-out row is
@@ -3285,19 +3295,38 @@
   function gelRecord(id) {
     return gelRecords().filter(function (x) { return x.id === id; })[0] || null;
   }
-  function openGel(prefillId) {
+  /* Opened from a list page with nothing in hand, or from inside a record
+     that has just been cut — in which case that record and the enzymes that
+     cut it are already in the first lane. Having to leave the digest, find
+     the record again in a menu and tick the same two enzymes a second time
+     is the kind of errand that stops a gel being looked at. */
+  function openGel(prefillId, enzymes) {
     var all = gelRecords();
     if (!all.length) {
       alert('Nothing has a sequence yet. Add or import one and it can be run on a gel.');
       return;
     }
-    var first = (prefillId && gelRecord(prefillId)) || all[0];
-    gel = { percent: 1, ladder: '1 kb', lanes: [{ id: first.id, enzymes: [] }] };
+    var want = prefillId ? gelRecord(prefillId) : null;
+    if (prefillId && !want) {
+      alert('This record has no sequence yet, so there is nothing to run on a gel.');
+      return;
+    }
+    var first = want || all[0];
+    gel = { percent: 1, ladder: '1 kb',
+      lanes: [{ id: first.id, enzymes: (enzymes || []).filter(Boolean).slice() }] };
     // Several lanes side by side need more room than a form does; closeModal
     // puts the box back to its usual width afterwards.
     document.getElementById('ln-modal-content').className = 'ln-modal gel';
     plGelHtml();
     document.getElementById('ln-modal-bg').classList.add('open');
+  }
+  /* From the record's own toolbar. Enzymes chosen by hand come with it;
+     the menu's own settings do not, because "all sites" is twenty enzymes
+     and a lane cut with twenty enzymes is not a gel anybody ran. */
+  function plGelFromHere() {
+    var it = rec(); if (!it) return;
+    if (!P.clean(it.seq || '').length) { alert('Add a sequence before running this on a gel.'); return; }
+    openGel(plId, plOpts.enzymes === 'custom' ? plOpts.enzymeNames : []);
   }
   // Every lane as P.gelLane wants it, the ladder first where there is one.
   function gelLaneSpecs() {
@@ -3380,6 +3409,15 @@
         '</div>';
       }).join('') + '</div>' +
       '<button type="button" class="ln-icon-btn" onclick="plGelAddLane()">+ Add lane</button>' +
+      /* A record with no sequence cannot be cut, so it is not in the menu —
+         said out loud, because hunting for a plasmid that is in the
+         inventory and not in this list is otherwise a puzzle with no clue. */
+      (function () {
+        var n = ((getInventory().plasmids || []).length) - gelRecords().length;
+        return n > 0 ? '<div class="hint">' + n + ' record' + (n === 1 ? ' is' : 's are') +
+          ' not listed above, because ' + (n === 1 ? 'it has' : 'they have') +
+          ' no sequence yet — paste or import one and it can be cut.</div>' : '';
+      }()) +
       '<div class="pl-gel-wrap">' + svg + '</div>' +
       /* Numbered to match the picture, so "lane 3" means the same thing in
          the drawing, in this table and at the bench. */
@@ -3812,6 +3850,8 @@
   window.plEnzSet = plEnzSet;
   window.plEnzSearchSet = plEnzSearchSet;
   window.plEnzApply = plEnzApply;
+  window.plEnzOnGel = plEnzOnGel;
+  window.plGelFromHere = plGelFromHere;
   window.plEnzSetLoad = plEnzSetLoad;
   window.plEnzSetSave = plEnzSetSave;
   window.plEnzSetDelete = plEnzSetDelete;
