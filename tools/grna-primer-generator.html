@@ -363,6 +363,13 @@
             React.useEffect(() => { keep('grna', grnaPrimers); }, [grnaPrimers, loaded]);
             React.useEffect(() => { keep('regular', regPrimers); }, [regPrimers, loaded]);
 
+            /* The lists as they are shown and exported: in number order. The
+               shared store hands rows back in whatever order it holds them,
+               and an import can bring numbers in out of sequence. */
+            const byNumber = (list, key) => [...list].sort((x, y) => (+x[key] || 0) - (+y[key] || 0));
+            const regSorted = byNumber(regPrimers, 'number');
+            const grnaSorted = byNumber(grnaPrimers, 'forwardNumber');
+
             // Tm calculation
             const calculateTm = (sequence) => {
                 if (!sequence || sequence.length < 14) return 'N/A';
@@ -533,7 +540,7 @@
                 // Header on row 1: a title line above it stops Excel and pandas
                 // from reading the columns. The kind of primer is in the filename.
                 const rows = [['No', 'Name', 'Sequence', 'Length', 'Tm', 'Freezer', 'Shelf', 'Box', 'Description']];
-                grnaPrimers.forEach(p => {
+                grnaSorted.forEach(p => {
                     rows.push([p.forwardNumber, p.forwardName, p.forwardPrimer, p.forwardLength, calculateTm(p.forwardPrimer), p.freezer, p.shelf, p.box, p.description]);
                     rows.push([p.reverseNumber, p.reverseName, p.reversePrimer, p.reverseLength, calculateTm(p.reversePrimer), p.freezer, p.shelf, p.box, p.description]);
                 });
@@ -543,7 +550,7 @@
             const exportReg = () => {
                 if (!regPrimers.length) { alert('No regular primers saved yet.'); return; }
                 const rows = [['No', 'Name', 'Sequence', 'Length', 'Tm', 'Orientation', 'Freezer', 'Shelf', 'Box', 'Vendor', 'Status', 'Description']];
-                regPrimers.forEach(p => {
+                regSorted.forEach(p => {
                     rows.push([p.number, p.name, p.sequence, p.length, p.tm, p.orientation, p.freezer, p.shelf, p.box, p.vendor, p.status, p.description]);
                 });
                 downloadCsv(rows, 'PR_Regular_Primers.csv');
@@ -889,7 +896,7 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {grnaPrimers.map(p => (
+                                                    {grnaSorted.map(p => (
                                                         <React.Fragment key={p.id}>
                                                             <tr className="border-b hover:bg-blue-50">
                                                                 <td className="py-2">{p.forwardNumber}</td>
@@ -1046,7 +1053,7 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {regPrimers.map(p => (
+                                                    {regSorted.map(p => (
                                                         <tr key={p.id} className="border-b hover:bg-purple-50">
                                                             <td className="py-2">{p.number}</td>
                                                             <td className="py-2 font-bold text-purple-600">{p.name}</td>
