@@ -159,13 +159,33 @@
   /* Which panel is open beside the sequence. Remembered per browser, as a
      convenience only: somebody who always works with the feature list open
      gets it back. `null` is the sequence alone. */
-  var plSide = 'map';
+  var plSide = null;
   try { var plSideKept = localStorage.getItem('elias_pl_side'); if (plSideKept !== null) plSide = plSideKept || null; } catch (e) { /* blocked */ }
   // What can actually be shown for this record: a linear one has no ring.
   function plSideFor(ring, hasHistory) {
-    if (plSide === 'map' && !ring) return 'info';
-    if (plSide === 'history' && !hasHistory) return ring ? 'map' : 'info';
+    if (plSide === 'map') return null;                    // the ring is a view of its own now
+    if (plSide === 'history' && !hasHistory) return null;
     return plSide;
+  }
+  /* Which drawing has the screen: the bases, or the ring. They used to sit
+     side by side, which gave neither enough room — the ring's labels ran
+     into one another and the sequence showed fifty bases a row. One at a
+     time, each gets the whole width. */
+  var plView = 'seq';
+  function plViewPick(view) {
+    var ws = document.querySelector('.pl-ws'); if (!ws) return;
+    plView = view;
+    ws.setAttribute('data-view', view);
+    Array.prototype.forEach.call(ws.querySelectorAll('.pl-view-btn'), function (b) {
+      var on = b.getAttribute('data-view') === view;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    // A viewer drawn while its box was hidden measured nothing; draw it again.
+    var it = rec();
+    if (it) {
+      if (view === 'map') mountRing(asPlasmid(it));
+      else { window.dispatchEvent(new Event('resize')); schedulePrimerPaint(); paintCaret(); }
+    }
   }
   function plSidePick(key) {
     var ws = document.querySelector('.pl-ws'); if (!ws) return;
@@ -243,11 +263,17 @@
        panel stays in the page while hidden, so the form fields, the map and
        the tables behave exactly as they did when they were stacked. */
     el.innerHTML =
-      '<div class="pl-ws"' + (side ? ' data-side="' + side + '"' : '') + '>' +
+      '<div class="pl-ws" data-view="' + (ring ? plView : 'seq') + '"' + (side ? ' data-side="' + side + '"' : '') + '>' +
       '<div class="pl-ws-top">' +
         '<a href="#" class="ln-back-link" onclick="lnShow(\'inv-' + cloningTab(it.kind) + '\');return false;">← ' +
           { plasmids: 'Plasmids', cdnas: 'cDNAs', genes: 'Genes', blocks: 'DNA Blocks' }[cloningTab(it.kind)] + '</a>' +
         '<h2 class="ln-pl-name">' + esc(it.name || 'Untitled plasmid') + '</h2>' +
+        (ring ? '<div class="pl-viewtabs" role="group" aria-label="Map view">' +
+          [['seq', 'Sequence map'], ['map', 'Plasmid map']].map(function (o) {
+            var on = plView === o[0];
+            return '<button type="button" class="pl-view-btn' + (on ? ' on' : '') + '" data-view="' + o[0] + '" aria-pressed="' + on +
+              '" onclick="plViewPick(\'' + o[0] + '\')">' + o[1] + '</button>';
+          }).join('') + '</div>' : '') +
         '<span id="ln-pl-status" class="ln-entry-status">' + (plDirty ? 'Unsaved changes' : 'Saved') + '</span>' +
         '<div class="ln-pl-stats">' + statsHtml(p, it) + '</div>' +
         '<div class="ln-header-actions">' +
@@ -259,18 +285,15 @@
         '</div></div>' +
       '<div class="pl-ws-main">' +
         '<div class="pl-ws-seq">' + seqPanelHtml(p) + '</div>' +
+        (ring ? '<div class="pl-ws-map"><div class="ln-pl-mapbox" id="pl-map"></div>' +
+          '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring to select it.</div></div>' : '') +
         '<div class="pl-ws-sidepane">' +
-          '<div class="pl-side" data-side="map">' +
-            (ring ? '<div class="ln-pl-mapbox" id="pl-map"></div>' +
-              '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring, or drag the sequence.</div>' : '') +
-          '</div>' +
           '<div class="pl-side" data-side="features">' + featuresHtml(p) + '</div>' +
           '<div class="pl-side" data-side="primers">' + primersHtml(p) + '</div>' +
           '<div class="pl-side" data-side="history">' + hist + '</div>' +
           '<div class="pl-side" data-side="info"><div class="ln-pl-meta-wrap wide">' + metaHtml(it) + '</div></div>' +
         '</div>' +
         '<div class="pl-ws-rail" role="toolbar" aria-label="Panels">' +
-          (ring ? railBtn('map', '◎', 'Map', 'Plasmid map') : '') +
           railBtn('features', '▤', 'Features', 'Annotations on this sequence') +
           railBtn('primers', '⇄', 'Primers', 'Primers attached to this sequence') +
           (hist ? railBtn('history', '⏱', 'History', 'How this construct was made') : '') +
@@ -466,7 +489,7 @@
     var far = fwd ? near - lift : near + lift;                 // the tail's box
     var lo = Math.max(d.from, first), hi = Math.min(d.to, first + count);
     function x(pos) { return (pos - first) * cw; }
-    var gEl = svgEl('g', { 'class': 'pl-primer-glyph' + (fwd ? '' : ' rev') });
+    var gEl = svgEl('g', { 'class': 'pl-primer-glyph' + (fwd ? '' : ' rev'), 'data-a0': d.a0, 'data-a1': d.a1 });
     gEl.appendChild(svgEl('title', {}, d.name));
 
     // the tail: the part of the footprint outside the annealed stretch
@@ -552,6 +575,17 @@
     plSeqMap = put('pl-seq-map', 'linear', seqViewOpts(p));
     paintCaret();
     schedulePrimerPaint();
+  }
+  // The ring alone, when its view is brought to the front.
+  function mountRing(p) {
+    if (plMap) { try { plMap.destroy(); } catch (e) {} plMap = null; }
+    var el = document.getElementById('pl-map');
+    if (!el || !VV || !p.seq.length) return;
+    try {
+      plMap = VV.createViewer(el, mapPayload(p), { view: 'circular', log: false, onSelect: onMapSelect });
+    } catch (e) {
+      el.innerHTML = '<div class="ln-pl-maperr">' + esc('This could not be drawn: ' + e.message) + '</div>';
+    }
   }
   // The sequence view alone, after the panel around it was rebuilt.
   function mountSeqMap() {
@@ -1303,6 +1337,7 @@
   function paintSelection() {
     var it = rec(); if (!it) return;
     var bar = document.querySelector('.pl-edbar');
+    if (!plSel) dropProgSel();
     if (bar) bar.innerHTML = editorNote(asPlasmid(it), shownSites(), Object.keys(P.siteCounts(plSites)).length);
     paintCaret();
   }
@@ -1311,9 +1346,59 @@
      only thing done here is to notice that a drag happened and leave the
      click alone. */
   var plSeqDownAt = null;
+  /* A selection made by the page rather than by dragging. SeqViz is handed
+     the range so it draws it the way it draws its own; it shows that and
+     nothing else until the range is taken away again, which happens as soon
+     as the mouse goes down on the sequence or the selection is dropped. */
+  var plProgSel = false;
+  function plSelectRange(start, end) {
+    start = clampPos(start); end = clampPos(end);
+    if (end <= start) return;
+    plSel = { start: start, end: end };
+    plAnchor = start; plCaret = end; plNote = '';
+    if (plSeqMap) {
+      plProgSel = true;
+      try { plSeqMap.setOptions({ selection: { start: start, end: end, clockwise: true } }); } catch (e) {}
+    }
+    paintSelection();
+    schedulePrimerPaint();
+  }
+  function dropProgSel() {
+    if (!plProgSel) return;
+    plProgSel = false;
+    if (plSeqMap) { try { plSeqMap.setOptions({ selection: undefined }); } catch (e) {} }
+    schedulePrimerPaint();
+  }
+  /* What was clicked, if it was something with a range of its own: a primer
+     drawn against the strand, or an annotation's ribbon. For a ribbon SeqViz
+     says nothing about which feature it is, so it is the feature under the
+     pointer whose name is on the ribbon, or failing a name the shortest one
+     there — the one a click on a crowded stretch most likely meant. */
+  function rangeAtEvent(e) {
+    var t = e.target;
+    if (!t || !t.closest) return null;
+    var glyph = t.closest('.pl-primer-glyph');
+    if (glyph) return { start: +glyph.getAttribute('data-a0'), end: +glyph.getAttribute('data-a1') };
+    var ribbon = t.closest('.la-vz-annotation, .la-vz-annotation-label');
+    if (!ribbon) return null;
+    var pos = seqPosFromEvent(e), it = rec();
+    if (pos == null || !it) return null;
+    var label = ((ribbon.closest('g') || ribbon).textContent || '').trim();
+    var best = null;
+    asPlasmid(it).features.forEach(function (f) {
+      if (f.end <= f.start || pos < f.start || pos > f.end) return;
+      var named = label && (f.name === label || f.name.indexOf(label.replace(/[.…]+$/, '')) === 0);
+      var size = f.end - f.start;
+      if (!best || (named && !best.named) || (named === best.named && size < best.size)) {
+        best = { start: f.start, end: f.end, named: !!named, size: size };
+      }
+    });
+    return best;
+  }
   function edMouseDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
-    plSeqDownAt = { x: e.clientX, y: e.clientY };
+    plSeqDownAt = { x: e.clientX, y: e.clientY, sel: plSel, caret: plCaret };
+    dropProgSel();
   }
   function edMouseUp(e) {
     var down = plSeqDownAt;
@@ -1321,11 +1406,23 @@
     if (!down || !e) return;
     // Anything more than a wobble is a drag, and SeqViz has already handled it.
     if (Math.abs(e.clientX - down.x) > 3 || Math.abs(e.clientY - down.y) > 3) return;
-    var pos = seqPosFromEvent(e);
-    if (pos == null) return;
+    var hit = rangeAtEvent(e);
+    var pos = hit ? null : seqPosFromEvent(e);
+    if (!hit && pos == null) return;
     flushEditConfirm();
     var host = document.getElementById('pl-seq-map');
     if (host) host.focus({ preventScroll: true });
+    /* Shift carries the selection on from where it was to what was clicked:
+       a primer, then shift and a second primer, is everything from the first
+       to the second — the amplicon. What it was is read from before the
+       mouse went down, since SeqViz may have moved it since. */
+    if (e.shiftKey) {
+      var from = down.sel || { start: down.caret, end: down.caret };
+      var to = hit || { start: pos, end: pos };
+      plSelectRange(Math.min(from.start, to.start), Math.max(from.end, to.end));
+      return;
+    }
+    if (hit) { plSelectRange(hit.start, hit.end); return; }
     plSel = null; plAnchor = pos; plCaret = pos; plNote = '';
     paintSelection();
   }
@@ -4024,6 +4121,7 @@
   window.plRunImport = plRunImport;
   window.plExportMenu = plExportMenu;
   window.plSidePick = plSidePick;
+  window.plViewPick = plViewPick;
   window.plToolMenu = plToolMenu;
   window.plExport = plExport;
   window.exportPlasmidsCSV = exportPlasmidsCSV;

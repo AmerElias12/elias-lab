@@ -557,6 +557,37 @@ async function saveProtocolImport() {
   document.getElementById('m-proto-file').value = '';
 }
 
+// ── THE MENU, FOLDED OR OPEN ───────────────────────────────
+/* Remembered per browser: somebody who works with the menu folded wants it
+   folded tomorrow. Folded, each item is only its icon, so it is given its
+   name as a tooltip. */
+function lnApplyNav(collapsed) {
+  var shell = document.querySelector('.ln-shell'), btn = document.getElementById('ln-nav-toggle');
+  if (!shell || !btn) return;
+  shell.classList.toggle('nav-collapsed', collapsed);
+  btn.textContent = collapsed ? '»' : '«';
+  btn.title = collapsed ? 'Open the menu' : 'Collapse the menu';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  Array.prototype.forEach.call(shell.querySelectorAll('.ln-nav-item'), function (item) {
+    if (collapsed) item.title = item.textContent.replace(/\s+/g, ' ').trim().replace(/^\S+\s/, '');
+    else item.removeAttribute('title');
+  });
+  // Whatever is on the page has just been given, or lost, 200px.
+  setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 220);
+}
+function lnToggleNav() {
+  var collapsed = !document.querySelector('.ln-shell').classList.contains('nav-collapsed');
+  try { localStorage.setItem('elias_ln_nav', collapsed ? '1' : ''); } catch (e) { /* blocked */ }
+  lnApplyNav(collapsed);
+}
+(function () {
+  var kept = false;
+  try { kept = localStorage.getItem('elias_ln_nav') === '1'; } catch (e) { /* blocked */ }
+  function go() { if (kept) lnApplyNav(true); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+})();
+
 // ── EXPERIMENT NOTEBOOKS ───────────────────────────────────
 /* One notebook per person. The page used to be a single list of every
    entry anybody had written, newest first, and finding your own work meant

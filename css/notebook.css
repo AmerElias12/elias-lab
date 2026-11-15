@@ -647,3 +647,22 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
   .nb-entry{flex-wrap:wrap;}
 }
 @media print{.nb-tree,.nb-head .ln-add-btn{display:none !important;}.nb-ws{display:block;}}
+
+
+/* ---- the menu, folded away ----
+   The menu down the left is how you get from one part of the notebook to
+   another, and once you are somewhere it is 256px of the screen doing
+   nothing. Folded, it is a strip of icons: still one click from anywhere,
+   and the page you are reading gets the room. */
+.ln-sidebar{transition:width .18s ease;}
+.ln-sidebar-header{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem;}
+.ln-nav-toggle{flex:none;width:28px;height:28px;border:none;border-radius:8px;background:rgba(255,255,255,.1);color:#f4f1e8;font-size:15px;line-height:1;cursor:pointer;}
+.ln-nav-toggle:hover{background:rgba(255,255,255,.22);}
+.ln-shell.nav-collapsed .ln-sidebar{width:58px;}
+.ln-shell.nav-collapsed .ln-sidebar-brand,
+.ln-shell.nav-collapsed .ln-nav-section,
+.ln-shell.nav-collapsed .ln-nav-item span:not(.ni),
+.ln-shell.nav-collapsed .ln-sidebar-footer{display:none;}
+.ln-shell.nav-collapsed .ln-sidebar-header{padding:.9rem 0;justify-content:center;}
+.ln-shell.nav-collapsed .ln-nav-item{padding:.7rem 0;justify-content:center;}
+@media print{.ln-nav-toggle{display:none;}}

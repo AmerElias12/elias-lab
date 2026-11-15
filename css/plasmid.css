@@ -251,7 +251,8 @@
 /* Primers drawn into the sequence view. SeqViz is asked for the rows and its
    own blank bars are hidden; the primer is painted into the room they leave. */
 .ln-pl-seqmap .la-vz-linear-primer-row{visibility:hidden;pointer-events:none;}
-.pl-primer-glyph{pointer-events:none;}
+.pl-primer-glyph{cursor:pointer;}
+.pl-primer-glyph:hover .pl-primer-body,.pl-primer-glyph:hover .pl-primer-tail{filter:brightness(1.12);}
 .pl-primer-body,.pl-primer-tail{fill:#2f6fdb;stroke:#1b4fb3;stroke-width:1.2;stroke-linejoin:round;}
 .pl-primer-tail{fill:#5a8de6;}
 .pl-primer-glyph.rev .pl-primer-body{fill:#0f8a6c;stroke:#0a6650;}
@@ -403,4 +404,28 @@
   .pl-ws-sidepane{display:block !important;width:auto !important;border:none;background:#fff;}
   .pl-side{display:block !important;overflow:visible;padding:0;margin-top:10px;}
   .pl-ws-seq .ln-pl-seqmap{height:460px;flex:none;}
+}
+
+
+/* ---- one map at a time ---- */
+.pl-viewtabs{display:inline-flex;border:1px solid rgba(22,36,31,.18);border-radius:9px;overflow:hidden;background:#fff;}
+.pl-view-btn{border:none;background:none;padding:.4rem .9rem;font:inherit;font-size:12px;font-weight:600;color:#4a5a52;cursor:pointer;}
+.pl-view-btn + .pl-view-btn{border-left:1px solid rgba(22,36,31,.18);}
+.pl-view-btn:hover{background:rgba(12,74,68,.07);}
+.pl-view-btn.on{background:#0c4a44;color:#f4f1e8;}
+.pl-ws-map{flex:1;min-width:0;min-height:0;display:none;flex-direction:column;background:#fbfaf5;}
+.pl-ws[data-view="map"] .pl-ws-map{display:flex;}
+.pl-ws[data-view="map"] .pl-ws-seq{display:none;}
+.pl-ws-map .ln-pl-mapbox{flex:1;min-height:320px;height:auto;border:none;border-radius:0;background:transparent;padding:.6rem;}
+.pl-ws-map .ln-pl-mapsel{margin:0;border-radius:0;border:none;border-top:1px solid rgba(22,36,31,.12);max-height:9.5em;overflow:auto;}
+.pl-ws-sidepane,.pl-ws[data-side="map"] .pl-ws-sidepane{width:min(520px,42%);}
+@media(max-width:900px){
+  .pl-ws-map .ln-pl-mapbox{flex:none;height:420px;}
+  .pl-ws-sidepane{width:auto;}
+}
+@media print{
+  .pl-viewtabs{display:none !important;}
+  .pl-ws-map{display:block !important;}
+  .pl-ws-seq{display:flex !important;}
+  .pl-ws-map .ln-pl-mapbox{height:120mm;max-width:120mm;margin:0 auto;}
 }

@@ -387,6 +387,12 @@
         zoom: opts.zoom || { linear: 50 },
         // SeqViz decides circular-vs-linear from the chosen viewer, so a
         // linear construct must not be offered the circular view at all.
+        /* A selection the page makes rather than the mouse: clicking a
+           primer selects it, and SeqViz has no way to be told that except
+           by being handed the range. While this is set SeqViz shows it and
+           nothing else, so the page takes it away again the moment the
+           mouse goes down on the sequence. */
+        selection: opts.selection || undefined,
         onSelection: report,
       };
     }
