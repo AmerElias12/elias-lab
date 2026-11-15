@@ -183,4 +183,44 @@ check('no lanes draws nothing at all', () => {
   assert.equal(P.gelSvg([], {}), '');
 });
 
+console.log('\nGetting to the gel');
+
+/* The maths above is only reachable if the screen offers a way in. These
+   read the shipped source, because the failure they guard against was not
+   a wrong band — it was a digest on screen with no way to see it run. */
+import fs from 'fs';
+const ui = fs.readFileSync(path.join(here, '..', 'js', 'plasmid-ui.js'), 'utf8');
+
+check('a digest can be carried straight onto a gel', () => {
+  assert.match(ui, /function openGel\(prefillId, enzymes\)/,
+    'openGel must accept the enzymes that made the digest');
+  assert.match(ui, /lanes: \[\{ id: first\.id, enzymes: \(enzymes \|\| \[\]\)/,
+    'and put them in the first lane');
+});
+
+check('the enzyme panel offers it, where the enzymes are actually chosen', () => {
+  assert.match(ui, /id="pl-enz-gel"[^>]*onclick="plEnzOnGel\(\)"/);
+  const fn = ui.slice(ui.indexOf('function plEnzOnGel'), ui.indexOf('function plEnzApply'));
+  assert.match(fn, /openGel\(id, picked\)/, 'it must carry the ticked enzymes through');
+  assert.match(fn, /plEnzPicked\.length/, 'and refuse when nothing is ticked');
+});
+
+check('the record page offers it too', () => {
+  assert.match(ui, /onclick="plGelFromHere\(\)"/);
+  const fn = ui.slice(ui.indexOf('function plGelFromHere'), ui.indexOf('// Every lane as P.gelLane'));
+  assert.match(fn, /plOpts\.enzymes === 'custom' \? plOpts\.enzymeNames : \[\]/,
+    'enzymes chosen by hand come along; a menu of twenty does not');
+});
+
+check('a record with no sequence is refused rather than swapped for another', () => {
+  const fn = ui.slice(ui.indexOf('function openGel'), ui.indexOf('function plGelFromHere'));
+  assert.match(fn, /if \(prefillId && !want\)/, 'a named record that cannot be cut must say so');
+  assert.match(fn, /no sequence yet/);
+});
+
+check('records left out of the lane menu are accounted for', () => {
+  assert.match(ui, /not listed above, because/,
+    'a plasmid missing from the menu needs a reason, or it reads as lost');
+});
+
 console.log(`\n${pass} checks passed`);
