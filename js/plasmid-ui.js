@@ -218,7 +218,7 @@
      construct out of it. */
   var PL_MENUS = {
     create: [['Feature from selection', 'plFeatureModal(-1)'], ['Primer from selection', 'plNewPrimerModal()'],
-      ['Attach a lab primer…', 'openPrimerModal()'], ['Find ORFs…', 'openOrfs()'],
+      ['Attach lab primers…', 'openPrimerModal()'], ['Find ORFs…', 'openOrfs()'],
       ['Auto-annotate…', 'openAnnotate()'], ['Import sequence file…', 'plImportIntoThis()']],
     analyze: [['Restriction enzymes…', 'openEnzymePanel()'], ['Virtual gel', 'plGelFromHere()'],
       ['Expected PCR', 'openPcr()'], ['CRISPR guides…', 'openGuides()'], ['Check sequencing reads…', 'openSeqCheck()']],
@@ -2640,7 +2640,8 @@
       var where = !h ? '<span class="warn">does not bind</span>'
         : (h.start + 1) + '–' + h.end + ' ' + (h.strand === -1 ? '←' : '→') +
           (others ? ' <span class="warn">(+' + others + ' more)</span>' : '');
-      return '<tr><td>' + esc(b.primer.name) + '</td>' +
+      return '<tr><td><input type="checkbox" class="pl-pr-pick" value="' + i + '"' + (plPrSel[i] ? ' checked' : '') +
+          ' onchange="plPrPick(' + i + ', this.checked)" aria-label="Choose ' + esc(b.primer.name) + '"></td><td>' + esc(b.primer.name) + '</td>' +
         '<td><code>' + (h && h.tail ? '<span class="pcr-tailtext">' + esc(h.tail) + '</span>' : '') +
           esc(h ? h.anneal : b.primer.seq) + '</code></td>' +
         '<td class="ln-nowrap">' + b.primer.seq.length + ' nt</td>' +
@@ -2655,10 +2656,66 @@
         '<button class="ln-add-btn ghost" onclick="openPcr()">⟶ Expected PCR</button>' +
         '<button class="ln-add-btn ghost" onclick="openGibson()">Gibson assembly</button>' +
         '<button class="ln-add-btn ghost" title="Assemble with a Type IIS enzyme" onclick="openGoldenGate()">Golden Gate</button>' +
-        '<button class="ln-add-btn ghost" onclick="openPrimerModal()">+ Attach primer</button></div></div>' +
-      (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        '<button class="ln-add-btn ghost" onclick="openPrimerModal()">+ Attach primers</button></div></div>' +
+      (binds.length ? '<div class="pl-pr-bulk"><span id="pl-pr-count">Tick primers to act on several at once.</span>' +
+          '<button class="ln-icon-btn primary" id="pl-pr-annotate" onclick="plPrAnnotateChosen()">Annotate chosen</button>' +
+          '<button class="ln-icon-btn danger" id="pl-pr-detach" onclick="plPrDetachChosen()">Detach chosen</button></div>' : '') +
+      (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
+        '<th><input type="checkbox" id="pl-pr-all" title="Choose every primer" onchange="plPrAll(this.checked)"' +
+          (binds.length && binds.every(function (b, i) { return plPrSel[i]; }) ? ' checked' : '') + '></th><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
   }
+  /* Several at once. Annotating used to be one press per primer, so putting
+     twenty primers on a map was twenty presses, each of which redrew the
+     page. The ticks are by position in the attached list and are dropped
+     whenever that list changes. */
+  var plPrSel = {};
+  function plPrChosen() {
+    return Object.keys(plPrSel).filter(function (k) { return plPrSel[k]; }).map(Number);
+  }
+  function plPrHead() {
+    var n = plPrChosen().length, boxes = document.querySelectorAll('.pl-pr-pick');
+    var all = document.getElementById('pl-pr-all');
+    if (all) { all.checked = boxes.length > 0 && n >= boxes.length; all.indeterminate = n > 0 && n < boxes.length; }
+    var count = document.getElementById('pl-pr-count');
+    if (count) count.textContent = n ? n + ' chosen' : 'Tick primers to act on several at once.';
+  }
+  function plPrPick(i, on) { plPrSel[i] = !!on; plPrHead(); }
+  function plPrAll(on) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pl-pr-pick'), function (c) { c.checked = on; plPrSel[+c.value] = !!on; });
+    plPrHead();
+  }
+  function plPrAnnotateChosen() {
+    var it = rec(); if (!it) return;
+    var chosen = plPrChosen();
+    if (!chosen.length) { alert('Tick the primers to annotate first, or the box at the top of the column for all of them.'); return; }
+    var binds = primerBindings(asPlasmid(it)), done = 0, unbound = 0;
+    chosen.forEach(function (i) {
+      var b = binds[i];
+      if (!b || !b.hits.length) { unbound++; return; }
+      if (annotatePrimer(it, b)) done++;
+    });
+    plPrSel = {};
+    if (done) markPlDirty();
+    renderPlasmid();
+    var already = chosen.length - done - unbound;
+    plNote = done + ' primer' + (done === 1 ? '' : 's') + ' annotated' +
+      (already ? ', ' + already + ' already on the map' : '') +
+      (unbound ? ', ' + unbound + ' left out because ' + (unbound === 1 ? 'it does' : 'they do') + ' not bind' : '') + '.';
+    paintSelection();
+  }
+  function plPrDetachChosen() {
+    var it = rec(); if (!it) return;
+    var chosen = plPrChosen();
+    if (!chosen.length) { alert('Tick the primers to detach first.'); return; }
+    if (!confirm('Detach ' + chosen.length + ' primer' + (chosen.length === 1 ? '' : 's') + ' from this record? Their annotations on the map stay.')) return;
+    var drop = {};
+    chosen.forEach(function (i) { drop[i] = true; });
+    it.primers = (it.primers || []).filter(function (x, n) { return !drop[n]; });
+    plPrSel = {};
+    markPlDirty(); renderPlasmid();
+  }
+
   /* A primer is annotated once. The button used to add another identical
      feature every time it was pressed, so the map and the feature table
      filled up with copies of one primer. Now it says the primer is on the
@@ -2761,7 +2818,7 @@
       all.disabled = !usable;
     }
     var btn = document.getElementById('pm-attach');
-    if (btn) btn.textContent = n ? 'Attach ' + n + ' selected' : 'Attach';
+    if (btn) btn.textContent = n ? 'Attach ' + n + ' chosen primer' + (n === 1 ? '' : 's') : 'Attach';
   }
   function plPrimerRows(q) {
     var all = labPrimers();
@@ -2803,7 +2860,7 @@
   function openPrimerModal() {
     plPrimerBinds = {}; plPrimerPicked = [];     // this plasmid, this time round
     document.getElementById('ln-modal-content').innerHTML =
-      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Attach a primer</h3>' +
+      '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Attach primers</h3>' +
       '<div class="ln-form-row"><label>Name</label><input id="pm-name" placeholder="e.g. HK022_attB_F"></div>' +
       '<div class="ln-form-row"><label>Sequence (5′→3′)</label><input id="pm-seq" placeholder="ATGC…">' +
       '<div class="hint">Bases that do not match the template at the 5′ end are kept as a tail, which is normal for adding a site or an overlap.</div></div>' +
@@ -2814,6 +2871,8 @@
       '<div class="hint">A primer can be ticked once at least ' + PRIMER_MIN_3PRIME +
       ' of its bases match the template at its 3′ end — the rest of it can hang free as a tail. The others are shown, greyed, because a primer that does not ' +
       'prime here may still be the one you were looking for.</div>' +
+      '<label class="ln-pl-check pl-pm-annotate"><input type="checkbox" id="pm-annotate" checked> ' +
+      'Also annotate them on the map, so they are drawn on the sequence straight away</label>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
       '<button class="ln-modal-save" id="pm-attach" onclick="plAddPrimer()">Attach</button></div>';
     document.getElementById('ln-modal-bg').classList.add('open');
@@ -2837,6 +2896,17 @@
     var it = rec(); if (!it) return;
     var have = {};
     (it.primers || []).forEach(function (x) { have[P.clean(x.seq)] = true; });
+    var box = document.getElementById('pm-annotate'), alsoAnnotate = !box || box.checked;
+    // Put the ones just attached on the map as well, in the same step.
+    function annotateNew(seqs) {
+      if (!alsoAnnotate) return;
+      var fresh = {};
+      seqs.forEach(function (q) { fresh[q] = true; });
+      primerBindings(asPlasmid(it)).forEach(function (b) {
+        if (fresh[P.clean(b.primer.seq)] && b.hits.length) annotatePrimer(it, b);
+      });
+    }
+    plPrSel = {};
 
     if (plPrimerPicked.length) {
       var bySeq = {};
@@ -2850,6 +2920,7 @@
       });
       if (!add.length) { alert('Already attached to this plasmid.'); return; }
       it.primers = (it.primers || []).concat(add);
+      annotateNew(add.map(function (x) { return x.seq; }));
       plPrimerPicked = [];
       closeModal(); markPlDirty(); renderPlasmid();
       if (already) plNote = already + ' were already attached.';
@@ -2860,11 +2931,13 @@
     if (seq.length < 10) { alert('That is too short to be a primer.'); return; }
     if (have[seq]) { alert('That primer is already attached to this plasmid.'); return; }
     it.primers = (it.primers || []).concat([{ name: g('pm-name') || 'primer ' + ((it.primers || []).length + 1), seq: seq }]);
+    annotateNew([seq]);
     closeModal(); markPlDirty(); renderPlasmid();
   }
   function plDeletePrimer(i) {
     var it = rec(); if (!it) return;
     it.primers = (it.primers || []).filter(function (x, n) { return n !== i; });
+    plPrSel = {};
     markPlDirty(); renderPlasmid();
   }
   function plAnnotatePrimer(i) {
@@ -4122,6 +4195,10 @@
   window.plExportMenu = plExportMenu;
   window.plSidePick = plSidePick;
   window.plViewPick = plViewPick;
+  window.plPrPick = plPrPick;
+  window.plPrAll = plPrAll;
+  window.plPrAnnotateChosen = plPrAnnotateChosen;
+  window.plPrDetachChosen = plPrDetachChosen;
   window.plToolMenu = plToolMenu;
   window.plExport = plExport;
   window.exportPlasmidsCSV = exportPlasmidsCSV;
