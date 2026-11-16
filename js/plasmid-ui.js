@@ -401,24 +401,34 @@
     var len = p.seq.length, binds = primerBindings(p), out = [];
     p.features.forEach(function (f, fi) {
       if (f.type !== 'primer_bind' || f.strand === 0 || f.end <= f.start) return;   // across the origin stays a ribbon
-      var hit = null;
+      /* The attached primer this annotation is, if it still is one: the
+         same name, strand and 3' end. Where it lies is then taken from the
+         primer, not from the annotation — an annotation made before
+         mismatches were bridged covers only the 3' part. */
+      var hit = null, fwd = f.strand === 1;
       binds.forEach(function (b) {
         b.hits.forEach(function (h) {
-          if (h.start === f.start && h.end === f.end && h.strand === f.strand && (!hit || b.primer.name === f.name)) hit = h;
+          if (h.strand !== f.strand || (fwd ? h.end !== f.end : h.start !== f.start)) return;
+          if (!hit || b.primer.name === f.name) hit = h;
         });
       });
+      var a0 = hit ? hit.start : f.start, a1 = hit ? hit.end : f.end;
+      if (a1 <= a0) { a0 = f.start; a1 = f.end; hit = null; }
       // The tail, from the primer if it is still attached, else from the note
       // the annotation was given — which is what survives a GenBank file.
       var tail = P.clean(hit ? hit.tail : ((/tail not annealed:\s*([A-Za-z]+)/.exec(f.note || '') || [])[1] || ''));
-      var body = p.seq.slice(f.start, f.end), fwd = f.strand === 1;
-      var from = fwd ? Math.max(0, f.start - tail.length) : f.start;
-      var to = fwd ? f.end : Math.min(len, f.end + tail.length);
-      /* Left to right as it lies on the page. A forward primer reads 5'→3'
-         that way, tail first. A reverse one lies on the bottom strand, so it
-         reads 3'→5': the complement of the bases above it, then its tail. */
-      var shown = fwd ? tail.slice(tail.length - (f.start - from)) + body
-        : reverseStr(P.revcomp(body)) + reverseStr(tail).slice(0, to - f.end);
-      out.push({ feature: fi, name: f.name, from: from, to: to, a0: f.start, a1: f.end, dir: f.strand,
+      var from = fwd ? Math.max(0, a0 - tail.length) : a0;
+      var to = fwd ? a1 : Math.min(len, a1 + tail.length);
+      /* Left to right as it lies on the page: the primer's own bases, so a
+         mismatched one shows what the primer has there. A forward primer
+         reads 5'→3' that way, tail first. A reverse one lies on the bottom
+         strand, so it reads 3'→5': its bases backwards, then its tail. */
+      var own = hit ? hit.anneal : (fwd ? p.seq.slice(a0, a1) : P.revcomp(p.seq.slice(a0, a1)));
+      var shown = fwd ? tail.slice(tail.length - (a0 - from)) + own
+        : reverseStr(own) + reverseStr(tail).slice(0, to - a1);
+      var mm = {};
+      (hit ? hit.mismatches : []).forEach(function (pos) { mm[pos] = true; });
+      out.push({ feature: fi, name: f.name, from: from, to: to, a0: a0, a1: a1, dir: f.strand, mm: mm,
         shown: shown.toLowerCase() });
     });
     plGlyphs = out;
@@ -529,7 +539,21 @@
         'text-anchor': 'middle', 'dominant-baseline': 'central' }, d.shown.slice(a - d.from, b - d.from)));
     }
     letters(t0, t1, far);
-    letters(b0, b1, near);
+    /* A base that disagrees with the template is lifted out of the box, to
+       where the tail sits, and the bases either side of it stay down: the
+       primer is annealed on both sides of a mismatch, and only the mismatch
+       itself is not paired. */
+    var run = b0;
+    for (var pos = b0; pos <= b1; pos++) {
+      if (pos < b1 && !(d.mm && d.mm[pos])) continue;
+      letters(run, pos, near);
+      if (pos < b1) {
+        gEl.appendChild(svgEl('rect', { 'class': 'pl-primer-gap', x: x(pos), y: near - 1.5, width: cw, height: boxH + 3 }));
+        gEl.appendChild(svgEl('rect', { 'class': 'pl-primer-tail pl-primer-mm', x: x(pos), y: far, width: cw, height: boxH }));
+        letters(pos, pos + 1, far);
+      }
+      run = pos + 1;
+    }
     return gEl;
   }
   /* SeqViz only keeps the rows that are on screen, and makes new ones as the
@@ -2629,6 +2653,20 @@
       return { primer: pr, hits: hits };
     });
   }
+  // The annealed stretch, with the bases that disagree with the template marked.
+  function annealHtml(h) {
+    var off = h.tail.length, miss = {};
+    (h.mmIndex || []).forEach(function (i) { miss[i - off] = true; });
+    return h.anneal.split('').map(function (c, i) {
+      return miss[i] ? '<span class="pcr-tailtext pcr-mm" title="Does not match the template">' + esc(c) + '</span>' : esc(c);
+    }).join('');
+  }
+  function matchWords(h) {
+    var mm = (h.mmIndex || []).length, bits = [];
+    if (h.tail) bits.push(h.tail.length + ' nt tail');
+    if (mm) bits.push(mm + ' mismatch' + (mm === 1 ? '' : 'es'));
+    return bits.join(', ') || 'full match';
+  }
   function primersHtml(p) {
     var binds = primerBindings(p);
     var rows = binds.map(function (b, i) {
@@ -2643,11 +2681,11 @@
       return '<tr><td><input type="checkbox" class="pl-pr-pick" value="' + i + '"' + (plPrSel[i] ? ' checked' : '') +
           ' onchange="plPrPick(' + i + ', this.checked)" aria-label="Choose ' + esc(b.primer.name) + '"></td><td>' + esc(b.primer.name) + '</td>' +
         '<td><code>' + (h && h.tail ? '<span class="pcr-tailtext">' + esc(h.tail) + '</span>' : '') +
-          esc(h ? h.anneal : b.primer.seq) + '</code></td>' +
+          (h ? annealHtml(h) : esc(b.primer.seq)) + '</code></td>' +
         '<td class="ln-nowrap">' + b.primer.seq.length + ' nt</td>' +
         '<td class="ln-nowrap">' + (h ? h.tm.toFixed(1) + ' °C' : '—') + '</td>' +
         '<td class="ln-nowrap">' + where + '</td>' +
-        '<td class="ln-nowrap">' + (h && h.tail ? h.tail.length + ' nt tail' : h ? 'full match' : '—') + '</td>' +
+        '<td class="ln-nowrap">' + (h ? matchWords(h) : '—') + '</td>' +
         '<td class="ln-row-actions">' + annotateButton(b, i) +
         '<button class="ln-icon-btn danger" onclick="plDeletePrimer(' + i + ')">✕</button></td></tr>';
     }).join('');
@@ -2662,7 +2700,7 @@
           '<button class="ln-icon-btn danger" id="pl-pr-detach" onclick="plPrDetachChosen()">Detach chosen</button></div>' : '') +
       (binds.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
         '<th><input type="checkbox" id="pl-pr-all" title="Choose every primer" onchange="plPrAll(this.checked)"' +
-          (binds.length && binds.every(function (b, i) { return plPrSel[i]; }) ? ' checked' : '') + '></th><th>Name</th><th>Sequence (tail shown pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+          (binds.length && binds.every(function (b, i) { return plPrSel[i]; }) ? ' checked' : '') + '></th><th>Name</th><th>Sequence (tail and mismatches pale)</th><th>Length</th><th>Tm</th><th>Binds</th><th>5′ end</th><th class="ln-row-actions">Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="ln-empty" style="padding:1rem 0;">No primers attached. Attach a pair and the expected PCR can be drawn.</div>') + '</div>';
   }
   /* Several at once. Annotating used to be one press per primer, so putting
@@ -2724,14 +2762,19 @@
     var h = b.hits[0];
     if (!h) return null;
     return P.normFeature({ name: b.primer.name, type: 'primer_bind', start: h.start, end: h.end, strand: h.strand,
-      note: h.tail ? h.tail.length + ' base 5′ tail not annealed: ' + h.tail : 'Full match' }, len);
+      note: (h.tail ? h.tail.length + ' base 5′ tail not annealed: ' + h.tail : 'Full match') +
+        ((h.mmIndex || []).length ? '; ' + h.mmIndex.length + ' mismatch' + (h.mmIndex.length === 1 ? '' : 'es') + ' with the template' : '') }, len);
   }
   // Which of the record's features are this primer, where it binds.
+  /* The same name, strand and 3' end. Not the same 5' end: an annotation
+     made before mismatches were bridged stops at the mismatch, and it is
+     still this primer — it must not be annotated a second time beside it. */
   function primerAnnotations(it, f) {
     var len = P.clean(it.seq || '').length, out = [];
     (it.features || []).forEach(function (raw, n) {
       var x = P.normFeature(raw, len);
-      if (x && x.type === 'primer_bind' && x.name === f.name && x.start === f.start && x.end === f.end && x.strand === f.strand) out.push(n);
+      if (x && x.type === 'primer_bind' && x.name === f.name && x.strand === f.strand &&
+        (f.strand === -1 ? x.start === f.start : x.end === f.end)) out.push(n);
     });
     return out;
   }
@@ -2948,15 +2991,25 @@
   }
   // Puts the primer on the map if it is not there, and leaves exactly one.
   function annotatePrimer(it, b) {
-    var f = primerFeature(b, P.clean(it.seq || '').length);
+    var len = P.clean(it.seq || '').length;
+    var f = primerFeature(b, len);
     if (!f) return false;
     var have = primerAnnotations(it, f);
     if (!have.length) { it.features = (it.features || []).concat([f]); return true; }
-    if (have.length === 1) return false;
-    var extra = {};
-    have.slice(1).forEach(function (n) { extra[n] = true; });
-    it.features = it.features.filter(function (x, n) { return !extra[n]; });
-    return true;
+    var changed = false;
+    // The one that is kept is brought up to date with where the primer lies now.
+    var old = P.normFeature(it.features[have[0]], len);
+    if (!old || old.start !== f.start || old.end !== f.end || (old.note || '') !== (f.note || '')) {
+      it.features[have[0]] = Object.assign({}, it.features[have[0]], { start: f.start, end: f.end, note: f.note });
+      changed = true;
+    }
+    if (have.length > 1) {
+      var extra = {};
+      have.slice(1).forEach(function (n) { extra[n] = true; });
+      it.features = it.features.filter(function (x, n) { return !extra[n]; });
+      changed = true;
+    }
+    return changed;
   }
 
   /* ---- a new primer, from the bases that are selected ----

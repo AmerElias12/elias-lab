@@ -1089,10 +1089,29 @@
   }
 
   // ---------- primers ----------
-  /* Where a primer sits on the plasmid. Only the 3' part has to match: the
-     annealed stretch is grown from the 3' end until the template disagrees,
-     and whatever is left at the 5' end is the tail, which hangs free in the
-     first round and is then carried into the product. */
+  /* Where a primer sits on the plasmid.
+
+     The 3' end has to match exactly — that is the end the polymerase extends
+     from — so the search starts there and grows the match back towards the
+     5' end. It used to stop at the first base that disagreed and call
+     everything before it a tail. But a primer that changes one codon is
+     complementary on both sides of the change: the bases upstream of the
+     mismatch anneal just as well as the ones downstream. So the match now
+     carries on across a mismatch whenever what lies beyond it pairs again,
+     and only what really hangs free is the tail.
+
+     "Pairs again" is scored: a match counts +1 and a mismatch −3, and the
+     primer is taken to be annealed as far towards its 5' end as that total
+     keeps improving. One mismatch therefore has to be followed by at least
+     four matching bases to be bridged, which a restriction site or an
+     overlap added to the 5' end practically never is.
+
+       anneal      the stretch lying on the template, mismatches included
+       tail        the 5' bases that hang free
+       match3      how many bases at the 3' end match with no mismatch
+       mismatches  where on the template the disagreeing bases sit
+       mmIndex     the same, as positions in the primer */
+  var PRIMER_MATCH = 1, PRIMER_MISMATCH = -3;
   function bindPrimers(p, primerSeq, opts) {
     opts = opts || {};
     var seq = clean(p.seq || ''), len = seq.length;
@@ -1109,24 +1128,40 @@
       while ((at = work.indexOf(seed, from)) >= 0) {
         from = at + 1;
         var end3 = at + minAnneal;              // where the primer's 3' end lands
-        var anneal = minAnneal;
-        while (anneal < pr.length) {            // grow back towards the 5' end
-          var tp = end3 - anneal - 1, pp = pr.length - anneal - 1;
+        var exact = minAnneal;
+        while (exact < pr.length) {             // grow back towards the 5' end
+          var tp = end3 - exact - 1, pp = pr.length - exact - 1;
           if (tp < 0 || pr[pp] !== work[tp]) break;
-          anneal++;
+          exact++;
         }
+        // On across mismatches, for as long as it keeps paying.
+        var anneal = exact, score = 0, best = 0, n = exact, missAt = [], kept = 0;
+        while (n < pr.length) {
+          var tq = end3 - n - 1, pq = pr.length - n - 1;
+          if (tq < 0) break;
+          if (pr[pq] === work[tq]) score += PRIMER_MATCH;
+          else { score += PRIMER_MISMATCH; missAt.push(pq); }
+          n++;
+          if (score > best) { best = score; anneal = n; kept = missAt.length; }
+        }
+        var mmIndex = missAt.slice(0, kept).sort(function (x, y) { return x - y; });
         var sw = end3 - anneal;
         // Back onto the forward strand's numbering.
         var a = strand === 1 ? sw : work.length - end3;
         var b = strand === 1 ? end3 : work.length - sw;
         if (a >= len) continue;
-        var key = strand + ':' + (a % len);
+        var key = strand + ':' + (a % len) + ':' + anneal;
         if (seen[key]) continue;
         seen[key] = true;
+        var mismatches = mmIndex.map(function (pi) {
+          var w = end3 - (pr.length - pi);      // where that base lies on the strand searched
+          return (strand === 1 ? w : work.length - 1 - w) % len;
+        });
         out.push({ start: a % len, end: b > len ? b % len || len : b, strand: strand,
           anneal: pr.slice(pr.length - anneal), tail: pr.slice(0, pr.length - anneal),
+          match3: exact, mismatches: mismatches, mmIndex: mmIndex,
           seq: pr, tm: tm(pr.slice(pr.length - anneal)), gc: gc(pr),
-          perfect: anneal === pr.length });
+          perfect: anneal === pr.length && !mmIndex.length });
       }
     });
     return out.sort(function (x, y) { return y.anneal.length - x.anneal.length || x.start - y.start; });
@@ -1147,6 +1182,12 @@
     var between = seq.slice(fwd.end, Math.max(fwd.end, rev.start));
     var body = circular && rev.end < fwd.end ? seq.slice(fwd.start) + seq.slice(0, rev.end)
       : seq.slice(fwd.start, rev.end);
+    /* The product is made of the primers, not of the template under them:
+       where a primer disagrees with the template, the product has what the
+       primer says. That is the whole point of a mutagenic primer. */
+    if (body.length >= fwd.anneal.length + rev.anneal.length) {
+      body = fwd.anneal + body.slice(fwd.anneal.length, body.length - rev.anneal.length) + revcomp(rev.anneal);
+    }
     var product = fwd.tail + body + revcomp(rev.tail);
 
     /* The product's own annotation. The body is a window onto the template,

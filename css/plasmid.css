@@ -435,3 +435,7 @@
 .pl-pr-bulk span{margin-right:auto;}
 .pl-pm-annotate{display:flex;align-items:center;gap:.4rem;margin:.7rem 0 0;}
 @media print{.pl-pr-bulk,.pl-pr-pick,#pl-pr-all{display:none !important;}}
+
+/* ---- a base that does not match, lifted out of the primer ---- */
+.pl-primer-gap{fill:#fff;stroke:none;}
+.pcr-mm{text-decoration:underline;}
