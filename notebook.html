@@ -5,13 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elias Lab — Lab Notebook</title>
     <meta name="robots" content="noindex">
+    <!-- The notebook as a phone app: installable from the browser, no store. -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0c4a44">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Lab Notebook">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="assets/app/apple-touch-icon.png">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' rx='12' fill='%23072e2a'/%3E%3Ccircle cx='30' cy='30' r='9' fill='none' stroke='%231fd197' stroke-width='3'/%3E%3Ccircle cx='30' cy='30' r='3.5' fill='%231fd197'/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=36">
+    <link rel="stylesheet" href="css/notebook.css?v=37">
     <link rel="stylesheet" href="css/plasmid.css?v=41">
 </head>
 <body>
@@ -51,6 +59,12 @@
   <!-- APP -->
   <div id="ln-app">
     <div class="ln-shell">
+      <!-- On a phone the menu is a drawer; this bar opens it. -->
+      <div class="ln-mobilebar">
+        <button type="button" class="ln-mobilebar-btn" onclick="lnDrawer(true)" aria-label="Open the menu">☰</button>
+        <span class="ln-mobilebar-title" id="ln-mobilebar-title">Lab Notebook</span>
+      </div>
+      <div class="ln-drawer-bg" onclick="lnDrawer(false)"></div>
       <div class="ln-sidebar">
         <div class="ln-sidebar-header"><div class="ln-sidebar-brand"><h2>🧬 Lab Notebook</h2><p>Elias Lab</p></div><button type="button" class="ln-nav-toggle" id="ln-nav-toggle" onclick="lnToggleNav()" title="Collapse the menu" aria-label="Collapse the menu" aria-expanded="true">«</button></div>
         <div class="ln-nav-section">Overview</div>
@@ -84,6 +98,7 @@
         <div class="ln-sidebar-footer">
           <div class="ln-user-info">Logged in as</div>
           <div class="ln-user-name" id="ln-sidebar-name">—</div>
+          <button class="ln-logout-btn" id="ln-install-btn" onclick="lnInstall()">📱 Install the app</button>
           <button class="ln-logout-btn" onclick="lnLogout()">Sign Out</button>
           <a class="ln-logout-btn" href="index.html" style="margin-top:.35rem;background:rgba(255,255,255,.05);display:block;text-align:center;text-decoration:none;line-height:1.4;">← Website</a>
         </div>
@@ -216,7 +231,7 @@
 
         <div id="ln-admin" class="ln-section">
           <div class="ln-section-header">
-            <div><h2>User Management</h2><p>Approve, manage and remove lab members</p></div>
+            <div><h2>User Management</h2><p>Approve, manage and remove lab members, and keep their birthdays</p></div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
               <button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button>
               <button class="ln-add-btn" id="ln-import-btn" style="display:none;background:#1d5fd4;" onclick="runImport()">⇪ Import local data</button>
@@ -224,7 +239,7 @@
             </div>
           </div>
           <div class="ln-user-table-wrap">
-            <table class="ln-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Added</th><th>Actions</th></tr></thead>
+            <table class="ln-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Birthday</th><th>Added</th><th>Actions</th></tr></thead>
             <tbody id="ln-users-tbody"></tbody></table>
           </div>
         </div>
@@ -247,7 +262,7 @@
   <script src="js/mentions.js?v=4"></script>
   <script src="js/plasmid-ui.js?v=46"></script>
   <script src="js/config.js?v=20"></script>
-  <script src="js/data.js?v=24"></script>
-  <script src="js/notebook.js?v=47"></script>
+  <script src="js/data.js?v=25"></script>
+  <script src="js/notebook.js?v=48"></script>
 </body>
 </html>

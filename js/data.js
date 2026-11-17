@@ -30,8 +30,11 @@
      own, because they are not. */
   // 'enzymesets' holds named groups of restriction enzymes somebody picked
   // once and wants back — a name and a list of enzyme names, nothing else.
+  // 'birthdays' holds a day and a month per lab member — no year — so the
+  // notebook can say happy birthday. Kept here rather than on the member's
+  // profile so that no change to the database was needed to add it.
   var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes',
-    'requests', 'grants', 'expenses', 'enzymesets'];
+    'requests', 'grants', 'expenses', 'enzymesets', 'birthdays'];
 
   /* An inventory saved before a category existed has no array for it, so
      adding the first item of a new category would throw. Fill in whatever is

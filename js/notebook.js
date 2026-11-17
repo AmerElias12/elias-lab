@@ -124,7 +124,162 @@ function lnShowApp(user) {
   if (window.LabTabs) LabTabs.boot();
   lnShow('dashboard');
   if (/^#(entry|plasmid)\//.test(target)) { history.replaceState(null, '', target); routeHash(); }
+  lnBirthdayGreeting(user);
 }
+
+// ── BIRTHDAYS ──────────────────────────────────────────────
+/* A day and a month for each member, set by the PI in User Management. No
+   year: the notebook needs to know when to say happy birthday, not how old
+   anybody is, and what is kept is readable by every member.
+
+   Somebody born on 29 February is celebrated on the 28th in a year that
+   has no 29th, rather than once every four years. */
+var LN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function lnBirthdays() { return (getInventory().birthdays || []).filter(function (b) { return b && b.userId && b.month && b.day; }); }
+function lnBirthdayOf(userId) { return lnBirthdays().filter(function (b) { return b.userId === userId; })[0] || null; }
+function lnBirthdayText(b) { return b ? b.day + ' ' + LN_MONTHS[b.month - 1] : ''; }
+function lnBirthdaysOn(date) {
+  var m = date.getMonth() + 1, d = date.getDate(), y = date.getFullYear();
+  var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  var users = {};
+  getUsers().forEach(function (u) { users[u.id] = u; });
+  return lnBirthdays().filter(function (b) {
+    if (users[b.userId] && users[b.userId].status !== 'approved') return false;
+    return (+b.month === m && +b.day === d) || (!leap && m === 2 && d === 28 && +b.month === 2 && +b.day === 29);
+  }).map(function (b) { return { userId: b.userId, name: (users[b.userId] && users[b.userId].name) || b.name || 'a lab member' }; });
+}
+function lnNameList(names) {
+  if (names.length < 2) return names[0] || '';
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
+/* Said once when the notebook opens, on the day. Reloading the page in the
+   same tab does not say it again; signing in again does. */
+function lnBirthdayGreeting(user) {
+  var who = lnBirthdaysOn(new Date());
+  var old = document.getElementById('ln-bday');
+  if (old) old.remove();
+  if (!who.length) return;
+  var names = who.map(function (w) { return w.name; });
+  var mine = who.some(function (w) { return w.userId === user.id; });
+  var welcome = document.getElementById('ln-welcome-msg');
+  if (welcome) welcome.textContent += ' \ud83c\udf82 Today is ' + (mine && who.length === 1 ? 'your' : lnNameList(names) + '\u2019s') + ' birthday.';
+  var key = 'elias_bday_seen', stamp = new Date().toDateString() + '|' + user.id;
+  try { if (sessionStorage.getItem(key) === stamp) return; sessionStorage.setItem(key, stamp); } catch (e) { /* blocked: say it anyway */ }
+  var box = document.createElement('div');
+  box.id = 'ln-bday';
+  box.className = 'ln-bday';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Happy birthday');
+  var others = who.filter(function (w) { return w.userId !== user.id; }).map(function (w) { return w.name; });
+  box.innerHTML = '<div class="ln-bday-card">' +
+    '<div class="ln-bday-balloons" aria-hidden="true"><span>\ud83c\udf88</span><span>\ud83c\udf89</span><span>\ud83c\udf88</span><span>\ud83c\udf8a</span><span>\ud83c\udf88</span></div>' +
+    '<div class="ln-bday-cake" aria-hidden="true">\ud83c\udf82</div>' +
+    '<h2>Happy Birthday, ' + esc(lnNameList(names)) + '!</h2>' +
+    '<p>' + (mine
+      ? 'Wishing you a wonderful day and a great year ahead, from everyone at the Elias Lab.' +
+        (others.length ? ' You share today with ' + esc(lnNameList(others)) + '.' : '')
+      : 'Today is ' + esc(lnNameList(names)) + '\u2019s birthday. Don\u2019t forget to wish them a happy one!') + '</p>' +
+    '<button type="button" class="ln-add-btn" id="ln-bday-close">\ud83c\udf89 Lovely</button></div>';
+  function close() { box.remove(); }
+  box.addEventListener('click', function (e) { if (e.target === box || e.target.id === 'ln-bday-close') close(); });
+  document.body.appendChild(box);
+  var btn = document.getElementById('ln-bday-close');
+  if (btn) btn.focus();
+}
+function openBirthdayModal(userId) {
+  if (!DB.isAdmin()) return;
+  var u = getUsers().filter(function (x) { return x.id === userId; })[0];
+  if (!u) return;
+  var b = lnBirthdayOf(userId) || {};
+  function opts(n, labelOf, chosen) {
+    var out = '<option value="">\u2014</option>';
+    for (var i = 1; i <= n; i++) out += '<option value="' + i + '"' + (+chosen === i ? ' selected' : '') + '>' + labelOf(i) + '</option>';
+    return out;
+  }
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">\u00d7</button><h3>Birthday \u2014 ' + esc(u.name) + '</h3>' +
+    '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>Day</label><select id="bd-day">' + opts(31, function (i) { return i; }, b.day) + '</select></div>' +
+      '<div class="ln-form-row"><label>Month</label><select id="bd-month">' + opts(12, function (i) { return LN_MONTHS[i - 1]; }, b.month) + '</select></div>' +
+    '</div>' +
+    '<div class="hint">Only the day and the month are kept, not the year. On the day, every member sees a happy-birthday message when they open the notebook.</div>' +
+    '<div class="ln-modal-actions">' +
+      (b.id ? '<button class="ln-modal-cancel" onclick="saveBirthday(\'' + userId + '\', true)">Remove birthday</button>' : '') +
+      '<button class="ln-modal-cancel" onclick="closeModal()">Cancel</button>' +
+      '<button class="ln-modal-save" onclick="saveBirthday(\'' + userId + '\')">Save</button></div>';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+async function saveBirthday(userId, remove) {
+  if (!DB.isAdmin()) return;
+  var u = getUsers().filter(function (x) { return x.id === userId; })[0];
+  var had = lnBirthdayOf(userId);
+  try {
+    if (remove) { if (had) await DB.removeInventory('birthdays', had.id); }
+    else {
+      var day = +document.getElementById('bd-day').value, month = +document.getElementById('bd-month').value;
+      if (!day || !month) { alert('Choose both a day and a month.'); return; }
+      if (day > [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]) { alert(LN_MONTHS[month - 1] + ' has no day ' + day + '.'); return; }
+      await DB.upsertInventory('birthdays', { id: had ? had.id : undefined, userId: userId, name: u ? u.name : '', month: month, day: day });
+    }
+  } catch (e) { alert('Could not save the birthday: ' + e.message); return; }
+  closeModal(); renderAdmin();
+}
+
+// ── THE NOTEBOOK AS A PHONE APP ────────────────────────────
+/* On a phone the menu is a drawer that slides over the page, opened from
+   the bar at the top and closed by choosing something or tapping outside. */
+function lnDrawer(open) {
+  var shell = document.querySelector('.ln-shell');
+  if (shell) shell.classList.toggle('nav-open', !!open);
+}
+/* Installing. Chrome and Edge hand the page an event it can use to offer
+   the install itself; Safari on an iPhone has no such thing, and the only
+   way is the Share menu, so there the button explains it. Inside the Wix
+   page nothing can be installed at all — it has to be the notebook's own
+   address — so that is said too, with the address. */
+var lnInstallEvent = null;
+window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); lnInstallEvent = e; });
+window.addEventListener('appinstalled', function () { lnInstallEvent = null; lnInstallButton(); });
+function lnIsInstalled() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+function lnInstallButton() {
+  var btn = document.getElementById('ln-install-btn');
+  if (btn) btn.style.display = lnIsInstalled() ? 'none' : '';
+}
+function lnInstall() {
+  lnDrawer(false);
+  if (lnInstallEvent) {
+    var ev = lnInstallEvent; lnInstallEvent = null;
+    ev.prompt();
+    return;
+  }
+  var here = location.origin + location.pathname;
+  var framed = false;
+  try { framed = window.self !== window.top; } catch (e) { framed = true; }
+  document.getElementById('ln-modal-content').innerHTML =
+    '<button class="ln-close-btn" onclick="closeModal()">\u00d7</button><h3>\ud83d\udcf1 Install the Lab Notebook on your phone</h3>' +
+    (framed ? '<p class="ln-install-warn">You are looking at the notebook inside another page. Open its own address first, then install from there:</p>' : '<p>Open this address in your phone\u2019s browser:</p>') +
+    '<input class="ln-install-url" readonly value="' + esc(here) + '" onfocus="this.select()">' +
+    '<h4>iPhone or iPad (Safari)</h4><ol><li>Tap the <strong>Share</strong> button (the square with an arrow).</li>' +
+      '<li>Choose <strong>Add to Home Screen</strong>.</li><li>Tap <strong>Add</strong>.</li></ol>' +
+    '<h4>Android (Chrome)</h4><ol><li>Tap the <strong>\u22ee</strong> menu at the top right.</li>' +
+      '<li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li><li>Tap <strong>Install</strong>.</li></ol>' +
+    '<h4>Computer (Chrome or Edge)</h4><ol><li>Click the install icon at the right end of the address bar.</li></ol>' +
+    '<div class="hint">The app opens full screen from its own icon, and signs in the same way as the website. It needs a connection to load the lab\u2019s data.</div>' +
+    '<div class="ln-modal-actions"><button class="ln-modal-save" onclick="closeModal()">Done</button></div>';
+  document.getElementById('ln-modal-content').className = 'ln-modal ln-install';
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+(function () {
+  function go() { lnInstallButton(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* not allowed here: the site works without it */ });
+    });
+  }
+})();
 
 // ── SHARED-MODE REFRESH ────────────────────────────────────
 // Pull other members' edits whenever the tab comes back into view, and every
@@ -183,6 +338,7 @@ function lnShow(section) {
   // keyed on the section alone they would all share one tab.
   if (section !== 'entry' && section !== 'plasmid' && window.LabTabs) LabTabs.noteShow(section);
   lnCurrentSection = section;
+  lnDrawer(false);   // on a phone, choosing something puts the menu away
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
   var sec = document.getElementById('ln-' + section); if (sec) sec.classList.add('active');
@@ -3247,9 +3403,12 @@ function renderAdmin() {
         (DB.mode === 'local' ? '<button class="ln-icon-btn" onclick="resetUserPw(\'' + u.id + '\')">🔑 Reset PW</button>' : '') +
         '<button class="ln-icon-btn danger" onclick="deleteUser(\'' + u.id + '\')">✕ Remove</button>')
       : '<span style="color:#aaa;font-size:12px;">PI Account</span>';
+    var bday = lnBirthdayOf(u.id);
     return '<tr><td><strong>' + esc(u.name) + '</strong></td><td>' + esc(u.email) + '</td>' +
       '<td><span class="ln-badge ' + (u.role === 'admin' ? 'orange' : 'blue') + '">' + esc(u.role) + '</span></td>' +
       '<td><span class="' + (u.status === 'approved' ? 'ln-approved-badge' : 'ln-pending-badge') + '">' + esc(u.status) + '</span></td>' +
+      '<td class="ln-nowrap">' + (bday ? '\ud83c\udf82 ' + esc(lnBirthdayText(bday)) + ' ' : '') +
+        '<button class="ln-icon-btn" onclick="openBirthdayModal(\'' + u.id + '\')">' + (bday ? '\u270e' : '+ Add') + '</button></td>' +
       '<td>' + esc(u.added || '—') + '</td><td style="display:flex;gap:.4rem;flex-wrap:wrap;">' + actions + '</td></tr>';
   }).join('');
 }
