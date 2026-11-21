@@ -4049,6 +4049,40 @@ function categoriesHtml() {
    no grants, rather than that this is not theirs to look at. */
 function financesAllowed() { return DB.isAdmin(); }
 
+/* The order of the expense list, chosen by clicking a column heading: once
+   to order by it, again to turn it round. Newest first until somebody
+   chooses otherwise, and whatever was chosen is kept in this browser. */
+var finSort = { key: 'date', dir: -1 };
+try { var finSortKept = JSON.parse(localStorage.getItem('elias_fin_sort') || 'null'); if (finSortKept && finSortKept.key) finSort = finSortKept; } catch (e) { /* blocked */ }
+function finSortBy(key) {
+  // Dates and amounts are most often wanted biggest first; words A to Z.
+  if (finSort.key === key) finSort.dir = -finSort.dir;
+  else finSort = { key: key, dir: key === 'date' || key === 'amount' ? -1 : 1 };
+  try { localStorage.setItem('elias_fin_sort', JSON.stringify(finSort)); } catch (e) { /* blocked */ }
+  renderFinances();
+}
+function sortExpenses(list, byId) {
+  function val(e) {
+    switch (finSort.key) {
+      case 'amount': return amount(e.cost);
+      case 'grant': return byId[e.grant] ? (byId[e.grant].name || '') : '';
+      case 'category': return String(e.category || '');
+      case 'name': return String(e.name || '');
+      case 'addedBy': return String(e.addedBy || '');
+      default: return String(e.date || '');
+    }
+  }
+  return list.slice().sort(function (a, b) {
+    var x = val(a), y = val(b), c;
+    // Blank goes last whichever way round, so it never hides the real ones.
+    if (x === '' && y !== '') return 1;
+    if (y === '' && x !== '') return -1;
+    c = typeof x === 'number' ? x - y : x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    // Ties fall back to newest first, so the order is the same every time.
+    return c * finSort.dir || String(b.date || '').localeCompare(String(a.date || ''));
+  });
+}
+
 function renderFinances() {
   var el = document.getElementById('ln-finances-body');
   if (!el) return;
@@ -4088,11 +4122,15 @@ function renderFinances() {
       '</div>';
   }).join('') : '<div class="ln-empty">No grants yet. Add one, then record expenses against it.</div>';
 
-  var exp = expenses().slice().sort(function (a, b) {
-    return String(b.date || '').localeCompare(String(a.date || ''));
-  });
   var byId = {};
   grants().forEach(function (gr) { byId[gr.id] = gr; });
+  var exp = sortExpenses(expenses(), byId);
+  function th(key, label, cls) {
+    var on = finSort.key === key;
+    return '<th' + (cls ? ' class="' + cls + '"' : '') + ' aria-sort="' + (on ? (finSort.dir > 0 ? 'ascending' : 'descending') : 'none') + '">' +
+      '<button type="button" class="ln-sort-btn' + (on ? ' on' : '') + '" onclick="finSortBy(\'' + key + '\')" title="Order by ' + label.toLowerCase() + '">' +
+      label + '<span class="ln-sort-arrow">' + (on ? (finSort.dir > 0 ? '\u25b2' : '\u25bc') : '\u21c5') + '</span></button></th>';
+  }
 
   el.innerHTML =
     '<div class="ln-fin-cards">' + cards + '</div>' +
@@ -4102,7 +4140,8 @@ function renderFinances() {
     categoriesHtml() +
     '<div class="ln-form-section">Expenses</div>' +
     (exp.length ? '<div style="overflow-x:auto;"><table class="ln-table"><thead><tr>' +
-      '<th>Date</th><th>What</th><th>Grant</th><th>Category</th><th class="ln-nowrap">Amount</th><th>Recorded by</th><th class="ln-row-actions">Actions</th>' +
+      th('date', 'Date') + th('name', 'What') + th('grant', 'Grant') + th('category', 'Category') +
+      th('amount', 'Amount', 'ln-nowrap') + th('addedBy', 'Recorded by') + '<th class="ln-row-actions">Actions</th>' +
       '</tr></thead><tbody>' + exp.map(function (e) {
         var gr = byId[e.grant];
         return '<tr data-item-id="' + esc(e.id || '') + '"><td class="ln-nowrap">' + esc(e.date || '—') + '</td>' +
@@ -4154,9 +4193,39 @@ function grantBudgetTotal() {
       : ' · the whole award');
 }
 
+/* What has been charged to this grant under each heading, from the expenses
+   already recorded. Kept beside each allowance in the grant form so the
+   allowance and what is left of it are read together. */
+function grantSpentByCat(id) {
+  var out = {};
+  if (!id) return out;
+  expenses().forEach(function (e) {
+    if (e.grant !== id) return;
+    var c = expenseCat(e.category);
+    if (c) out[c.key] = (out[c.key] || 0) + amount(e.cost);
+  });
+  return out;
+}
+// The line beside one heading: what is spent, and what is left of what was typed.
+function grantLeftHtml(key, spent, capText, cur) {
+  var capped = String(capText == null ? '' : capText).trim() !== '';
+  var cap = capped ? amount(capText) : 0, left = cap - spent;
+  if (!capped) return spent ? esc(cur) + money(spent) + ' spent' : '';
+  return '<span class="' + (left < 0 ? 'over' : 'ok') + '">' +
+    (left < 0 ? 'over by ' + esc(cur) + money(-left) : esc(cur) + money(left) + ' left') + '</span>' +
+    '<em>' + esc(cur) + money(spent) + ' spent</em>';
+}
+function grantBudgetLeft(key) {
+  var el = document.getElementById('m-gl-' + key), input = document.getElementById('m-gb-' + key);
+  if (!el || !input) return;
+  var cur = (document.getElementById('m-gcur') || {}).value || '\u20aa';
+  el.innerHTML = grantLeftHtml(key, +el.getAttribute('data-spent') || 0, input.value, cur);
+}
+
 function openGrantModal(id) {
   if (!financesAllowed()) { alert('Lab finances are the PI\u2019s to edit.'); return; }
   var gr = id ? grants().filter(function (x) { return x.id === id; })[0] : null;
+  var spentBy = grantSpentByCat(id), gcur = (gr && gr.currency) || '\u20aa';
   document.getElementById('ln-modal-content').innerHTML =
     '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>' + (gr ? 'Edit grant' : 'Add grant') + '</h3>' +
     '<div class="ln-form-row"><label>Grant name</label><input id="m-gname" value="' + esc(gr && gr.name || '') + '" placeholder="e.g. ISF 1234/26"></div>' +
@@ -4165,7 +4234,7 @@ function openGrantModal(id) {
       '<div class="ln-form-row"><label>Reference</label><input id="m-gref" value="' + esc(gr && gr.ref || '') + '" placeholder="grant number"></div>' +
     '</div><div class="ln-form-grid">' +
       '<div class="ln-form-row"><label>Amount awarded</label><input id="m-gawarded" value="' + esc(gr && gr.awarded || '') + '" placeholder="e.g. 750000"></div>' +
-      '<div class="ln-form-row"><label>Currency</label><select id="m-gcur">' +
+      '<div class="ln-form-row"><label>Currency</label><select id="m-gcur" onchange="grantBudgetTotal();EXPENSE_CATS.forEach(function (c) { grantBudgetLeft(c.key); })">' +
         MONEY_CURRENCIES.map(function (c) { return '<option value="' + c + '"' + ((gr && gr.currency || '₪') === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') +
       '</select></div>' +
     '</div><div class="ln-form-grid">' +
@@ -4178,12 +4247,16 @@ function openGrantModal(id) {
        zero — which would read as "nothing may be spent here". */
     '<div class="ln-form-section">Budget by category</div>' +
     '<div class="hint">What this grant allows under each heading. Leave one blank if it is not capped. ' +
-      'The Finances page then shows what is left under each.</div>' +
+      'Beside each is what is left of it after the expenses recorded so far.</div>' +
     '<div class="ln-gbudget">' +
+      (id ? '<div class="ln-gbudget-row ln-gbudget-head"><span></span><span>Allowed</span><span>Remaining</span></div>' : '') +
       EXPENSE_CATS.map(function (c) {
-        return '<div class="ln-gbudget-row"><label dir="auto" for="m-gb-' + c.key + '">' + esc(c.he) + '</label>' +
-          '<input id="m-gb-' + c.key + '" inputmode="decimal" oninput="grantBudgetTotal()" value="' +
-          esc(grantBudget(gr)[c.key] || '') + '" placeholder="—"></div>';
+        var cap = grantBudget(gr)[c.key] || '', spent = spentBy[c.key] || 0;
+        return '<div class="ln-gbudget-row' + (id ? '' : ' new') + '"><label dir="auto" for="m-gb-' + c.key + '">' + esc(c.he) + '</label>' +
+          '<input id="m-gb-' + c.key + '" inputmode="decimal" oninput="grantBudgetTotal();grantBudgetLeft(\'' + c.key + '\')" value="' +
+          esc(cap) + '" placeholder="—">' +
+          (id ? '<div class="ln-gbudget-left" id="m-gl-' + c.key + '" data-spent="' + spent + '">' + grantLeftHtml(c.key, spent, cap, gcur) + '</div>' : '') +
+          '</div>';
       }).join('') +
     '</div><div id="ln-gbudget-sum" class="hint"></div>' +
     '<div class="ln-form-row"><label>Notes</label><textarea id="m-gnotes" rows="2">' + esc(gr && gr.notes || '') + '</textarea></div>' +

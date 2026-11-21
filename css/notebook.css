@@ -718,3 +718,22 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
   .ln-table{font-size:13px;}
 }
 @media print{.ln-mobilebar,.ln-drawer-bg{display:none !important;}}
+
+
+/* ---- the expense list, ordered by any column ---- */
+.ln-sort-btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;font:inherit;text-transform:inherit;letter-spacing:inherit;color:inherit;}
+.ln-sort-btn:hover,.ln-sort-btn.on{color:#0c4a44;}
+.ln-sort-btn:focus-visible{outline:2px solid #10b07e;outline-offset:3px;border-radius:3px;}
+.ln-sort-arrow{font-size:10px;opacity:.45;}
+.ln-sort-btn.on .ln-sort-arrow{opacity:1;}
+@media print{.ln-sort-arrow{display:none;}}
+
+/* ---- what is left beside each heading's allowance ---- */
+.ln-gbudget-row:not(.new){grid-template-columns:1fr 130px 170px;}
+.ln-gbudget-head span{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7a877f;text-align:right;}
+.ln-gbudget-head span:last-child{text-align:left;}
+.ln-gbudget-left{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.25;}
+.ln-gbudget-left .ok{color:#0c6b4e;font-weight:600;}
+.ln-gbudget-left .over{color:#8f2a2a;font-weight:600;}
+.ln-gbudget-left em{display:block;font-style:normal;color:#7a877f;font-size:11px;}
+@media(max-width:560px){.ln-gbudget-row:not(.new){grid-template-columns:1fr 100px;}.ln-gbudget-left{grid-column:2;}.ln-gbudget-head span:last-child{display:none;}}
