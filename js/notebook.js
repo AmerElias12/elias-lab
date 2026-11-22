@@ -1339,28 +1339,46 @@ var CALC_FORMATS = {
   '96': { label: '96-well plate', wells: 96 }, '384': { label: '384-well plate', wells: 384 },
   '6': { label: '6-well plate', wells: 6 }, '12': { label: '12-well plate', wells: 12 }, '24': { label: '24-well plate', wells: 24 },
   '10cm': { label: '10 cm dish', wells: 1 }, '15cm': { label: '15 cm dish', wells: 1 },
-  neon10: { label: 'Neon 10 µL tip', wells: 0 }, neon100: { label: 'Neon 100 µL tip', wells: 0 },
-  cuv1: { label: '0.1 cm cuvette', wells: 0 }, cuv2: { label: '0.2 cm cuvette', wells: 0 }
+  lonza20: { label: 'Lonza 20 µL strip well', wells: 0 }, lonza100: { label: 'Lonza 100 µL cuvette', wells: 0 },
+  cuv1: { label: '0.1 cm cuvette', wells: 0 }, cuv2: { label: '0.2 cm cuvette', wells: 0 },
+  // Kept so a table saved before the lab moved to the 4D-Nucleofector still reads correctly.
+  neon10: { label: 'Neon 10 µL tip', wells: 0 }, neon100: { label: 'Neon 100 µL tip', wells: 0 }
 };
 // kind 'mix': fixed reaction volume, water fills it up, amounts scale with the volume.
 // kind 'perwell': amounts per well/reaction depend on the format (per: { format: amount }).
 // `well: true` = added to each well/tube separately, not into the master mix.
 var CALC_TEMPLATES = {
-  q5: {
-    name: 'PCR — Q5 High-Fidelity', source: 'NEB Q5 High-Fidelity DNA Polymerase (M0491), 50 µL reaction',
-    kind: 'mix', volume: 50, formats: ['tubes', '96'], format: 'tubes',
+  hytiger: {
+    name: 'PCR — Hy-Tiger Mix (×2)', source: 'Hylabs Hy-Tiger Mix 2X ready mix, 25 µL reaction',
+    kind: 'mix', volume: 25, formats: ['tubes', '96'], format: 'tubes',
     labels: { samples: 'Samples', controls: 'No-template controls', reps: 'Replicates' },
     defaults: { samples: 8, reps: 1, controls: 1, extra: 10 },
     comps: [
-      { name: '5X Q5 Reaction Buffer', stock: '5X', final: '1X', per: 10 },
-      { name: 'dNTPs', stock: '10 mM', final: '200 µM', per: 1 },
-      { name: 'Forward primer', stock: '10 µM', final: '0.5 µM', per: 2.5 },
-      { name: 'Reverse primer', stock: '10 µM', final: '0.5 µM', per: 2.5 },
-      { name: 'Q5 High-Fidelity DNA Polymerase', stock: '2 U/µL', final: '0.02 U/µL', per: 0.5 },
-      { name: 'Template DNA', stock: '', final: '< 1 µg', per: 1, well: true },
+      { name: 'Hy-Tiger Mix (×2)', stock: '2X', final: '1X', per: 12.5 },
+      { name: 'Forward primer', stock: '10 µM', final: '0.4 µM', per: 1 },
+      { name: 'Reverse primer', stock: '10 µM', final: '0.4 µM', per: 1 },
+      { name: 'Template DNA', stock: '', final: '1–100 ng', per: 1, well: true },
       { name: 'Nuclease-free water', stock: '', final: '', fill: true }
     ],
-    note: 'Cycling: 98 °C 30 s; 25–35 cycles of 98 °C 10 s, 50–72 °C 20 s, 72 °C 20–30 s/kb; 72 °C 2 min. Add the polymerase last.'
+    note: 'Laid out the way a 2× ready mix is used: half the reaction is mix, the rest is primers, template and water. ' +
+      'Check the primer and template amounts against the insert that came with your lot. Cycling follows the enzyme in the mix — ' +
+      'typically 95 °C 2–3 min; 30–35 cycles of 95 °C 30 s, 55–60 °C 30 s, 72 °C 1 min/kb; 72 °C 5 min.'
+  },
+  kapa: {
+    name: 'PCR — KAPA HiFi HotStart ReadyMix', source: 'Roche KAPA HiFi HotStart ReadyMix (2X), 25 µL reaction',
+    kind: 'mix', volume: 25, formats: ['tubes', '96'], format: 'tubes',
+    labels: { samples: 'Samples', controls: 'No-template controls', reps: 'Replicates' },
+    defaults: { samples: 8, reps: 1, controls: 1, extra: 10 },
+    comps: [
+      { name: 'KAPA HiFi HotStart ReadyMix (2X)', stock: '2X', final: '1X', per: 12.5 },
+      { name: 'Forward primer', stock: '10 µM', final: '0.3 µM', per: 0.75 },
+      { name: 'Reverse primer', stock: '10 µM', final: '0.3 µM', per: 0.75 },
+      { name: 'Template DNA', stock: '', final: '10–50 ng', per: 1, well: true },
+      { name: 'Nuclease-free water', stock: '', final: '', fill: true }
+    ],
+    note: 'KAPA asks for 0.3 µM of each primer and 10–50 ng of template per 25 µL; more template lowers the yield. ' +
+      'Cycling: 95 °C 3 min; 25–35 cycles of 98 °C 20 s, 60–65 °C 15 s, 72 °C 30 s/kb; 72 °C 1–5 min. ' +
+      'The annealing temperature differs from other buffers — run a 60–72 °C gradient for a new primer pair.'
   },
   taq: {
     name: 'PCR — Taq 2× Master Mix', source: 'NEB Taq 2X Master Mix (M0270), 25 µL reaction',
@@ -1390,44 +1408,52 @@ var CALC_TEMPLATES = {
     ],
     note: 'One master mix per target (primer pair). Dispense the mix, then add cDNA (water for NTC). Include a reference gene among the targets.'
   },
-  lipo3000: {
-    name: 'Transfection — Lipofectamine 3000', source: 'Thermo Fisher Lipofectamine 3000 protocol, amounts per well',
-    kind: 'perwell', formats: ['96', '24', '12', '6'], format: '24',
+  jetoptimus: {
+    name: 'Transfection — jetOPTIMUS', source: 'Polyplus jetOPTIMUS DNA transfection reagent, amounts per well',
+    kind: 'perwell', formats: ['96', '24', '12', '6', '10cm'], format: '24',
     labels: { samples: 'Conditions', controls: 'Mock / control wells', reps: 'Replicate wells' },
     defaults: { samples: 3, reps: 3, controls: 1, extra: 10 },
     comps: [
-      { name: 'Tube A — Opti-MEM', unit: 'µL', per: { '96': 5, '24': 25, '12': 50, '6': 125 } },
-      { name: 'Tube A — Lipofectamine 3000', unit: 'µL', per: { '96': 0.3, '24': 1.5, '12': 3, '6': 7.5 } },
-      { name: 'Tube B — Opti-MEM', unit: 'µL', per: { '96': 5, '24': 25, '12': 50, '6': 125 } },
-      { name: 'Tube B — Plasmid DNA', unit: 'µg', per: { '96': 0.1, '24': 0.5, '12': 1, '6': 2.5 } },
-      { name: 'Tube B — P3000 reagent', unit: 'µL', per: { '96': 0.2, '24': 1, '12': 2, '6': 5 } }
+      { name: 'jetOPTIMUS buffer', unit: 'µL', per: { '96': 10, '24': 50, '12': 100, '6': 200, '10cm': 1000 } },
+      { name: 'Plasmid DNA', unit: 'µg', per: { '96': 0.1, '24': 0.5, '12': 1, '6': 2, '10cm': 10 } },
+      { name: 'jetOPTIMUS reagent', unit: 'µL', per: { '96': 0.1, '24': 0.5, '12': 1, '6': 2, '10cm': 10 } },
+      { name: 'Growth medium already in the well', unit: 'µL', per: { '96': 100, '24': 500, '12': 1000, '6': 2000, '10cm': 10000 } }
     ],
-    note: 'Add tube B to tube A (1:1), mix gently, incubate 10–15 min at room temperature, then add the complex per well (10 / 50 / 100 / 250 µL for 96 / 24 / 12 / 6-well). Lipofectamine shown at the upper dose; Thermo suggests testing two doses.'
+    note: 'Dilute the DNA in jetOPTIMUS buffer — the kit\u2019s own buffer, not Opti-MEM — and vortex. Add the reagent, vortex 10 s, ' +
+      'leave 10 min at room temperature, then add dropwise onto the cells and rock the plate. One µL of reagent per µg of DNA is the ' +
+      'starting point; Polyplus suggests trying up to 1.5 µL per µg, and 0.5× to 1.5× the DNA. No medium change is needed.'
   },
-  pei: {
-    name: 'Transfection — PEI (3:1)', source: 'Linear PEI 25K / PEI MAX, 1 mg/mL; PEI:DNA 3:1 (w/w)',
-    kind: 'perwell', formats: ['24', '12', '6', '10cm', '15cm'], format: '6',
-    labels: { samples: 'Conditions', controls: 'Mock / control wells', reps: 'Replicate wells' },
-    defaults: { samples: 3, reps: 2, controls: 1, extra: 10 },
-    comps: [
-      { name: 'Serum-free medium (Opti-MEM)', unit: 'µL', per: { '24': 50, '12': 100, '6': 200, '10cm': 1000, '15cm': 2000 } },
-      { name: 'Plasmid DNA (total)', unit: 'µg', per: { '24': 0.5, '12': 1, '6': 2, '10cm': 10, '15cm': 25 } },
-      { name: 'PEI (1 mg/mL)', unit: 'µL', per: { '24': 1.5, '12': 3, '6': 6, '10cm': 30, '15cm': 75 } }
-    ],
-    note: 'Dilute DNA in the medium, add PEI (3 µL per µg DNA), vortex briefly, incubate 15–20 min at room temperature, add dropwise. For lentivirus, split the DNA between transfer, packaging and envelope plasmids.'
-  },
-  neon: {
-    name: 'Electroporation — Neon (mammalian)', source: 'Thermo Fisher Neon Transfection System',
-    kind: 'perwell', formats: ['neon10', 'neon100'], format: 'neon10',
+  lonza4d: {
+    name: 'Electroporation — Lonza 4D-Nucleofector', source: 'Lonza 4D-Nucleofector, 20 µL Nucleocuvette strip or 100 µL Nucleocuvette',
+    kind: 'perwell', formats: ['lonza20', 'lonza100'], format: 'lonza20',
     labels: { samples: 'Conditions', controls: 'Controls (no DNA)', reps: 'Replicates' },
     defaults: { samples: 3, reps: 2, controls: 1, extra: 10 },
     comps: [
-      { name: 'Cells', unit: 'cells', per: { neon10: 100000, neon100: 1000000 } },
-      { name: 'Resuspension Buffer R', unit: 'µL', per: { neon10: 10, neon100: 100 } },
-      { name: 'Plasmid DNA', unit: 'µg', per: { neon10: 1, neon100: 5 } },
-      { name: 'Pre-warmed medium, no antibiotics (receiving well)', unit: 'µL', per: { neon10: 500, neon100: 2000 } }
+      { name: 'Cells', unit: 'cells', per: { lonza20: 200000, lonza100: 1000000 } },
+      { name: 'Nucleofector Solution', unit: 'µL', per: { lonza20: 16.4, lonza100: 82 } },
+      { name: 'Supplement 1', unit: 'µL', per: { lonza20: 3.6, lonza100: 18 } },
+      { name: 'Plasmid DNA', unit: 'µg', per: { lonza20: 1, lonza100: 5 } },
+      { name: 'Pre-warmed medium, no antibiotics (receiving well)', unit: 'µL', per: { lonza20: 500, lonza100: 2000 } }
     ],
-    note: 'Receiving plate: 24-well (10 µL tip) or 6-well (100 µL tip). Pulse conditions are cell-type specific (e.g. HEK293: 1,100 V, 20 ms, 2 pulses). Buffer E (10 µL tip) or E2 (100 µL tip) in the Neon tube.'
+    note: 'Solution and supplement go together 82 : 18 before use, which is what the two rows add up to. Keep the DNA under a tenth of ' +
+      'the volume: at most 2 µL in a 20 µL strip well, 10 µL in a 100 µL cuvette. Which solution (SF, SE, SG, P1–P5) and which pulse ' +
+      'programme are cell-type specific — take both from Lonza\u2019s database for your cell line. Add pre-warmed medium straight after ' +
+      'the pulse and move the cells with the pipettes supplied, not a tip.'
+  },
+  heatshock: {
+    name: 'Transformation — heat shock', source: 'Chemically competent E. coli, 42 °C heat shock',
+    kind: 'perwell', formats: ['tubes'], format: 'tubes',
+    labels: { samples: 'Transformations', controls: 'Controls (no DNA / uncut plasmid)', reps: 'Replicates' },
+    defaults: { samples: 4, reps: 1, controls: 2, extra: 0 },
+    comps: [
+      { name: 'Chemically competent cells', unit: 'µL', per: 50 },
+      { name: 'DNA (1–100 ng plasmid, or 1–5 µL of a ligation)', unit: 'µL', per: 2 },
+      { name: 'SOC or LB recovery medium', unit: 'µL', per: 950 }
+    ],
+    note: 'Thaw the cells on ice. Add the DNA and mix by flicking, never by pipetting. 30 min on ice; 42 °C for 45 s (30 s for ' +
+      'high-efficiency cells); 2 min on ice; add the recovery medium; 1 h at 37 °C shaking at 250 rpm — this can be skipped for ' +
+      'ampicillin but not for kanamycin or chloramphenicol. Plate 50–200 µL. The two controls worth running every time are a tube ' +
+      'with no DNA and a tube with an uncut plasmid.'
   },
   ecoli: {
     name: 'Electroporation — E. coli', source: 'Electrocompetent E. coli, standard cuvette protocol',
@@ -1442,9 +1468,51 @@ var CALC_TEMPLATES = {
     note: '0.1 cm cuvette: 1.8 kV; 0.2 cm cuvette: 2.5 kV; 200 Ω, 25 µF. Keep cells and cuvettes on ice, add SOC immediately after the pulse, recover 1 h at 37 °C, 250 rpm.'
   }
 };
-var CALC_ORDER = ['q5', 'taq', 'qpcr', 'lipo3000', 'pei', 'neon', 'ecoli'];
+var CALC_ORDER = ['hytiger', 'kapa', 'taq', 'qpcr', 'jetoptimus', 'lonza4d', 'heatshock', 'ecoli'];
 
 function calcNum(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+
+/* ---- the lab's own tables ----
+
+   The recipes above are the ones the lab uses most, written into the page.
+   Anything else somebody needs — a ligation, a digest, a staining mix — is
+   added from the picker and kept in the shared inventory, so a table one
+   person writes down is in everybody's picker from then on. Same shape as
+   the built-in ones, so everything below treats them alike. */
+var CALC_LABELS = { samples: 'Samples', controls: 'Controls', reps: 'Replicates', targets: 'Targets' };
+function calcCustom() { return getInventory().calctables || []; }
+function calcTplFromRow(r) {
+  var kind = r.kind === 'mix' ? 'mix' : 'perwell';
+  var formats = (Array.isArray(r.formats) ? r.formats : []).filter(function (f) { return CALC_FORMATS[f]; });
+  if (!formats.length) formats = kind === 'mix' ? ['tubes', '96'] : ['tubes', '96', '24', '12', '6', '10cm'];
+  return {
+    name: r.name || 'Calculation table', source: r.source || 'Added by the lab', custom: true, id: r.id,
+    kind: kind, volume: kind === 'mix' ? Math.max(1, calcNum(r.volume, 25)) : 0,
+    formats: formats, format: formats[0], labels: CALC_LABELS,
+    defaults: { samples: 4, reps: 1, controls: 1, extra: 10 },
+    comps: (Array.isArray(r.comps) ? r.comps : []).map(function (c) {
+      return { name: c.name || '', stock: c.stock || '', final: c.final || '', unit: c.unit || 'µL',
+        per: calcNum(c.per), well: !!c.well, fill: !!c.fill };
+    }),
+    note: r.note || ''
+  };
+}
+function calcTpl(t) {
+  if (CALC_TEMPLATES[t]) return CALC_TEMPLATES[t];
+  var row = calcCustom().filter(function (x) { return x.id === t; })[0];
+  return row ? calcTplFromRow(row) : null;
+}
+/* A table whose recipe has gone — a lab table somebody removed. The page
+   kept every amount, so the block goes on working; only the name and the
+   notes are lost, which beats the block disappearing out of an entry. */
+function calcStub(st) {
+  var f = CALC_FORMATS[st && st.format] ? st.format : 'tubes';
+  return { name: 'Calculation table', source: 'The recipe this came from is no longer in the list', missing: true,
+    kind: calcNum(st && st.volume) > 0 ? 'mix' : 'perwell', volume: calcNum(st && st.volume),
+    formats: [f], format: f, labels: CALC_LABELS,
+    defaults: { samples: 1, reps: 1, controls: 0, extra: 0 }, comps: [], note: '' };
+}
+function calcTplFor(st) { return calcTpl(st && st.t) || calcStub(st); }
 function calcFmt(v, unit) {
   if (!isFinite(v)) return '—';
   if (unit === 'cells') {
@@ -1457,7 +1525,8 @@ function calcFmt(v, unit) {
 }
 // A fresh table state for a recipe.
 function calcNew(t) {
-  var tpl = CALC_TEMPLATES[t];
+  var tpl = calcTpl(t);
+  if (!tpl) return null;
   var st = Object.assign({ t: t, format: tpl.format, volume: tpl.volume || 0, targets: 1 }, tpl.defaults);
   st.comps = calcCompsFor(tpl, st.format);
   return st;
@@ -1472,8 +1541,8 @@ function calcCompsFor(tpl, format) {
 function calcLoad(raw) {
   var st;
   try { st = JSON.parse(raw); } catch (e) { return null; }
-  if (!st || !CALC_TEMPLATES[st.t]) return null;
-  var tpl = CALC_TEMPLATES[st.t], d = tpl.defaults;
+  if (!st || !st.t) return null;
+  var tpl = calcTplFor(st), d = tpl.defaults;
   var out = {
     t: st.t, format: tpl.formats.indexOf(st.format) >= 0 ? st.format : tpl.format,
     samples: Math.max(0, Math.round(calcNum(st.samples, d.samples))), reps: Math.max(1, Math.round(calcNum(st.reps, d.reps))),
@@ -1488,7 +1557,7 @@ function calcLoad(raw) {
   return out;
 }
 function calcCompute(st) {
-  var tpl = CALC_TEMPLATES[st.t];
+  var tpl = calcTplFor(st);
   var perTarget = (st.samples + st.controls) * st.reps;
   var targets = tpl.targets ? st.targets : 1;
   var wells = perTarget * targets;
@@ -1580,7 +1649,7 @@ function calcRefresh(block) {
 function calcHandle(e) {
   var block = e.target.closest && e.target.closest('.ln-calc');
   if (!block || !block._calc) return;
-  var st = block._calc, el = e.target, tpl = CALC_TEMPLATES[st.t];
+  var st = block._calc, el = e.target, tpl = calcTplFor(st);
   if (e.type === 'click') {
     var act = el.closest('[data-act]');
     if (!act) return;
@@ -1651,10 +1720,122 @@ function openCalcPicker() {
     '<div class="ln-calc-pick">' + CALC_ORDER.map(function (t) {
       var tpl = CALC_TEMPLATES[t];
       return '<button type="button" class="ln-box-card" onclick="insertCalc(\'' + t + '\')"><div class="ln-calc-pick-name">' + esc(tpl.name) + '</div><div class="ln-box-card-meta">' + esc(tpl.source) + '</div></button>';
-    }).join('') + '</div>';
+    }).join('') +
+    calcCustom().map(function (r) {
+      return '<div class="ln-box-card ln-calc-own"><button type="button" onclick="insertCalc(\'' + esc(r.id) + '\')">' +
+        '<div class="ln-calc-pick-name">' + esc(r.name || 'Calculation table') + '</div>' +
+        '<div class="ln-box-card-meta">' + esc(r.source || 'Added by the lab') + '</div></button>' +
+        '<button type="button" class="ln-icon-btn" title="Edit this table" onclick="openCalcBuilder(\'' + esc(r.id) + '\')">\u270e</button></div>';
+    }).join('') +
+    '<button type="button" class="ln-box-card ln-calc-new" onclick="openCalcBuilder()">' +
+      '<div class="ln-calc-pick-name">+ A table of your own</div>' +
+      '<div class="ln-box-card-meta">Write down a mix the lab uses — it stays in this list for everybody</div></button>' +
+    '</div>';
   document.getElementById('ln-modal-bg').classList.add('open');
 }
+/* ---- writing a table of your own ---- */
+var calcDraft = null;
+function calcBlankComp() { return { name: '', stock: '', final: '', unit: 'µL', per: 0, well: false, fill: false }; }
+function openCalcBuilder(id) {
+  var row = id ? calcCustom().filter(function (x) { return x.id === id; })[0] : null;
+  calcDraft = row ? JSON.parse(JSON.stringify(row)) : { kind: 'mix', volume: 25, name: '', source: '', note: '',
+    comps: [calcBlankComp(), calcBlankComp(), calcBlankComp()] };
+  calcDraft.comps = (calcDraft.comps || []).filter(function (c) { return !c.fill; });
+  if (!calcDraft.comps.length) calcDraft.comps = [calcBlankComp()];
+  document.getElementById('ln-modal-content').innerHTML = calcBuilderHtml();
+  document.getElementById('ln-modal-bg').classList.add('open');
+}
+function calcBuilderRowsHtml() {
+  var mix = calcDraft.kind === 'mix';
+  return calcDraft.comps.map(function (c, i) {
+    return '<div class="ln-cb-row">' +
+      '<input id="cb-n' + i + '" placeholder="Component" value="' + esc(c.name || '') + '">' +
+      (mix ? '<input id="cb-s' + i + '" class="sm" placeholder="Stock" value="' + esc(c.stock || '') + '">' +
+             '<input id="cb-f' + i + '" class="sm" placeholder="Final" value="' + esc(c.final || '') + '">' : '') +
+      '<input id="cb-p' + i + '" class="sm num" type="number" min="0" step="any" placeholder="0" value="' + esc(String(c.per == null ? '' : c.per)) + '">' +
+      '<select id="cb-u' + i + '">' + ['µL', 'µg', 'ng', 'mL', 'cells'].map(function (u) {
+        return '<option' + ((c.unit || 'µL') === u ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select>' +
+      (mix ? '<label class="ln-cb-well" title="Added to each tube on its own, not into the master mix">' +
+             '<input type="checkbox" id="cb-w' + i + '"' + (c.well ? ' checked' : '') + '> per tube</label>' : '') +
+      '<button type="button" class="ln-calc-x sm" title="Remove" onclick="calcBuilderDrop(' + i + ')">✕</button>' +
+      '</div>';
+  }).join('');
+}
+function calcBuilderHtml() {
+  var d = calcDraft, mix = d.kind === 'mix';
+  return '<button class="ln-close-btn" onclick="closeModal()">×</button>' +
+    '<h3>' + (d.id ? 'Edit this table' : 'A calculation table of your own') + '</h3>' +
+    '<p class="ln-bulk-intro">Write down a mix the lab uses and it joins the list for everybody. ' +
+      'The amounts here are the starting point; every one of them can still be changed in the table itself.</p>' +
+    '<div class="ln-form-row"><label>Name</label><input id="cb-name" value="' + esc(d.name || '') + '" placeholder="e.g. Ligation — T4 DNA ligase"></div>' +
+    '<div class="ln-form-row"><label>Where it comes from</label><input id="cb-source" value="' + esc(d.source || '') + '" placeholder="e.g. NEB T4 DNA Ligase (M0202), 20 µL reaction"></div>' +
+    '<div class="ln-form-grid">' +
+      '<div class="ln-form-row"><label>How it is worked out</label><select id="cb-kind" onchange="calcBuilderKind(this.value)">' +
+        '<option value="mix"' + (mix ? ' selected' : '') + '>A master mix — fixed reaction volume, water fills it up</option>' +
+        '<option value="perwell"' + (mix ? '' : ' selected') + '>An amount per well or per tube</option></select></div>' +
+      (mix ? '<div class="ln-form-row"><label>Reaction volume (µL)</label><input id="cb-volume" type="number" min="1" step="any" value="' + esc(String(d.volume || 25)) + '"></div>' : '') +
+    '</div>' +
+    '<div class="ln-form-section">Components</div>' +
+    '<div id="cb-rows">' + calcBuilderRowsHtml() + '</div>' +
+    '<button type="button" class="ln-icon-btn" onclick="calcBuilderAdd()">+ Component</button>' +
+    (mix ? '<div class="hint">Water is added for you as the last row, filling the reaction up to its volume.</div>' : '') +
+    '<div class="ln-form-row"><label>Note</label><textarea id="cb-note" rows="2" placeholder="Conditions, incubation, anything worth reading beside the amounts">' + esc(d.note || '') + '</textarea></div>' +
+    '<div class="ln-modal-actions">' +
+      (d.id && DB.isAdmin() ? '<button class="ln-modal-cancel" onclick="deleteCalcTemplate(\'' + esc(d.id) + '\')">Remove from the list</button>' : '') +
+      '<button class="ln-modal-cancel" onclick="openCalcPicker()">Back</button>' +
+      '<button class="ln-modal-save" onclick="saveCalcTemplate()">Save' + (d.id ? '' : ' and insert') + '</button></div>';
+}
+// What is on screen, back into the draft, so nothing typed is lost on a redraw.
+function calcBuilderRead() {
+  if (!calcDraft || !document.getElementById('cb-rows')) return;
+  var d = calcDraft, mix = d.kind === 'mix';
+  d.name = g('cb-name'); d.source = g('cb-source'); d.note = g('cb-note');
+  if (mix) d.volume = calcNum(g('cb-volume'), 25);
+  d.comps = d.comps.map(function (c, i) {
+    function v(pre) { var el = document.getElementById('cb-' + pre + i); return el ? el.value : ''; }
+    function on(pre) { var el = document.getElementById('cb-' + pre + i); return !!(el && el.checked); }
+    return { name: v('n'), stock: mix ? v('s') : '', final: mix ? v('f') : '', unit: v('u') || 'µL',
+      per: calcNum(v('p')), well: mix ? on('w') : false, fill: false };
+  });
+}
+function calcBuilderRedraw() {
+  calcBuilderRead();
+  document.getElementById('ln-modal-content').innerHTML = calcBuilderHtml();
+}
+function calcBuilderAdd() { calcBuilderRead(); calcDraft.comps.push(calcBlankComp()); calcBuilderRedraw(); }
+function calcBuilderDrop(i) { calcBuilderRead(); calcDraft.comps.splice(i, 1); if (!calcDraft.comps.length) calcDraft.comps = [calcBlankComp()]; calcBuilderRedraw(); }
+function calcBuilderKind(kind) { calcBuilderRead(); calcDraft.kind = kind === 'mix' ? 'mix' : 'perwell'; calcBuilderRedraw(); }
+async function saveCalcTemplate() {
+  calcBuilderRead();
+  var d = calcDraft;
+  if (!String(d.name || '').trim()) { alert('Give the table a name.'); return; }
+  var comps = d.comps.filter(function (c) { return String(c.name || '').trim(); });
+  if (!comps.length) { alert('Write down at least one component.'); return; }
+  var row = { name: d.name.trim(), source: String(d.source || '').trim() || 'Added by the lab',
+    note: String(d.note || '').trim(), kind: d.kind, volume: d.kind === 'mix' ? Math.max(1, calcNum(d.volume, 25)) : 0,
+    formats: d.kind === 'mix' ? ['tubes', '96'] : ['tubes', '96', '24', '12', '6', '10cm'],
+    comps: comps };
+  if (d.id) row.id = d.id;
+  if (row.kind === 'mix') row.comps = row.comps.concat([{ name: 'Nuclease-free water', stock: '', final: '', unit: 'µL', per: 0, fill: true }]);
+  var saved;
+  try { saved = await DB.upsertInventory('calctables', row); }
+  catch (e) { alert('Could not save the table: ' + e.message); return; }
+  calcDraft = null;
+  if (d.id) { openCalcPicker(); return; }
+  insertCalc(saved.id);
+}
+async function deleteCalcTemplate(id) {
+  if (!DB.isAdmin()) { alert('Only the PI can take a table out of the list.'); return; }
+  if (!confirm('Take this table out of the list? Tables already written into an entry stay where they are.')) return;
+  try { await DB.removeInventory('calctables', id); }
+  catch (e) { alert('Could not remove it: ' + e.message); return; }
+  calcDraft = null;
+  openCalcPicker();
+}
+
 function insertCalc(t) {
+  var fresh = calcNew(t);
+  if (!fresh) { alert('That table could not be found.'); return; }
   closeModal();
   var ed = document.getElementById('e-body');
   ed.focus();
@@ -1663,7 +1844,7 @@ function insertCalc(t) {
   else { sel.selectAllChildren(ed); sel.collapseToEnd(); }
   var holder = document.createElement('div');
   holder.className = 'ln-calc';
-  holder.setAttribute('data-calc', JSON.stringify(calcNew(t)));
+  holder.setAttribute('data-calc', JSON.stringify(fresh));
   document.execCommand('insertHTML', false, holder.outerHTML + '<p><br></p>');
   calcHydrate(ed);
   markEntryDirty();

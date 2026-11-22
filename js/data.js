@@ -34,7 +34,8 @@
   // notebook can say happy birthday. Kept here rather than on the member's
   // profile so that no change to the database was needed to add it.
   var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes',
-    'requests', 'grants', 'expenses', 'enzymesets', 'birthdays', 'primeraccess'];
+    'requests', 'grants', 'expenses', 'enzymesets', 'birthdays', 'primeraccess', 'calctables'];
+  // 'calctables' holds calculation tables the lab wrote itself (js/notebook.js).
   // 'primeraccess' is who may edit or delete primers besides the PI: one row
   // per member who asked, pending, approved or declined (js/primer-store.js).
 
