@@ -19,7 +19,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- bump ?v= when you change these files, so browsers pick up the new version -->
     <link rel="stylesheet" href="css/tokens.css?v=8">
-    <link rel="stylesheet" href="css/notebook.css?v=38">
+    <link rel="stylesheet" href="css/notebook.css?v=39">
     <link rel="stylesheet" href="css/plasmid.css?v=41">
 </head>
 <body>
@@ -166,7 +166,7 @@
         <!-- Primers is the Primer Generator app rather than a table. -->
         <div id="ln-inv-primers" class="ln-section">
           <div class="ln-section-header"><div><h2>Primers</h2><p>Design, store and export primers with the lab's Primer Generator</p></div><a class="ln-add-btn ln-add-link" href="tools/grna-primer-generator.html" target="_blank" rel="noopener">Open in a new tab ↗</a></div>
-          <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html?v=4" title="Primer Generator"></iframe>
+          <iframe id="ln-primer-app" class="ln-embed-app" data-src="tools/grna-primer-generator.html?v=5" title="Primer Generator"></iframe>
         </div>
         <div id="ln-inv-plasmids" class="ln-section">
           <div class="ln-section-header"><div><h2>Plasmids</h2><p>Sequence, maps and annotations for every construct — open one for its full map and molecular tools</p></div><div class="ln-header-actions"><button class="ln-add-btn ghost" onclick="window.print()">🖨 Print</button><button class="ln-add-btn ghost" onclick="openBulkUploadModal()">⇪ Bulk upload</button><button class="ln-add-btn ghost" onclick="exportPlasmidsCSV()">↓ CSV</button><button class="ln-add-btn ghost" title="Simulate an agarose gel of these records" onclick="openGel()">▦ Gel</button><button class="ln-add-btn ghost" onclick="openPlasmidImport()">↑ Import sequences</button><button class="ln-add-btn" onclick="newPlasmid()">+ New Plasmid</button></div></div>
@@ -238,8 +238,9 @@
               <button class="ln-add-btn" id="ln-adduser-btn" onclick="openModal('adduser')">+ Add User</button>
             </div>
           </div>
+          <div id="ln-pa-note" class="ln-inv-alert soon" hidden></div>
           <div class="ln-user-table-wrap">
-            <table class="ln-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Birthday</th><th>Added</th><th>Actions</th></tr></thead>
+            <table class="ln-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Birthday</th><th title="May edit, copy and delete primers">Primers</th><th>Added</th><th>Actions</th></tr></thead>
             <tbody id="ln-users-tbody"></tbody></table>
           </div>
         </div>
@@ -256,13 +257,13 @@
   <script src="js/plasmid.js?v=26"></script>
   <script src="js/vector-viewer.js?v=28"></script>
   <script src="js/plasmid-import.js?v=21"></script>
-  <script src="js/primer-store.js?v=3"></script>
+  <script src="js/primer-store.js?v=4"></script>
   <script src="js/tabs.js?v=2"></script>
   <script src="js/plates.js?v=1"></script>
   <script src="js/mentions.js?v=4"></script>
   <script src="js/plasmid-ui.js?v=46"></script>
   <script src="js/config.js?v=20"></script>
-  <script src="js/data.js?v=25"></script>
-  <script src="js/notebook.js?v=49"></script>
+  <script src="js/data.js?v=26"></script>
+  <script src="js/notebook.js?v=50"></script>
 </body>
 </html>

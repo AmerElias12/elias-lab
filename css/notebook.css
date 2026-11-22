@@ -737,3 +737,8 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .ln-gbudget-left .over{color:#8f2a2a;font-weight:600;}
 .ln-gbudget-left em{display:block;font-style:normal;color:#7a877f;font-size:11px;}
 @media(max-width:560px){.ln-gbudget-row:not(.new){grid-template-columns:1fr 100px;}.ln-gbudget-left{grid-column:2;}.ln-gbudget-head span:last-child{display:none;}}
+
+/* ---- who may edit primers, in User Management ---- */
+.ln-pa-cell{white-space:nowrap;}
+.ln-pa-cell .ln-icon-btn{margin-left:.25rem;}
+.ln-pa-ask{font-size:11px;color:#a6620c;font-weight:600;font-family:var(--mono);}

@@ -254,7 +254,8 @@ await check('the failure is shown to the person, not only to the console', () =>
 await check('the generator no longer invents its own ids', () => {
   assert.doesNotMatch(gen, /id: Date\.now\(\)/,
     'Date.now() as an id is what the database refused');
-  assert.equal((gen.match(/id: PrimerStore\.newId\(\)/g) || []).length, 4,
+  // four ways to add (two forms, two uploads) and two to copy
+  assert.equal((gen.match(/id: PrimerStore\.newId\(\)/g) || []).length, 6,
     'every record the generator makes should get its id from one place');
 });
 

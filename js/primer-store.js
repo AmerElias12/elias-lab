@@ -298,5 +298,43 @@
     return rec;
   }
 
-  return { load, save, flat, isShared, toRow, fromRow, counters, rowId, newId, addRegular, listTm, CATEGORY };
+  /* ---- who may change the list ----
+
+     Adding a primer is for everyone. Changing or removing one is the PI's,
+     and anyone the PI has allowed: a member asks from the Primers page, the
+     PI answers in User Management, and the answer is a row in the shared
+     inventory under 'primeraccess' — one per member, its status pending,
+     approved or declined.
+
+     This is the page keeping to the rule, not the database enforcing it.
+     Opened on its own, outside the notebook, the list is this browser's
+     own copy and whoever has the browser may change it. */
+  const ACCESS = 'primeraccess';
+  function accessRows(h) { return ((h.getInventory && h.getInventory()) || {})[ACCESS] || []; }
+  function access() {
+    const h = host();
+    if (!h) return { can: true, state: 'local', admin: false, pending: 0 };
+    const user = (h.currentUser && h.currentUser()) || null;
+    if (!user) return { can: false, state: 'none', admin: false, pending: 0 };
+    if (h.DB.isAdmin && h.DB.isAdmin()) {
+      return { can: true, state: 'admin', admin: true,
+        pending: accessRows(h).filter(function (r) { return r.status === 'pending'; }).length };
+    }
+    const mine = accessRows(h).filter(function (r) { return r.userId === user.id; })[0];
+    return { can: !!mine && mine.status === 'approved', state: mine ? mine.status : 'none', admin: false, pending: 0 };
+  }
+  async function requestAccess(note) {
+    const h = host();
+    if (!h) return;
+    const user = (h.currentUser && h.currentUser()) || null;
+    if (!user) throw new Error('Sign in to the notebook first.');
+    const mine = accessRows(h).filter(function (r) { return r.userId === user.id; })[0];
+    const row = { userId: user.id, name: user.name, email: user.email || '', status: 'pending',
+      note: String(note || '').trim(), requestedAt: new Date().toISOString() };
+    if (mine) row.id = mine.id;
+    await h.DB.upsertInventory(ACCESS, row);
+  }
+
+  return { load, save, flat, isShared, toRow, fromRow, counters, rowId, newId, addRegular, listTm, CATEGORY,
+    access, requestAccess, ACCESS };
 }));

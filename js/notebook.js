@@ -3387,6 +3387,26 @@ async function saveBulkUpload() {
 }
 
 // ── ADMIN ──────────────────────────────────────────────────
+// ── WHO MAY EDIT PRIMERS ───────────────────────────────────
+/* Members ask from the Primers page; the PI answers here. The PI may also
+   allow somebody who has not asked. See js/primer-store.js. */
+function primerAccessOf(userId) {
+  return (getInventory().primeraccess || []).filter(function (r) { return r.userId === userId; })[0] || null;
+}
+async function setPrimerAccess(userId, status) {
+  if (!DB.isAdmin()) return;
+  var u = getUsers().filter(function (x) { return x.id === userId; })[0];
+  var had = primerAccessOf(userId);
+  var row = Object.assign({}, had || {}, { userId: userId, name: u ? u.name : (had && had.name) || '',
+    status: status, decidedAt: new Date().toISOString() });
+  try { await DB.upsertInventory('primeraccess', row); }
+  catch (e) { alert('Could not save that: ' + e.message); return; }
+  renderAdmin();
+  // The Primers page, if it is open, should know straight away.
+  var app = document.getElementById('ln-primer-app');
+  try { if (app && app.contentWindow && app.contentWindow.primerAccessChanged) app.contentWindow.primerAccessChanged(); } catch (e) { /* not loaded */ }
+}
+
 function renderAdmin() {
   if (!DB.isAdmin()) return;
   // mode-aware controls
@@ -3396,6 +3416,13 @@ function renderAdmin() {
   if (importBtn) importBtn.style.display = DB.mode === 'supabase' ? 'inline-block' : 'none';
 
   var users = getUsers();
+  var asking = (getInventory().primeraccess || []).filter(function (r) { return r.status === 'pending'; }).length;
+  var askNote = document.getElementById('ln-pa-note');
+  if (askNote) {
+    askNote.hidden = !asking;
+    askNote.innerHTML = asking ? '\u270b <strong>' + asking + '</strong> member' + (asking === 1 ? ' is' : 's are') +
+      ' asking to edit primers. Answer in the <em>Primers</em> column below.' : '';
+  }
   var adminEmail = (window.ELIAS_CONFIG && ELIAS_CONFIG.ADMIN_EMAIL ? ELIAS_CONFIG.ADMIN_EMAIL : 'amere@braude.ac.il').toLowerCase();
   document.getElementById('ln-users-tbody').innerHTML = users.map(function (u) {
     var actions = (u.email !== adminEmail) ?
@@ -3404,11 +3431,21 @@ function renderAdmin() {
         '<button class="ln-icon-btn danger" onclick="deleteUser(\'' + u.id + '\')">✕ Remove</button>')
       : '<span style="color:#aaa;font-size:12px;">PI Account</span>';
     var bday = lnBirthdayOf(u.id);
+    var pa = primerAccessOf(u.id), paCell;
+    if (u.role === 'admin') paCell = '<span class="muted">always</span>';
+    else if (pa && pa.status === 'pending') paCell = '<span class="ln-pa-ask" title="' + esc(pa.note || '') + '">asked ' + esc((pa.requestedAt || '').split('T')[0]) + '</span>' +
+      '<button class="ln-icon-btn primary" onclick="setPrimerAccess(\'' + u.id + '\',\'approved\')">Allow</button>' +
+      '<button class="ln-icon-btn" onclick="setPrimerAccess(\'' + u.id + '\',\'declined\')">Decline</button>';
+    else if (pa && pa.status === 'approved') paCell = '<span class="ln-approved-badge">allowed</span>' +
+      '<button class="ln-icon-btn" onclick="setPrimerAccess(\'' + u.id + '\',\'declined\')">Revoke</button>';
+    else paCell = (pa && pa.status === 'declined' ? '<span class="muted">declined</span> ' : '') +
+      '<button class="ln-icon-btn" onclick="setPrimerAccess(\'' + u.id + '\',\'approved\')">Allow</button>';
     return '<tr><td><strong>' + esc(u.name) + '</strong></td><td>' + esc(u.email) + '</td>' +
       '<td><span class="ln-badge ' + (u.role === 'admin' ? 'orange' : 'blue') + '">' + esc(u.role) + '</span></td>' +
       '<td><span class="' + (u.status === 'approved' ? 'ln-approved-badge' : 'ln-pending-badge') + '">' + esc(u.status) + '</span></td>' +
       '<td class="ln-nowrap">' + (bday ? '\ud83c\udf82 ' + esc(lnBirthdayText(bday)) + ' ' : '') +
         '<button class="ln-icon-btn" onclick="openBirthdayModal(\'' + u.id + '\')">' + (bday ? '\u270e' : '+ Add') + '</button></td>' +
+      '<td class="ln-pa-cell">' + paCell + '</td>' +
       '<td>' + esc(u.added || '—') + '</td><td style="display:flex;gap:.4rem;flex-wrap:wrap;">' + actions + '</td></tr>';
   }).join('');
 }

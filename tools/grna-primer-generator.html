@@ -9,7 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="../js/save-file.js?v=1"></script>
-    <script src="../js/primer-store.js?v=3"></script>
+    <script src="../js/primer-store.js?v=4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .copy-icon { cursor: pointer; transition: all 0.2s; }
@@ -321,6 +321,21 @@
             const [clearPasscode, setClearPasscode] = useState('');
             const CLEAR_PASSCODE = 'DELETE123'; // Set your secure passcode here
 
+            /* Who may change the list: the PI, and members the PI has allowed
+               (js/primer-store.js). Read again whenever the page comes back
+               into view, so an answer given meanwhile shows up. */
+            const [access, setAccess] = useState({ can: false, state: 'none', admin: false, pending: 0 });
+            const [asking, setAsking] = useState(false);
+            const [editing, setEditing] = useState(null);   // { kind: 'reg' | 'grna', draft }
+            const [copied, setCopied] = useState('');
+            React.useEffect(() => {
+                const look = () => setAccess(PrimerStore.access());
+                window.primerAccessChanged = look;
+                window.addEventListener('focus', look);
+                document.addEventListener('visibilitychange', look);
+                return () => { window.removeEventListener('focus', look); document.removeEventListener('visibilitychange', look); };
+            }, []);
+
             const BOX_CAPACITY = 100;
 
             /* The primers live in the lab's shared inventory, so a primer
@@ -344,8 +359,9 @@
                     setStoreNote(state.shared
                         ? (state.moved ? 'Shared with the lab · ' + state.moved + ' primer' + (state.moved === 1 ? '' : 's') + ' moved up from this browser' : 'Shared with the lab')
                         : 'This browser only — open the Primers page in the notebook to share these');
+                    setAccess(PrimerStore.access());
                     setLoaded(true);
-                }, () => setLoaded(true));
+                }, () => { setAccess(PrimerStore.access()); setLoaded(true); });
                 return () => { dead = true; };
             }, []);
 
@@ -454,6 +470,92 @@
                 return boxes;
             };
 
+            // ===== EDIT, COPY, DELETE =====
+            const askToEdit = async () => {
+                const note = window.prompt('Asking the PI for permission to edit, copy and delete primers.\n\nAnything to add? (optional)', '');
+                if (note === null) return;
+                setAsking(true);
+                try { await PrimerStore.requestAccess(note); setAccess(PrimerStore.access()); }
+                catch (e) { alert('Could not send the request: ' + ((e && e.message) || e)); }
+                setAsking(false);
+            };
+            const allowed = () => {
+                if (access.can) return true;
+                alert('Editing, copying and deleting primers is for the PI, and for members the PI has allowed. Use “Ask to edit” at the top of the page.');
+                return false;
+            };
+            const copyText = (text, key) => {
+                const done = () => { setCopied(key); setTimeout(() => setCopied(c => c === key ? '' : c), 1500); };
+                if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => window.prompt('Copy the sequence:', text));
+                else window.prompt('Copy the sequence:', text);
+            };
+            const cleanSeq = (x) => String(x || '').replace(/[^A-Za-z]/g, '').toUpperCase();
+            const okSeq = (x) => /^[ACGTRYSWKMBDHVN]+$/.test(x);
+
+            const startEditReg = (p) => { if (allowed()) setEditing({ kind: 'reg', draft: { ...p } }); };
+            const startEditGrna = (p) => { if (allowed()) setEditing({ kind: 'grna', draft: { ...p } }); };
+            const setDraft = (field, value) => setEditing(e => ({ ...e, draft: { ...e.draft, [field]: value } }));
+            const saveEdit = () => {
+                const d = editing.draft;
+                if (editing.kind === 'reg') {
+                    const seq = cleanSeq(d.sequence);
+                    if (!seq || !okSeq(seq)) { alert('The sequence can only hold bases (A, C, G, T or IUPAC codes).'); return; }
+                    if (!String(d.name || '').trim()) { alert('The primer needs a name.'); return; }
+                    const rec = { ...d, name: d.name.trim(), sequence: seq, length: seq.length, tm: calculateTm(seq) };
+                    setRegPrimers(regPrimers.map(x => x.id === rec.id ? rec : x));
+                } else {
+                    const f = cleanSeq(d.forwardPrimer), r = cleanSeq(d.reversePrimer);
+                    if (!okSeq(f) || !okSeq(r)) { alert('Both primers need a sequence made of bases only.'); return; }
+                    const rec = { ...d, forwardPrimer: f, reversePrimer: r, forwardLength: f.length, reverseLength: r.length,
+                        spacerSeq: cleanSeq(d.spacerSeq) };
+                    setGrnaPrimers(grnaPrimers.map(x => x.id === rec.id ? rec : x));
+                }
+                setEditing(null);
+            };
+            /* A copy is a new primer with the next number, the same bases and
+               the same notes, and "copy" on the end of its name so the two are
+               told apart at a glance. It starts again as Designed: the copy
+               has not been ordered. */
+            const copyReg = (p) => {
+                if (!allowed()) return;
+                const n = regPrimerCounter;
+                const rest = String(p.name || '').replace(/^PR\d+_?/, '');
+                const rec = { ...p, id: PrimerStore.newId(), number: n, name: 'PR' + n + (rest ? '_' + rest : '') + ' copy', status: 'Designed' };
+                setRegPrimers([...regPrimers, rec]);
+                setRegPrimerCounter(n + 1);
+            };
+            const copyGrna = (p) => {
+                if (!allowed()) return;
+                const n = grnaPrimerCounter;
+                const rec = { ...p, id: PrimerStore.newId(), forwardNumber: n, reverseNumber: n + 1,
+                    forwardName: 'PRg' + n + '_Frw', reverseName: 'PRg' + (n + 1) + '_Rev',
+                    description: (p.description ? p.description + ' ' : '') + '(copy of ' + p.forwardName + ')' };
+                setGrnaPrimers([...grnaPrimers, rec]);
+                setGrnaPrimerCounter(n + 2);
+            };
+            const deleteReg = (p) => {
+                if (!allowed()) return;
+                if (!window.confirm('Delete ' + p.name + '?' + (shared ? '\n\nThe list is shared, so it goes for everyone in the lab.' : ''))) return;
+                setRegPrimers(regPrimers.filter(x => x.id !== p.id));
+            };
+            const deleteGrna = (p) => {
+                if (!allowed()) return;
+                if (!window.confirm('Delete the pair ' + p.forwardName + ' and ' + p.reverseName + '? The two are one record, so both go.' +
+                    (shared ? '\n\nThe list is shared, so it goes for everyone in the lab.' : ''))) return;
+                setGrnaPrimers(grnaPrimers.filter(x => x.id !== p.id));
+            };
+            const RowActions = ({ seq, copyKey, onEdit, onCopy, onDelete }) => (
+                <div className="flex gap-1 justify-end whitespace-nowrap">
+                    <button title="Copy the sequence" onClick={() => copyText(seq, copyKey)}
+                        className="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-100">
+                        <i className={'fas ' + (copied === copyKey ? 'fa-check text-green-600' : 'fa-clipboard')}></i>
+                    </button>
+                    {access.can && onEdit && <button title="Edit" onClick={onEdit} className="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-100"><i className="fas fa-pen"></i></button>}
+                    {access.can && onCopy && <button title="Make a copy with the next number" onClick={onCopy} className="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-100"><i className="fas fa-clone"></i></button>}
+                    {access.can && onDelete && <button title="Delete" onClick={onDelete} className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"><i className="fas fa-trash"></i></button>}
+                </div>
+            );
+
             // ===== REGULAR PRIMER FUNCTIONS =====
             const generateRegPrimer = () => {
                 if (!regPrimerSeq.trim()) {
@@ -557,6 +659,7 @@
             };
 
             const clearAll = () => {
+                if (!allowed()) return;
                 setShowClearModal(true);
                 setClearPasscode('');
             };
@@ -765,6 +868,29 @@
                             )}
                         </div>
 
+                        {/* Who may change the list */}
+                        {shared && (
+                            <div className={'mb-6 rounded-lg px-4 py-3 text-sm flex items-center gap-3 flex-wrap ' +
+                                (access.can ? 'bg-emerald-50 text-emerald-900' : 'bg-slate-100 text-slate-700')}>
+                                {access.admin ? (
+                                    <span><i className="fas fa-user-shield"></i> You can edit, copy and delete primers.
+                                        {access.pending > 0 && <strong> {access.pending} member{access.pending === 1 ? ' is' : 's are'} asking to as well — answer in User Management.</strong>}</span>
+                                ) : access.can ? (
+                                    <span><i className="fas fa-check"></i> The PI has allowed you to edit, copy and delete primers.</span>
+                                ) : access.state === 'pending' ? (
+                                    <span><i className="fas fa-hourglass-half"></i> You asked to edit primers. Waiting for the PI to answer.</span>
+                                ) : (
+                                    <>
+                                        <span><i className="fas fa-lock"></i> Anyone can add primers. Editing, copying and deleting them is for the PI{access.state === 'declined' ? ' — your last request was declined' : ''}.</span>
+                                        <button onClick={askToEdit} disabled={asking}
+                                            className="px-3 py-1 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                                            {asking ? 'Sending…' : (access.state === 'declined' ? 'Ask again' : 'Ask to edit')}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
                         {/* Data Management */}
                         <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-indigo-500 rounded-lg p-6 shadow">
                             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -785,9 +911,9 @@
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={clearAll} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-semibold">
+                                {access.can && <button onClick={clearAll} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2 font-semibold">
                                     <i className="fas fa-trash"></i> Clear All
-                                </button>
+                                </button>}
                             </div>
                         </div>
 
@@ -893,6 +1019,7 @@
                                                         <th className="text-center py-2">Length</th>
                                                         <th className="text-center py-2">Tm</th>
                                                         <th className="text-center py-2">Box</th>
+                                                        <th className="text-right py-2">Actions</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -905,6 +1032,11 @@
                                                                 <td className="py-2 text-center">{p.forwardLength}</td>
                                                                 <td className="py-2 text-center">{calculateTm(p.forwardPrimer)}</td>
                                                                 <td className="py-2 text-center">{p.box}</td>
+                                                                <td className="py-2" rowSpan={2}>
+                                                                    <RowActions seq={p.forwardPrimer} copyKey={p.id + 'f'}
+                                                                        onEdit={() => startEditGrna(p)} onCopy={() => copyGrna(p)} onDelete={() => deleteGrna(p)} />
+                                                                    <div className="mt-1"><RowActions seq={p.reversePrimer} copyKey={p.id + 'r'} /></div>
+                                                                </td>
                                                             </tr>
                                                             <tr className="border-b hover:bg-red-50">
                                                                 <td className="py-2">{p.reverseNumber}</td>
@@ -1050,6 +1182,7 @@
                                                         <th className="text-center py-2">Length</th>
                                                         <th className="text-center py-2">Tm</th>
                                                         <th className="text-center py-2">Status</th>
+                                                        <th className="text-right py-2">Actions</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1061,6 +1194,8 @@
                                                             <td className="py-2 text-center">{p.length}</td>
                                                             <td className="py-2 text-center">{p.tm}</td>
                                                             <td className={`py-2 text-center font-bold ${p.status === 'Arrived' ? 'text-green-600' : p.status === 'Ordered' ? 'text-yellow-600' : 'text-blue-600'}`}>{p.status}</td>
+                                                            <td className="py-2"><RowActions seq={p.sequence} copyKey={p.id}
+                                                                onEdit={() => startEditReg(p)} onCopy={() => copyReg(p)} onDelete={() => deleteReg(p)} /></td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1074,6 +1209,65 @@
                         {/* The one panel here that is not a browser calculation */}
                         <ServerPrimerDesign />
                     </div>
+
+                    {/* Editing one primer, or one gRNA pair */}
+                    {editing && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setEditing(null); }}>
+                            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full max-h-full overflow-auto">
+                                <h3 className="text-xl font-bold text-gray-900 mb-4">
+                                    Edit {editing.kind === 'reg' ? editing.draft.name : editing.draft.forwardName + ' / ' + editing.draft.reverseName}
+                                </h3>
+                                {editing.kind === 'reg' ? (
+                                    <div className="space-y-3 text-sm">
+                                        <label className="block"><span className="font-semibold text-gray-700">Name</span>
+                                            <input className="mt-1 w-full border rounded px-3 py-2" value={editing.draft.name || ''} onChange={e => setDraft('name', e.target.value)} /></label>
+                                        <label className="block"><span className="font-semibold text-gray-700">Sequence (5′→3′)</span>
+                                            <textarea rows={2} className="mt-1 w-full border rounded px-3 py-2 font-mono" value={editing.draft.sequence || ''} onChange={e => setDraft('sequence', e.target.value)} />
+                                            <span className="text-xs text-gray-500">{cleanSeq(editing.draft.sequence).length} nt · Tm {calculateTm(cleanSeq(editing.draft.sequence))}</span></label>
+                                        <label className="block"><span className="font-semibold text-gray-700">Description</span>
+                                            <input className="mt-1 w-full border rounded px-3 py-2" value={editing.draft.description || ''} onChange={e => setDraft('description', e.target.value)} /></label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <label className="block"><span className="font-semibold text-gray-700">Orientation</span>
+                                                <select className="mt-1 w-full border rounded px-2 py-2" value={editing.draft.orientation || 'Frw'} onChange={e => setDraft('orientation', e.target.value)}>
+                                                    <option value="Frw">Forward</option><option value="Rev">Reverse</option></select></label>
+                                            <label className="block"><span className="font-semibold text-gray-700">Vendor</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2" value={editing.draft.vendor || ''} onChange={e => setDraft('vendor', e.target.value)} /></label>
+                                            <label className="block"><span className="font-semibold text-gray-700">Status</span>
+                                                <select className="mt-1 w-full border rounded px-2 py-2" value={editing.draft.status || 'Designed'} onChange={e => setDraft('status', e.target.value)}>
+                                                    <option>Designed</option><option>Ordered</option><option>Arrived</option></select></label>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3 text-sm">
+                                        <label className="block"><span className="font-semibold text-gray-700">Spacer (20 bp)</span>
+                                            <input className="mt-1 w-full border rounded px-3 py-2 font-mono" value={editing.draft.spacerSeq || ''} onChange={e => setDraft('spacerSeq', e.target.value)} /></label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <label className="block"><span className="font-semibold text-gray-700">Forward name</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2" value={editing.draft.forwardName || ''} onChange={e => setDraft('forwardName', e.target.value)} /></label>
+                                            <label className="block col-span-2"><span className="font-semibold text-gray-700">Forward primer</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2 font-mono" value={editing.draft.forwardPrimer || ''} onChange={e => setDraft('forwardPrimer', e.target.value)} /></label>
+                                            <label className="block"><span className="font-semibold text-gray-700">Reverse name</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2" value={editing.draft.reverseName || ''} onChange={e => setDraft('reverseName', e.target.value)} /></label>
+                                            <label className="block col-span-2"><span className="font-semibold text-gray-700">Reverse primer</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2 font-mono" value={editing.draft.reversePrimer || ''} onChange={e => setDraft('reversePrimer', e.target.value)} /></label>
+                                        </div>
+                                        <label className="block"><span className="font-semibold text-gray-700">Description</span>
+                                            <input className="mt-1 w-full border rounded px-3 py-2" value={editing.draft.description || ''} onChange={e => setDraft('description', e.target.value)} /></label>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
+                                    {['freezer', 'shelf', 'box'].map(k => (
+                                        <label key={k} className="block"><span className="font-semibold text-gray-700 capitalize">{k}</span>
+                                            <input className="mt-1 w-full border rounded px-2 py-2" value={editing.draft[k] || ''} onChange={e => setDraft(k, e.target.value)} /></label>
+                                    ))}
+                                </div>
+                                <div className="flex justify-end gap-2 mt-6">
+                                    <button onClick={() => setEditing(null)} className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</button>
+                                    <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Passcode Confirmation Modal */}
                     {showClearModal && (

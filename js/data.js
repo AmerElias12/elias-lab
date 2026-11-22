@@ -34,7 +34,9 @@
   // notebook can say happy birthday. Kept here rather than on the member's
   // profile so that no change to the database was needed to add it.
   var INV_CATS = ['enzymes', 'primers', 'plasmids', 'stocks', 'cells', 'kits', 'boxes',
-    'requests', 'grants', 'expenses', 'enzymesets', 'birthdays'];
+    'requests', 'grants', 'expenses', 'enzymesets', 'birthdays', 'primeraccess'];
+  // 'primeraccess' is who may edit or delete primers besides the PI: one row
+  // per member who asked, pending, approved or declined (js/primer-store.js).
 
   /* An inventory saved before a category existed has no array for it, so
      adding the first item of a new category would throw. Fill in whatever is
