@@ -328,6 +328,12 @@
             const [asking, setAsking] = useState(false);
             const [editing, setEditing] = useState(null);   // { kind: 'reg' | 'grna', draft }
             const [copied, setCopied] = useState('');
+            /* Several at once: which rows are ticked, by id. Changing twenty
+               primers from Ordered to Arrived was twenty edits, each one a
+               form; ticking them and saying what changed is one. */
+            const [regSel, setRegSel] = useState({});
+            const [grnaSel, setGrnaSel] = useState({});
+            const [bulk, setBulk] = useState(null);   // the "same change to all of them" form
             React.useEffect(() => {
                 const look = () => setAccess(PrimerStore.access());
                 window.primerAccessChanged = look;
@@ -544,6 +550,52 @@
                     (shared ? '\n\nThe list is shared, so it goes for everyone in the lab.' : ''))) return;
                 setGrnaPrimers(grnaPrimers.filter(x => x.id !== p.id));
             };
+            // ===== SEVERAL AT ONCE =====
+            const picked = (sel, list) => list.filter(p => sel[p.id]);
+            const pick = (setSel, id, on) => setSel(s => Object.assign({}, s, { [id]: on }));
+            const pickAll = (setSel, list, on) => setSel(on ? Object.fromEntries(list.map(p => [p.id, true])) : {});
+            const regChosen = picked(regSel, regSorted);
+            const grnaChosen = picked(grnaSel, grnaSorted);
+            const countStatus = (st) => regSorted.filter(p => (p.status || 'Designed') === st).length;
+            // Tick every primer at one status: "everything Ordered is now Arrived".
+            const pickByStatus = (st) => setRegSel(Object.fromEntries(regSorted.filter(p => (p.status || 'Designed') === st).map(p => [p.id, true])));
+
+            const bulkRegStatus = (status) => {
+                if (!status || !allowed()) return;
+                const ids = regChosen.map(p => p.id);
+                setRegPrimers(regPrimers.map(p => ids.indexOf(p.id) >= 0 ? Object.assign({}, p, { status }) : p));
+            };
+            const bulkDelete = (kind) => {
+                if (!allowed()) return;
+                const chosen = kind === 'reg' ? regChosen : grnaChosen;
+                const what = kind === 'reg' ? chosen.length + ' primer' + (chosen.length === 1 ? '' : 's')
+                    : chosen.length + ' pair' + (chosen.length === 1 ? '' : 's') + ' (' + (chosen.length * 2) + ' primers)';
+                if (!window.confirm('Delete ' + what + '?' + (shared ? '\n\nThe list is shared, so they go for everyone in the lab.' : ''))) return;
+                const ids = chosen.map(p => p.id);
+                if (kind === 'reg') { setRegPrimers(regPrimers.filter(p => ids.indexOf(p.id) < 0)); setRegSel({}); }
+                else { setGrnaPrimers(grnaPrimers.filter(p => ids.indexOf(p.id) < 0)); setGrnaSel({}); }
+            };
+            /* The rest of the fields, for every ticked row at once. A box left
+               blank is left alone, so one of them can be changed without
+               touching the others. */
+            const openBulk = (kind) => { if (allowed()) setBulk({ kind, freezer: '', shelf: '', box: '', vendor: '', status: '', description: '' }); };
+            const applyBulk = () => {
+                const b = bulk, fields = {};
+                ['freezer', 'shelf', 'box', 'vendor', 'status', 'description'].forEach(k => {
+                    if (String(b[k] || '').trim() !== '') fields[k] = b[k].trim();
+                });
+                if (!Object.keys(fields).length) { alert('Fill in at least one box. The ones you leave blank are left as they are.'); return; }
+                if (b.kind === 'reg') {
+                    const ids = regChosen.map(p => p.id);
+                    setRegPrimers(regPrimers.map(p => ids.indexOf(p.id) >= 0 ? Object.assign({}, p, fields) : p));
+                } else {
+                    const ids = grnaChosen.map(p => p.id);
+                    const keep = Object.assign({}, fields); delete keep.vendor; delete keep.status;
+                    setGrnaPrimers(grnaPrimers.map(p => ids.indexOf(p.id) >= 0 ? Object.assign({}, p, keep) : p));
+                }
+                setBulk(null);
+            };
+
             const RowActions = ({ seq, copyKey, onEdit, onCopy, onDelete }) => (
                 <div className="flex gap-1 justify-end whitespace-nowrap">
                     <button title="Copy the sequence" onClick={() => copyText(seq, copyKey)}
@@ -1009,10 +1061,25 @@
                                                 <i className="fas fa-download"></i> Export PRg
                                             </button>
                                         </div>
+                                        {access.can && (
+                                          <div className="mb-3 text-sm">
+                                            {grnaChosen.length === 0
+                                              ? <span className="text-gray-500">Tick pairs to change or delete several at once.</span>
+                                              : <div className="flex items-center gap-2 flex-wrap bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                                  <strong className="text-blue-900">{grnaChosen.length} chosen</strong>
+                                                  <button onClick={() => openBulk('grna')} className="px-2 py-1 rounded border border-blue-300 bg-white hover:bg-blue-100">Change storage…</button>
+                                                  <button onClick={() => bulkDelete('grna')} className="px-2 py-1 rounded border border-red-300 bg-white text-red-600 hover:bg-red-50">Delete chosen</button>
+                                                  <button onClick={() => setGrnaSel({})} className="ml-auto text-gray-500 hover:text-gray-700">Clear</button>
+                                                </div>}
+                                          </div>
+                                        )}
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-xs">
                                                 <thead>
                                                     <tr className="border-b">
+                                                        {access.can && <th className="py-2 w-6"><input type="checkbox" title="Tick every pair"
+                                                            checked={grnaSorted.length > 0 && grnaChosen.length === grnaSorted.length}
+                                                            onChange={e => pickAll(setGrnaSel, grnaSorted, e.target.checked)} /></th>}
                                                         <th className="text-left py-2">No</th>
                                                         <th className="text-left py-2">Name</th>
                                                         <th className="text-left py-2">Sequence</th>
@@ -1025,7 +1092,10 @@
                                                 <tbody>
                                                     {grnaSorted.map(p => (
                                                         <React.Fragment key={p.id}>
-                                                            <tr className="border-b hover:bg-blue-50">
+                                                            <tr className={'border-b hover:bg-blue-50' + (grnaSel[p.id] ? ' bg-blue-50' : '')}>
+                                                                {access.can && <td className="py-2" rowSpan={2}><input type="checkbox"
+                                                                    checked={!!grnaSel[p.id]} onChange={e => pick(setGrnaSel, p.id, e.target.checked)}
+                                                                    aria-label={'Choose ' + p.forwardName} /></td>}
                                                                 <td className="py-2">{p.forwardNumber}</td>
                                                                 <td className="py-2 font-bold text-blue-600">{p.forwardName}</td>
                                                                 <td className="py-2 font-mono text-xs truncate">{p.forwardPrimer}</td>
@@ -1172,10 +1242,40 @@
                                                 <i className="fas fa-download"></i> Export PR
                                             </button>
                                         </div>
+                                        {access.can && (
+                                          <div className="mb-3 text-sm space-y-2">
+                                            <div className="flex items-center gap-2 flex-wrap text-gray-600">
+                                              <span>Tick to change several at once, or take them by status:</span>
+                                              {['Designed', 'Ordered', 'Arrived'].map(st => (
+                                                <button key={st} onClick={() => pickByStatus(st)} disabled={!countStatus(st)}
+                                                    className="px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40">
+                                                    {st} ({countStatus(st)})
+                                                </button>
+                                              ))}
+                                            </div>
+                                            {regChosen.length > 0 && (
+                                              <div className="flex items-center gap-2 flex-wrap bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                                                <strong className="text-purple-900">{regChosen.length} chosen</strong>
+                                                <label className="flex items-center gap-1">Mark as
+                                                  <select value="" onChange={e => { bulkRegStatus(e.target.value); e.target.value = ''; }}
+                                                      className="border border-purple-300 rounded px-2 py-1 bg-white">
+                                                    <option value="">—</option><option>Designed</option><option>Ordered</option><option>Arrived</option>
+                                                  </select>
+                                                </label>
+                                                <button onClick={() => openBulk('reg')} className="px-2 py-1 rounded border border-purple-300 bg-white hover:bg-purple-100">Other fields…</button>
+                                                <button onClick={() => bulkDelete('reg')} className="px-2 py-1 rounded border border-red-300 bg-white text-red-600 hover:bg-red-50">Delete chosen</button>
+                                                <button onClick={() => setRegSel({})} className="ml-auto text-gray-500 hover:text-gray-700">Clear</button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-xs">
                                                 <thead>
                                                     <tr className="border-b">
+                                                        {access.can && <th className="py-2 w-6"><input type="checkbox" title="Tick every primer"
+                                                            checked={regSorted.length > 0 && regChosen.length === regSorted.length}
+                                                            onChange={e => pickAll(setRegSel, regSorted, e.target.checked)} /></th>}
                                                         <th className="text-left py-2">No</th>
                                                         <th className="text-left py-2">Name</th>
                                                         <th className="text-left py-2">Sequence</th>
@@ -1187,7 +1287,10 @@
                                                 </thead>
                                                 <tbody>
                                                     {regSorted.map(p => (
-                                                        <tr key={p.id} className="border-b hover:bg-purple-50">
+                                                        <tr key={p.id} className={'border-b hover:bg-purple-50' + (regSel[p.id] ? ' bg-purple-50' : '')}>
+                                                            {access.can && <td className="py-2"><input type="checkbox"
+                                                                checked={!!regSel[p.id]} onChange={e => pick(setRegSel, p.id, e.target.checked)}
+                                                                aria-label={'Choose ' + p.name} /></td>}
                                                             <td className="py-2">{p.number}</td>
                                                             <td className="py-2 font-bold text-purple-600">{p.name}</td>
                                                             <td className="py-2 font-mono text-xs truncate">{p.sequence}</td>
@@ -1209,6 +1312,45 @@
                         {/* The one panel here that is not a browser calculation */}
                         <ServerPrimerDesign />
                     </div>
+
+                    {/* The same change to every ticked row */}
+                    {bulk && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setBulk(null); }}>
+                            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full">
+                                <h3 className="text-xl font-bold text-gray-900 mb-1">
+                                    Change {bulk.kind === 'reg' ? regChosen.length + ' primer' + (regChosen.length === 1 ? '' : 's')
+                                        : grnaChosen.length + ' pair' + (grnaChosen.length === 1 ? '' : 's')}
+                                </h3>
+                                <p className="text-sm text-gray-600 mb-4">Whatever you fill in is applied to all of them. Anything left blank stays as it is.</p>
+                                <div className="space-y-3 text-sm">
+                                    {bulk.kind === 'reg' && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <label className="block"><span className="font-semibold text-gray-700">Status</span>
+                                                <select className="mt-1 w-full border rounded px-2 py-2" value={bulk.status} onChange={e => setBulk(Object.assign({}, bulk, { status: e.target.value }))}>
+                                                    <option value="">leave as is</option><option>Designed</option><option>Ordered</option><option>Arrived</option></select></label>
+                                            <label className="block"><span className="font-semibold text-gray-700">Vendor</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2" placeholder="leave blank to keep"
+                                                    value={bulk.vendor} onChange={e => setBulk(Object.assign({}, bulk, { vendor: e.target.value }))} /></label>
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-3 gap-3">
+                                        {['freezer', 'shelf', 'box'].map(k => (
+                                            <label key={k} className="block"><span className="font-semibold text-gray-700 capitalize">{k}</span>
+                                                <input className="mt-1 w-full border rounded px-2 py-2" placeholder="keep"
+                                                    value={bulk[k]} onChange={e => setBulk(Object.assign({}, bulk, { [k]: e.target.value }))} /></label>
+                                        ))}
+                                    </div>
+                                    <label className="block"><span className="font-semibold text-gray-700">Description</span>
+                                        <input className="mt-1 w-full border rounded px-3 py-2" placeholder="leave blank to keep each one's own"
+                                            value={bulk.description} onChange={e => setBulk(Object.assign({}, bulk, { description: e.target.value }))} /></label>
+                                </div>
+                                <div className="flex justify-end gap-2 mt-6">
+                                    <button onClick={() => setBulk(null)} className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Cancel</button>
+                                    <button onClick={applyBulk} className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700">Apply to all chosen</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Editing one primer, or one gRNA pair */}
                     {editing && (
