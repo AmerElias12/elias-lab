@@ -45,18 +45,24 @@
   var REAGENTS = {
     lipostem: {
       name: 'Lipofectamine Stem', medium: 'Opti-MEM I', tubes: 2, p3000: false,
-      source: 'Thermo Fisher Lipofectamine Stem Transfection Reagent',
+      source: 'Thermo Fisher Lipofectamine Stem user guide (MAN0017080), low end of each range',
+      /* The guide gives a range per well — 96: 50–100 ng with 0.2–0.4 µL,
+         24: 250–500 ng with 1–2 µL, 6: 1.25–2.5 µg with 5–10 µL — and the
+         numbers here are the top of the DNA range with the bottom of the
+         lipid range, which is where the lab's own iPSC transfections sit.
+         12-well and the 10 cm dish are not in the guide and are scaled from
+         the 24-well by area. */
       per: {
         '96': { dna: 100, reagent: 0.2, medium: 5, add: 10 },
         '24': { dna: 500, reagent: 1, medium: 25, add: 50 },
         '12': { dna: 1000, reagent: 2, medium: 50, add: 100 },
-        '6': { dna: 2000, reagent: 4, medium: 100, add: 200 },
-        '10cm': { dna: 10000, reagent: 20, medium: 500, add: 1000 }
+        '6': { dna: 2000, reagent: 5, medium: 100, add: 200 },
+        '10cm': { dna: 10000, reagent: 25, medium: 500, add: 1000 }
       }
     },
     lipo3000: {
       name: 'Lipofectamine 3000', medium: 'Opti-MEM I', tubes: 2, p3000: true,
-      source: 'Thermo Fisher Lipofectamine 3000, P3000 at 2 µL per µg DNA',
+      source: 'Thermo Fisher Lipofectamine 3000 protocol (MAN0009872), the higher of its two doses',
       per: {
         '96': { dna: 100, reagent: 0.3, medium: 5, add: 10 },
         '24': { dna: 500, reagent: 1.5, medium: 25, add: 50 },
@@ -67,7 +73,7 @@
     },
     jetoptimus: {
       name: 'jetOPTIMUS', medium: 'jetOPTIMUS buffer', tubes: 1, p3000: false,
-      source: 'Polyplus jetOPTIMUS, 1 µL reagent per µg DNA',
+      source: 'Polyplus jetOPTIMUS protocol, 1 µL reagent per µg DNA',
       per: {
         '96': { dna: 100, reagent: 0.1, medium: 10, add: 10 },
         '24': { dna: 500, reagent: 0.5, medium: 50, add: 50 },
