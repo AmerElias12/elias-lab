@@ -522,15 +522,17 @@ function viewProtocol(id) {
     '<div style="font-size:12px;color:#888;margin-bottom:1.5rem;">📁 ' + esc(p.category) + ' · 👤 ' + esc(p.author) + ' · 📅 ' + esc(p.date) + (p.link ? ' · <a href="' + esc(p.link) + '" target="_blank" style="color:#0d6efd;">External Link ↗</a>' : '') + '</div>' +
     (p.summary ? '<p style="color:#555;margin-bottom:1.5rem;line-height:1.7;">' + esc(p.summary) + '</p>' : '') +
     (p.materials ? '<h4 style="margin-bottom:.5rem;">Materials &amp; Reagents</h4><pre style="white-space:pre-wrap;font-size:13px;color:#555;background:#f9f9f9;padding:1rem;border-radius:6px;margin-bottom:1.5rem;">' + esc(p.materials) + '</pre>' : '') +
-    (p.steps ? '<h4 style="margin-bottom:.5rem;">Protocol Steps</h4><pre style="white-space:pre-wrap;font-size:13px;color:#555;background:#f9f9f9;padding:1rem;border-radius:6px;margin-bottom:1.5rem;">' + esc(p.steps) + '</pre>' : '') +
+    (p.steps ? '<h4 style="margin-bottom:.5rem;">Protocol Steps</h4><div class="ln-proto-steps">' + protoStepsHtml(p.steps) + '</div>' : '') +
     (p.notes ? '<h4 style="margin-bottom:.5rem;">Notes &amp; Troubleshooting</h4><pre style="white-space:pre-wrap;font-size:13px;color:#555;background:#f9f9f9;padding:1rem;border-radius:6px;margin-bottom:1.5rem;">' + esc(p.notes) + '</pre>' : '') +
     renderAttachments(p.files) +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Close</button><button class="ln-modal-save" onclick="exportProtocolPDF(\'' + p.id + '\')">Export PDF</button><button class="ln-modal-save" onclick="exportProtocolWord(\'' + p.id + '\')">Export DOC</button></div>';
   document.getElementById('ln-modal-bg').classList.add('open');
+  hydrateEntryFiles(mc);       // steps may hold images kept by path
 }
 
-function exportProtocolPDF(id) {
+async function exportProtocolPDF(id) {
   var p = getProtocols().find(function (x) { return x.id === id; }); if (!p) return;
+  var stepsOut = await protoStepsOut(p);
   var win = window.open('', '_blank');
   var imgs = p.files ? p.files.filter(function (f) { return f.type && f.type.indexOf('image/') === 0; }).map(function (f) { return '<img src="' + f.data + '" style="max-width:100%;margin:8px 0;border-radius:4px;">'; }).join('') : '';
   var doc = '<!DOCTYPE html><html><head><title>' + esc(p.title) + '</title>';
@@ -539,21 +541,22 @@ function exportProtocolPDF(id) {
   if (p.link) doc += '<p><b>Reference:</b> <a href="' + esc(p.link) + '">' + esc(p.link) + '</a></p>';
   if (p.summary) doc += '<h2>Summary</h2><p>' + esc(p.summary) + '</p>';
   if (p.materials) doc += '<h2>Materials &amp; Reagents</h2><pre>' + esc(p.materials) + '</pre>';
-  if (p.steps) doc += '<h2>Protocol Steps</h2><pre>' + esc(p.steps) + '</pre>';
+  if (p.steps) doc += '<h2>Protocol Steps</h2>' + stepsOut;
   if (p.notes) doc += '<h2>Notes &amp; Troubleshooting</h2><pre>' + esc(p.notes) + '</pre>';
   if (imgs) doc += '<h2>Attachments</h2>' + imgs;
   doc += '</body></html>';
   win.document.write(doc); win.document.close(); win.focus();
   setTimeout(function () { win.print(); }, 400);
 }
-function exportProtocolWord(id) {
+async function exportProtocolWord(id) {
   var p = getProtocols().find(function (x) { return x.id === id; }); if (!p) return;
+  var stepsOut = await protoStepsOut(p);
   var html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'><style>body{font-family:Arial;font-size:12pt;}h1{color:#064e55;}h2{color:#064e55;font-size:14pt;}pre{font-family:Courier New;font-size:10pt;background:#f5f5f5;padding:8pt;}</style></head><body>" +
     '<h1>' + esc(p.title) + '</h1><p><b>Category:</b> ' + esc(p.category) + ' | <b>Author:</b> ' + esc(p.author) + ' | <b>Date:</b> ' + esc(p.date) + '</p>' +
     (p.link ? '<p><b>Reference:</b> ' + esc(p.link) + '</p>' : '') +
     (p.summary ? '<h2>Summary</h2><p>' + esc(p.summary) + '</p>' : '') +
     (p.materials ? '<h2>Materials &amp; Reagents</h2><pre>' + esc(p.materials) + '</pre>' : '') +
-    (p.steps ? '<h2>Protocol Steps</h2><pre>' + esc(p.steps) + '</pre>' : '') +
+    (p.steps ? '<h2>Protocol Steps</h2>' + stepsOut : '') +
     (p.notes ? '<h2>Notes &amp; Troubleshooting</h2><pre>' + esc(p.notes) + '</pre>' : '') +
     '</body></html>';
   saveFile(p.title.replace(/[^a-z0-9]/gi, '_') + '.doc', '\ufeff' + html, 'application/msword');
@@ -996,6 +999,41 @@ window.addEventListener('beforeunload', function (e) {
 document.addEventListener('keydown', function (e) {
   if (lnCurrentSection === 'entry' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveEntry(); }
 });
+/* ---- the rich editor, wherever it is ----
+
+   There are two of them now: the notebook page of an experiment entry, and
+   the steps of a protocol. They are the same editor with the same toolbar,
+   so everything below works on whichever one the caret is in rather than on
+   the entry's by name. Nothing else about them differs — a table pasted
+   into a protocol is the same table as one pasted into a page. */
+var activeEditor = null;
+function pageEditor() {
+  if (activeEditor && document.body.contains(activeEditor)) return activeEditor;
+  return document.getElementById('e-body');
+}
+/* The handlers a rich editor needs, in one place so the two are wired the
+   same way. `dirty` is what to call when something changes: the entry marks
+   itself unsaved, while a protocol is a form that is saved by its button. */
+function wirePageEditor(editor, dirty) {
+  editor._dirty = dirty || function () {};
+  editor.addEventListener('focus', function () {
+    activeEditor = editor;
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+  });
+  editor.addEventListener('mousedown', function () { activeEditor = editor; });
+  editor.addEventListener('click', toggleChecklistItem);
+  editor.addEventListener('click', openPageFile);
+  editor.addEventListener('paste', editorPaste);
+  editor.addEventListener('drop', editorDrop);
+  editor.addEventListener('input', function () { editor._dirty(); });
+  hydrateEntryFiles(editor);
+}
+// What an edit means, for whichever editor it happened in.
+function editorChanged() {
+  var ed = pageEditor();
+  if (ed && ed._dirty) ed._dirty(); else markEntryDirty();
+}
+
 function markEntryDirty() {
   if (entryDirty) return;
   entryDirty = true;
@@ -1099,7 +1137,7 @@ function renderEntry(id) {
       '<section class="ln-paper-field ln-paper-tables"><h3>Data Tables</h3><div id="ln-tables-editor"></div><button class="tbl-btn" onclick="addTableToEditor()">+ Add Table</button></section>' +
       '<section class="ln-paper-field"><h3>Attachments</h3><div id="e-attachments">' + (renderAttachments(n.files) || '<div class="ln-paper-none">No attachments yet.</div>') + '</div>' +
         '<input type="file" id="e-files" multiple accept="image/*,.pdf,.fcs,.xlsx,.csv,.docx,.pptx"><div class="hint">Files are uploaded when you save.</div></section>' +
-      '<section class="ln-paper-page"><h3>Notebook Page</h3>' + editorToolbarHtml() +
+      '<section class="ln-paper-page"><h3>Notebook Page</h3>' + editorToolbarHtml('e-body') +
         '<div id="e-body" class="ln-page-editor" contenteditable="true" spellcheck="true" data-placeholder="A blank page \u2014 write freely: notes, observations, plate layouts, checklists, pasted images\u2026"></div>' +
       '</section>' +
     '</article>';
@@ -1115,7 +1153,7 @@ function renderEntry(id) {
   editor.addEventListener('click', LabPlates.handle);
   ['input', 'change', 'click'].forEach(function (ev) { editor.addEventListener(ev, LabTransfect.handle); });
   LabMentions.attach(editor);
-  hydrateEntryFiles(editor);
+  wirePageEditor(editor, markEntryDirty);
   initTableEditor();
   loadTablesIntoEditor((n.tables || []).map(function (t) { return { label: t.label, html: safeTableHtml(t.html) }; }));
   var paper = document.getElementById('ln-paper');
@@ -1123,12 +1161,6 @@ function renderEntry(id) {
   paper.addEventListener('input', function (e) { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); markEntryDirty(); });
   paper.addEventListener('change', markEntryDirty);
   paper.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.tbl-btn')) markEntryDirty(); });
-  // Enter starts a new paragraph (<p>), not a bare <div>.
-  editor.addEventListener('focus', function () { document.execCommand('defaultParagraphSeparator', false, 'p'); });
-  editor.addEventListener('click', toggleChecklistItem);
-  editor.addEventListener('click', openPageFile);
-  editor.addEventListener('paste', editorPaste);
-  editor.addEventListener('drop', editorDrop);
   if (!entryId) setTimeout(function () { document.getElementById('e-title').focus(); }, 50);
   if (window.LabTabs) LabTabs.noteShow('entry', entryId || 'new');
   // Anything this tab was holding when it was last left goes back in now,
@@ -1216,7 +1248,8 @@ async function saveEntry() {
 }
 
 // ── NOTEBOOK PAGE EDITOR ───────────────────────────────────
-function editorToolbarHtml() {
+function editorToolbarHtml(forId, slim) {
+  forId = forId || 'e-body';
   function b(cmd, label, title) { return '<button type="button" title="' + title + '" onmousedown="event.preventDefault()" onclick="editorCmd(\'' + cmd + '\')">' + label + '</button>'; }
   return '<div class="ln-editor-toolbar" role="toolbar" aria-label="Page formatting">' +
     '<select title="Text style" onchange="editorCmd(\'block\',this.value);this.value=\'\'"><option value="">Text style</option><option value="p">Normal text</option><option value="h2">Heading 1</option><option value="h3">Heading 2</option><option value="h4">Heading 3</option><option value="pre">Code / sequence</option></select>' +
@@ -1226,22 +1259,24 @@ function editorToolbarHtml() {
     b('quote', '\u275d', 'Quote') + b('insertHorizontalRule', '\u2015', 'Divider line') +
     '<span class="sep"></span>' + b('table', '\u229e Table', 'Insert a table') + b('tableRow', '+ Row', 'Add a row to the table you are in') + b('tableCol', '+ Col', 'Add a column to the table you are in') +
     b('file', '\ud83d\udcce File', 'Attach any file: images appear on the page, other files as a link (you can also paste or drop files)') +
-    '<button type="button" class="ln-calc-btn" title="Insert a ready-made PCR, qPCR, transfection or electroporation table" onmousedown="event.preventDefault()" onclick="openCalcPicker()">\ud83e\uddee Calc table</button>' +
-    '<button type="button" class="ln-calc-btn" title="Insert a culture plate you can write in: 1, 6, 12, 24, 48 or 96 wells" onmousedown="event.preventDefault()" onclick="openPlatePicker()">\u25a6 Plate</button>' +
-    '<button type="button" class="ln-calc-btn" title="Start a new day on this page: a date and a line" onmousedown="event.preventDefault()" onclick="insertDayMark()">\ud83d\udcc5 New day</button>' +
+    (slim ? '' :
+      '<button type="button" class="ln-calc-btn" title="Insert a ready-made PCR, qPCR, transfection or electroporation table" onmousedown="event.preventDefault()" onclick="openCalcPicker()">\ud83e\uddee Calc table</button>' +
+      '<button type="button" class="ln-calc-btn" title="Insert a culture plate you can write in: 1, 6, 12, 24, 48 or 96 wells" onmousedown="event.preventDefault()" onclick="openPlatePicker()">\u25a6 Plate</button>' +
+      '<button type="button" class="ln-calc-btn" title="Start a new day on this page: a date and a line" onmousedown="event.preventDefault()" onclick="insertDayMark()">\ud83d\udcc5 New day</button>') +
     '<span class="sep"></span>' + b('removeFormat', 'Clear', 'Clear formatting') + b('undo', '\u21ba Undo', 'Undo (Ctrl/Cmd+Z)') + b('redo', '\u21bb Redo', 'Redo') +
-    '<input type="file" id="e-file-input" multiple hidden onchange="editorInsertFiles(this.files);this.value=\'\'">' +
+    '<input type="file" id="' + forId + '-file-input" multiple hidden onchange="editorInsertFiles(this.files);this.value=\'\'">' +
     '</div>';
 }
 function editorSelectionNode() {
   var sel = window.getSelection();
   if (!sel.rangeCount) return null;
   var n = sel.getRangeAt(0).startContainer;
-  var editor = document.getElementById('e-body');
+  var editor = pageEditor();
   return editor && editor.contains(n) ? (n.nodeType === 1 ? n : n.parentNode) : null;
 }
 function editorCmd(cmd, arg) {
-  var editor = document.getElementById('e-body');
+  var editor = pageEditor();
+  if (!editor) return;
   if (cmd !== 'file') editor.focus();
   var here = editorSelectionNode();
   if (cmd === 'block') { if (arg) document.execCommand('formatBlock', false, '<' + arg + '>'); }
@@ -1269,9 +1304,9 @@ function editorCmd(cmd, arg) {
       Array.prototype.forEach.call(table.rows, function (r) { var c = document.createElement(r.parentNode.tagName === 'THEAD' ? 'th' : 'td'); c.innerHTML = '<br>'; r.insertBefore(c, r.cells[col + 1] || null); });
     }
   }
-  else if (cmd === 'file') { document.getElementById('e-file-input').click(); return; }
+  else if (cmd === 'file') { document.getElementById(editor.id + '-file-input').click(); return; }
   else document.execCommand(cmd, false, null);
-  markEntryDirty();
+  editorChanged();
 }
 function toggleChecklistItem(e) {
   var li = e.target.closest && e.target.closest('ul.ln-checklist > li');
@@ -1279,7 +1314,7 @@ function toggleChecklistItem(e) {
   var box = li.getBoundingClientRect();
   if (e.clientX - box.left > 26) return; // only the checkbox area toggles
   li.classList.toggle('checked');
-  markEntryDirty();
+  editorChanged();
 }
 // Files go to storage (shared mode) or inline (local mode), then onto the
 // page: images as pictures, everything else as a file chip with name and size.
@@ -1292,7 +1327,7 @@ async function editorInsertFiles(files) {
   if (st) st.textContent = 'Uploading ' + (files.length === 1 ? files[0].name : files.length + ' files') + '\u2026';
   try {
     var up = await DB.uploadFiles(files);
-    var editor = document.getElementById('e-body');
+    var editor = pageEditor();
     editor.focus();
     document.execCommand('insertHTML', false, up.map(function (f) {
       var path = f.path ? ' data-path="' + esc(f.path) + '"' : '';
@@ -1300,8 +1335,8 @@ async function editorInsertFiles(files) {
       return '<a class="ln-file" href="' + esc(f.data) + '"' + path + ' download="' + esc(f.name) + '">\ud83d\udcce ' + esc(f.name) + ' \u00b7 ' + fmtBytes(f.size) + '</a>&nbsp;';
     }).join('') + '<p><br></p>');
     editor.querySelectorAll('a.ln-file').forEach(function (a) { a.contentEditable = 'false'; });
-    markEntryDirty();
-    if (st) { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
+    editorChanged();
+    if (st && editor.id === 'e-body') { st.textContent = 'Unsaved changes'; st.className = 'ln-entry-status dirty'; }
   } catch (e) { alert(e.message); if (st) st.textContent = 'Unsaved changes'; }
 }
 // Links don't open on click inside an editable page, so open file chips here.
@@ -1322,7 +1357,7 @@ function editorPaste(e) {
   if (!cd) return;
   if (cd.files && cd.files.length) { e.preventDefault(); editorInsertFiles(cd.files); return; }
   var html = cd.getData('text/html');
-  if (html) { e.preventDefault(); document.execCommand('insertHTML', false, safeHtml(html)); markEntryDirty(); }
+  if (html) { e.preventDefault(); document.execCommand('insertHTML', false, safeHtml(html)); editorChanged(); }
 }
 function editorDrop(e) {
   if (e.target.closest && e.target.closest('.ln-calc')) return;
@@ -3703,7 +3738,13 @@ function openModal(type, editId) {
       '<div class="ln-form-row"><label>External Protocol Link (URL, optional)</label><input id="m-link" type="url" value="' + esc(ex.link || '') + '" placeholder="https://www.protocols.io/..."></div>' +
       '<div class="ln-form-row"><label>Summary</label><textarea id="m-summary" placeholder="Brief description...">' + esc(ex.summary || '') + '</textarea></div>' +
       '<div class="ln-form-row"><label>Materials &amp; Reagents</label><textarea id="m-materials" placeholder="List all required materials...">' + esc(ex.materials || '') + '</textarea></div>' +
-      '<div class="ln-form-row"><label>Protocol Steps</label><textarea id="m-steps" style="min-height:130px;" placeholder="1. Step one&#10;2. Step two...">' + esc(ex.steps || '') + '</textarea></div>' +
+      /* Steps are written the way a notebook page is: numbered or not, with
+         tables for conditions and screenshots of whatever was on the
+         instrument. Paste an image straight in, or drop a file on it. */
+      '<div class="ln-form-row"><label>Protocol Steps</label>' + editorToolbarHtml('m-steps', true) +
+        '<div id="m-steps" class="ln-page-editor ln-steps-editor" contenteditable="true" spellcheck="true" ' +
+        'data-placeholder="1. Step one&#10;2. Step two\u2026  \u2014 add a table for conditions, or paste a screenshot"></div>' +
+        '<div class="hint">Tables, pasted screenshots and dropped images all work here, the same as on a notebook page.</div></div>' +
       '<div class="ln-form-row"><label>Notes &amp; Troubleshooting</label><textarea id="m-notes" placeholder="Tips, issues, variations...">' + esc(ex.notes || '') + '</textarea></div>' +
       '<div class="ln-form-row"><label>Upload Files (images, PDFs)</label><input type="file" id="m-files" multiple accept="image/*,.pdf,.doc,.docx,.xlsx"><div class="hint">Existing files are preserved when editing.</div></div>' +
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveProtocol(\'' + (editId || '') + '\')">Save Protocol</button></div>';
@@ -3726,6 +3767,44 @@ function openModal(type, editId) {
       '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" onclick="saveNewUser()">Add &amp; Approve</button></div>';
   }
   mc.innerHTML = html; bg.classList.add('open');
+  if (type === 'protocol') {
+    var steps = document.getElementById('m-steps');
+    steps.innerHTML = protoStepsHtml(ex.steps || '');
+    wirePageEditor(steps, function () { /* a form: saved by its own button */ });
+  }
+}
+
+/* Protocol steps used to be plain text in a <pre>, and most of them still
+   are. Anything written since can hold the same markup a notebook page
+   does, so what is stored is read as HTML when it looks like HTML and as
+   text otherwise — no column to add, no protocol to convert, and one
+   written years ago still reads exactly as it did. */
+function protoStepsIsHtml(v) { return /<(p|div|ul|ol|li|table|thead|tbody|tr|td|th|img|h[1-4]|br|strong|em|b|i|blockquote|pre|a)\b/i.test(String(v || '')); }
+function protoStepsHtml(v) {
+  if (!v) return '';
+  if (protoStepsIsHtml(v)) return safeHtml(v);
+  return '<p>' + esc(String(v)).replace(/\r?\n/g, '<br>') + '</p>';   // plain text, line for line
+}
+// What to store: the markup, with expiring links taken back out of it.
+function protoStepsForSave() {
+  var ed = document.getElementById('m-steps');
+  if (!ed) return '';
+  var clone = ed.cloneNode(true);
+  clone.querySelectorAll('img[data-path]').forEach(function (i) { i.removeAttribute('src'); });
+  clone.querySelectorAll('a[data-path]').forEach(function (a) { a.removeAttribute('href'); });
+  var html = safeHtml(clone.innerHTML);
+  var probe = document.createElement('div'); probe.innerHTML = html;
+  return probe.textContent.trim() || probe.querySelector('img,table,hr,a.ln-file') ? html : '';
+}
+/* For the exports: the steps with any stored image given a link that works
+   for as long as it takes to print, since what is stored is only its path. */
+async function protoStepsOut(p) {
+  if (!p.steps) return '';
+  if (!protoStepsIsHtml(p.steps)) return '<pre>' + esc(p.steps) + '</pre>';
+  var box = document.createElement('div');
+  box.innerHTML = safeHtml(p.steps);
+  try { await hydrateEntryFiles(box); } catch (e) { /* print it without them */ }
+  return box.innerHTML;
 }
 
 // ── SAVE FUNCTIONS ─────────────────────────────────────────
@@ -3735,7 +3814,7 @@ async function saveProtocol(editId) {
   var author = getSelectOrManual('m-author-sel');
   var newFiles = await collectFiles('m-files'); if (newFiles === null) return;
   var ex = editId ? (getProtocols().find(function (p) { return p.id === editId; }) || {}) : {};
-  var obj = { id: editId || undefined, title: title, category: g('m-category'), author: author, date: g('m-date'), link: g('m-link'), summary: g('m-summary'), materials: g('m-materials'), steps: g('m-steps'), notes: g('m-notes'), files: (ex.files || []).concat(newFiles) };
+  var obj = { id: editId || undefined, title: title, category: g('m-category'), author: author, date: g('m-date'), link: g('m-link'), summary: g('m-summary'), materials: g('m-materials'), steps: protoStepsForSave(), notes: g('m-notes'), files: (ex.files || []).concat(newFiles) };
   await DB.upsert('protocols', obj); closeModal(); renderProtocols(); renderDashboard();
 }
 async function savePresentation(editId) {

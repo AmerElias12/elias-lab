@@ -768,3 +768,15 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tfx-steps li{margin-bottom:.3rem;}
 .ln-calc-wide{grid-column:1/-1;}
 @media print{.ln-tfx{break-inside:avoid;background:#fff;}.ln-tfx .ln-calc-x,.ln-tfx .tbl-btn{display:none !important;}}
+
+/* ---- protocol steps, written like a page ---- */
+.ln-steps-editor{min-height:170px;max-height:46vh;overflow:auto;border:1.5px solid rgba(22,36,31,.16);border-radius:0 0 10px 10px;padding:.8rem 1rem;background:#fff;}
+.ln-steps-editor:focus{border-color:#10b07e;box-shadow:0 0 0 3px rgba(16,176,126,.13);outline:none;}
+.ln-form-row .ln-editor-toolbar{position:static;border-radius:10px 10px 0 0;margin-bottom:0;}
+.ln-proto-steps{font-size:13.5px;color:#444;line-height:1.7;background:#f9f9f9;padding:1rem;border-radius:6px;margin-bottom:1.5rem;}
+.ln-proto-steps table{border-collapse:collapse;margin:.6rem 0;font-size:13px;background:#fff;}
+.ln-proto-steps td,.ln-proto-steps th{border:1px solid rgba(22,36,31,.18);padding:.35rem .55rem;}
+.ln-proto-steps th{background:#f0ede3;}
+.ln-proto-steps img{max-width:100%;height:auto;border-radius:6px;margin:.5rem 0;display:block;}
+.ln-proto-steps ul,.ln-proto-steps ol{margin:.4rem 0 .4rem 1.3rem;}
+.ln-proto-steps ul.ln-checklist{list-style:none;margin-left:.2rem;}
