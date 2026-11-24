@@ -764,6 +764,13 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tfx-tbl td.total{font-weight:600;}
 .tfx-tbl td.muted,.tfx-tbl tr.muted td{color:#9aa49d;}
 .tfx-tbl .warn{color:#8f2a2a;font-weight:600;}
+/* The + that adds a plasmid column sits in table 1's own header, where a
+   co-transfection is being typed, as well as under the plasmid list. */
+.tfx-tbl th.tfx-add{padding-right:.3rem;}
+.tbl-btn.sm{padding:.1rem .45rem;margin:0;font-size:12px;line-height:1.3;}
+.tbl-btn[disabled]{opacity:.45;cursor:not-allowed;}
+.tbl-btn[disabled]:hover{background:#fff;border-color:rgba(22,36,31,.16);}
+.tfx-tbl th .ln-calc-x.sm{vertical-align:baseline;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}
 .tfx-steps li{margin-bottom:.3rem;}
 .ln-calc-wide{grid-column:1/-1;}
