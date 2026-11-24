@@ -841,7 +841,7 @@ async function archiveNotebook(id) { if (!DB.isAdmin()) { alert('Only the PI can
 var SAFE_TAGS = ['p', 'br', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
   'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'a'];
 var SAFE_CLASSES = { 'ln-checklist': true, 'checked': true, 'ln-calc': true, 'ln-file': true,
-  'ln-plate': true, 'ln-daymark': true, 'ln-mention': true, 'gone': true };
+  'ln-plate': true, 'ln-tfx': true, 'ln-daymark': true, 'ln-mention': true, 'gone': true };
 var SAFE_STYLES = ['color', 'background-color', 'text-align', 'font-weight', 'font-style', 'text-decoration'];
 var safeHtmlReady = false;
 function safeHtml(html) {
@@ -868,7 +868,7 @@ function safeHtml(html) {
     ALLOWED_TAGS: SAFE_TAGS,
     // data-kind/data-id carry what a mention points at; data-day the date on
     // a divider. All are read back only as an id or a date, never as markup.
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'download', 'data-path', 'data-calc', 'data-plate',
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'download', 'data-path', 'data-calc', 'data-plate', 'data-tfx',
       'data-day', 'data-kind', 'data-id', 'class', 'style', 'colspan', 'rowspan'],
     ADD_DATA_URI_TAGS: ['a'],
     ALLOW_DATA_ATTR: false
@@ -1113,6 +1113,7 @@ function renderEntry(id) {
   editor.addEventListener('input', LabPlates.handle);
   editor.addEventListener('change', LabPlates.handle);
   editor.addEventListener('click', LabPlates.handle);
+  ['input', 'change', 'click'].forEach(function (ev) { editor.addEventListener(ev, LabTransfect.handle); });
   LabMentions.attach(editor);
   hydrateEntryFiles(editor);
   initTableEditor();
@@ -1164,6 +1165,10 @@ function entryBodyForSave() {
   var livePlates = live.querySelectorAll('.ln-plate'), clonePlates = clone.querySelectorAll('.ln-plate');
   Array.prototype.forEach.call(clonePlates, function (b, i) {
     if (livePlates[i] && livePlates[i]._plate) { b._plate = livePlates[i]._plate; LabPlates.snapshot(b); }
+  });
+  var liveTfx = live.querySelectorAll('.ln-tfx'), cloneTfx = clone.querySelectorAll('.ln-tfx');
+  Array.prototype.forEach.call(cloneTfx, function (b, i) {
+    if (liveTfx[i] && liveTfx[i]._tfx) { b._tfx = liveTfx[i]._tfx; LabTransfect.snapshot(b); }
   });
   // A mention keeps only what it points at; the name is drawn again on the
   // way back in, so renaming a plasmid renames every mention of it.
@@ -1727,6 +1732,10 @@ function openCalcPicker() {
         '<div class="ln-box-card-meta">' + esc(r.source || 'Added by the lab') + '</div></button>' +
         '<button type="button" class="ln-icon-btn" title="Edit this table" onclick="openCalcBuilder(\'' + esc(r.id) + '\')">\u270e</button></div>';
     }).join('') +
+    '<button type="button" class="ln-box-card ln-calc-wide" onclick="insertTransfect()">' +
+      '<div class="ln-calc-pick-name">🧬 Transfection plan</div>' +
+      '<div class="ln-box-card-meta">Three tables and the protocol: how many ng of each plasmid every group gets, ' +
+        'what the preps measured at, and the volume to pipette from each — with as many plasmids and groups as the experiment needs</div></button>' +
     '<button type="button" class="ln-box-card ln-calc-new" onclick="openCalcBuilder()">' +
       '<div class="ln-calc-pick-name">+ A table of your own</div>' +
       '<div class="ln-box-card-meta">Write down a mix the lab uses — it stays in this list for everybody</div></button>' +
@@ -1831,6 +1840,20 @@ async function deleteCalcTemplate(id) {
   catch (e) { alert('Could not remove it: ' + e.message); return; }
   calcDraft = null;
   openCalcPicker();
+}
+
+/* The transfection plan is its own block — three tables that feed each
+   other and a protocol written from their numbers — so it is inserted the
+   way a plate is rather than as one more recipe. */
+function insertTransfect() {
+  closeModal();
+  var ed = document.getElementById('e-body');
+  var holder = document.createElement('div');
+  holder.className = 'ln-tfx';
+  holder.setAttribute('data-tfx', JSON.stringify(LabTransfect.blank()));
+  insertBlockAtCaret(ed, holder);
+  LabTransfect.hydrate(ed);
+  markEntryDirty();
 }
 
 function insertCalc(t) {
@@ -1975,6 +1998,7 @@ function dayMarkHydrate(root) {
 function blockHydrate(root) {
   calcHydrate(root);
   if (window.LabPlates) LabPlates.hydrate(root);
+  if (window.LabTransfect) LabTransfect.hydrate(root);
   dayMarkHydrate(root);
   if (window.LabMentions) LabMentions.hydrate(root);
 }

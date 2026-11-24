@@ -754,3 +754,17 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .ln-cb-row .num{text-align:right;}
 .ln-cb-well{display:flex;align-items:center;gap:.25rem;font-size:11px;color:#4a5a52;white-space:nowrap;}
 @media(max-width:640px){.ln-cb-row{flex-wrap:wrap;}.ln-cb-row input:first-child{flex-basis:100%;}}
+
+/* ---- the transfection plan on a page ---- */
+.ln-tfx{background:#fbfaf5;border:1px solid rgba(22,36,31,.12);border-radius:14px;padding:1rem 1.1rem;margin:1rem 0;}
+.ln-tfx .tfx-title{font-family:var(--serif);font-size:17px;font-weight:600;color:#16241f;border:none;background:none;padding:0;width:100%;outline:none;}
+.ln-tfx .tfx-title:focus{border-bottom:1px solid rgba(16,176,126,.5);}
+.tfx-sec{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#0c4a44;margin:1.1rem 0 .4rem;font-weight:600;}
+.tfx-tbl th{white-space:nowrap;}
+.tfx-tbl td.total{font-weight:600;}
+.tfx-tbl td.muted,.tfx-tbl tr.muted td{color:#9aa49d;}
+.tfx-tbl .warn{color:#8f2a2a;font-weight:600;}
+.tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}
+.tfx-steps li{margin-bottom:.3rem;}
+.ln-calc-wide{grid-column:1/-1;}
+@media print{.ln-tfx{break-inside:avoid;background:#fff;}.ln-tfx .ln-calc-x,.ln-tfx .tbl-btn{display:none !important;}}
