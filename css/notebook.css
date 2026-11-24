@@ -196,6 +196,15 @@ button.ln-dash-row:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
 .ln-bulk-list li{padding:.35rem 0;}
 .ln-bulk-list li.muted{color:#7a877f;}
 .ln-bulk-sub{font-size:12px;color:#7a4e0d;margin-top:.2rem;line-height:1.5;}
+/* Adding and updating are the same upload; which one it is has to be
+   visible before the button is pressed. */
+.ln-bulk-opt{display:flex;gap:.6rem;align-items:flex-start;margin:0 0 1rem;padding:.7rem .85rem;background:#f6f4ee;border-radius:10px;cursor:pointer;}
+.ln-bulk-opt input{margin-top:.2rem;flex:0 0 auto;width:16px;height:16px;accent-color:#0c4a44;}
+.ln-bulk-opt strong{font-size:13px;}
+.ln-bulk-opt .hint{font-size:12px;color:#7a877f;margin:.25rem 0 0;line-height:1.5;}
+.ln-bulk-list li.warn{color:#8f2a2a;}
+.ln-bulk-list li.warn .ln-bulk-sub{color:#8f2a2a;}
+.ln-bulk-sub em{font-style:normal;font-weight:600;color:#16241f;}
 .ln-bulk-note{padding:.6rem .9rem;border-radius:10px;font-size:13px;margin-bottom:.5rem;background:#f6f4ee;color:#555;}
 .ln-bulk-note.ok{background:#e7f7ef;color:#0c6b4e;}
 .ln-bulk-note.error{background:rgba(193,58,58,.08);color:#8f2a2a;}
@@ -771,6 +780,9 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tbl-btn[disabled]{opacity:.45;cursor:not-allowed;}
 .tbl-btn[disabled]:hover{background:#fff;border-color:rgba(22,36,31,.16);}
 .tfx-tbl th .ln-calc-x.sm{vertical-align:baseline;}
+/* The inventory has been re-measured since this plan was written. */
+.tfx-stale{margin-top:.3rem;font-size:11px;color:#8f6a2a;line-height:1.5;}
+.tfx-stale strong{color:#16241f;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}
 .tfx-steps li{margin-bottom:.3rem;}
 .ln-calc-wide{grid-column:1/-1;}

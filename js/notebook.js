@@ -3369,13 +3369,30 @@ async function deleteBox() {
 var BULK_CATS = ['enzymes', 'plasmids', 'stocks', 'cells', 'kits'];
 var BULK_SHEETS = { enzymes: 'Restriction Enzymes', plasmids: 'Plasmids', stocks: 'Glycerol Stocks', cells: 'Tissue Culture', kits: 'Kits & Reagents' };
 var BULK_DATE_FIELDS = { expiry: true };
+/* Columns the template carries that the table on screen does not. A
+   sequence is thousands of characters wide and belongs in a cell of a
+   spreadsheet, not in a column of a table anybody reads; the glycerol stock
+   a plasmid was prepped from is in the plasmid's own page but had nowhere to
+   go in the template, which left the two sheets unable to refer to each
+   other at all. */
+var BULK_EXTRA = {
+  plasmids: [{ field: 'stock', label: 'Source glycerol stock' }, { field: 'seq', label: 'Sequence' }],
+  stocks: [{ field: 'seq', label: 'Sequence' }]
+};
+// Rows whose identity matches one already in the inventory can be updated
+// rather than refused: the column that says "this is the same thing".
+var BULK_IDENTITY = { enzymes: 'name', plasmids: 'name', stocks: 'serial', cells: 'name', kits: 'name' };
 // A column whose value must not repeat within a category: rows reusing one are skipped.
 var BULK_UNIQUE = { stocks: 'serial' };
 var BULK_EXAMPLES = {
   enzymes: { name: 'EcoRI', supplier: 'NEB', catalog: 'R0101S', cutsite: 'G↓AATTC', conc: '20,000 U/mL', qty: '3 vials',
     storage: '-20°C Freezer A', box: 'Enzymes Box 1', position: 'A3 (or A2-A3 for a run)' },
-  plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR', freezer: 'Freezer A', box: 'Plasmid Box 1', position: 'A3 (or 1-81)', location: 'Any other location detail' },
-  stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information' },
+  plasmids: { name: 'pUC19-HK022', backbone: 'pUC19', insert: 'HK022 integrase CDS', resistance: 'AmpR',
+    conc: '285 ng/µL (write the unit)', owner: 'Blank = your name', freezer: 'Freezer A', box: 'Plasmid Box 1',
+    position: 'A3 (or 1-81)', location: 'Any other location detail',
+    stock: 'GS-0001 — the glycerol stock this prep came from', seq: 'ATGC… (the whole sequence; checked against the stock’s)' },
+  stocks: { serial: 'GS-0001 (must be unique)', description: 'pUC19-HK022 attB, clone 3', resistance: 'AmpR', qc: 'Sequenced with M13F + M13R, correct', hostStrain: STOCK_STRAINS.join(', ') + ' or other', freezer: 'Freezer A', shelf: 'R2_S3', shelfPlace: 'Left, front', box: 'Box G1', position: 'A3', owner: 'Blank = your name', mapLink: 'https://benchling.com/...', notes: 'Any extra information',
+    seq: 'ATGC… (the whole sequence; checked against the plasmid’s)' },
   cells: { name: 'HEK293T', passage: 'P12', source: 'ATCC CRL-3216', tank: 'LN2 Tank 1', rack: 'Rack 3', box: 'Box B', position: 'A4' },
   kits: { name: 'QIAprep Spin Miniprep Kit', supplier: 'QIAGEN', catalog: '27104', qty: '250 preps',
     aliquots: '12 (whole number, blank if not aliquoted)', aliquotVol: '500 (number only)',
@@ -3395,8 +3412,32 @@ var BULK_ALIASES = {
   qc: ['sequenced', 'sequencing', 'sequencingqc', 'qcprimers', 'sequencedwith'], hostStrain: ['strain', 'ecolistrain', 'bacterialstrain'],
   freezer: ['freezer', 'freezername', 'freezer80c', 'freezer80'], shelf: ['rack', 'rackshelf', 'shelf'],
   shelfPlace: ['positionondrawer', 'drawerposition', 'drawer', 'placeofshelf', 'placeonshelf', 'shelfplace', 'shelfposition'],
-  owner: ['madeby'], mapLink: ['map', 'maplink', 'plasmidmap', 'link', 'mapurl']
+  owner: ['madeby'], mapLink: ['map', 'maplink', 'plasmidmap', 'link', 'mapurl'],
+  seq: ['sequence', 'dnasequence', 'plasmidsequence', 'fullsequence', 'insertsequence', 'seq'],
+  stock: ['sourceglycerolstock', 'glycerolstock', 'stockserial', 'sourcestock', 'fromstock']
 };
+/* A sequence as people paste it: wrapped, numbered, sometimes with its FASTA
+   header still attached. Everything that is not a base is dropped, and what
+   is left has to be bases — a cell holding a sentence is reported rather
+   than silently stored as the letters in it. */
+function bulkSeq(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return { seq: '', bad: false };
+  s = s.replace(/^\s*>[^\r\n]*/, '');                       // FASTA header
+  var letters = s.replace(/[\s\d]/g, '').toUpperCase();
+  if (!letters) return { seq: '', bad: false };
+  return { seq: letters, bad: !/^[ACGTUNRYKMSWBDHV]+$/.test(letters) };
+}
+/* Two sequences are the same plasmid when they are the same circle, which a
+   plain comparison misses: the same map exported twice can start at a
+   different base. Doubling one and looking for the other in it answers that
+   for a circular record; a linear one is compared as written. */
+function sameSequence(a, b, circular) {
+  if (!a || !b) return true;                                  // nothing to disagree about
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return circular !== false && (a + a).indexOf(b) >= 0;
+}
 
 // SheetJS 0.20.3 reads .xlsx/.csv uploads. Served from this site (vendor/)
 // rather than a CDN, which some networks and blockers stop, and pinned to a
@@ -3426,7 +3467,8 @@ function loadXlsx() {
 function bulkColumns(cat) {
   var cfg = INV_CONFIG[cat];
   return cfg.fields.map(function (f, i) { return { field: f, label: cfg.cols[i] }; })
-    .filter(function (c) { return c.field !== 'addedBy' && c.field !== 'len'; }); // len comes from the sequence
+    .filter(function (c) { return c.field !== 'addedBy' && c.field !== 'len'; })   // len comes from the sequence
+    .concat(BULK_EXTRA[cat] || []);
 }
 function bulkKey(s) { return String(s == null ? '' : s).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 function bulkPad(n) { return (n < 10 ? '0' : '') + n; }
@@ -3442,7 +3484,12 @@ function buildInventoryTemplate(XLSX) {
     ['3. Write dates as YYYY-MM-DD (e.g. 2026-03-05) or as Excel dates.'],
     ['4. In the Lab Notebook, open any inventory page, click "Bulk upload" and choose this file.'],
     ['Rows missing the required (first) column are skipped, and so are rows identical to an item already in the inventory.'],
-    ['Glycerol stock serial numbers must be unique: a row reusing a serial that is already taken (in the inventory or earlier in the file) is skipped.'],
+    ['TO UPDATE something already in the inventory: write its Name (or, for a glycerol stock, its Serial #) and only the columns you want to change.'],
+    ['Leave the other columns empty — an empty cell keeps what the item already has. Tick "Update items that are already there" when you upload.'],
+    ['If two items share the name you write, neither is touched: that row is reported instead, and they are edited in the notebook.'],
+    ['Glycerol stock serial numbers must be unique. With updating off, a row reusing a serial that is already taken is skipped.'],
+    ['The Sequence column takes the plain sequence, with or without a FASTA header; line breaks, spaces and numbering are ignored.'],
+    ['A plasmid that names a Source glycerol stock is checked against that stock’s sequence, and a disagreement is reported before anything is saved.'],
     ['Primers are not included: add them in the Primer Generator.'], [],
     ['Sheet', 'Column', 'Required', 'Example']
   ];
@@ -3465,10 +3512,14 @@ function buildInventoryTemplate(XLSX) {
    score} or null when the category's required column is missing. */
 function bulkMapHeader(cat, header) {
   var cfg = INV_CONFIG[cat], lookup = {};
-  cfg.fields.forEach(function (f, i) {
-    lookup[bulkKey(cfg.cols[i])] = f; lookup[bulkKey(f)] = f;
+  function known(label, f) {
+    lookup[bulkKey(label)] = f; lookup[bulkKey(f)] = f;
     (BULK_ALIASES[f] || []).forEach(function (a) { if (!lookup[a]) lookup[a] = f; });
-  });
+  }
+  cfg.fields.forEach(function (f, i) { known(cfg.cols[i], f); });
+  // The template's own extra columns are not in the table's field list, so
+  // they have to be named here too or a Sequence column reads as noise.
+  (BULK_EXTRA[cat] || []).forEach(function (c) { known(c.label, c.field); });
   var cols = {}, used = {}, score = 0;
   header.forEach(function (h, i) {
     var f = lookup[bulkKey(h)];
@@ -3506,11 +3557,27 @@ function bulkSignature(cat, item) {
   return bulkColumns(cat).map(function (c) { return String(item[c.field] || '').trim().toLowerCase(); }).join('\u0001');
 }
 
-/* Read a workbook or CSV into a plan: per category, the new items plus what
-   was skipped and why. Nothing is saved here. */
-function buildBulkPlan(XLSX, wb) {
+/* Read a workbook or CSV into a plan: per category, the new items, the ones
+   that match something already in the inventory, and what was skipped and
+   why. Nothing is saved here.
+
+   `update` is the answer to the usual way this gets used: download the
+   template, change three cells, upload it again. Without it every one of
+   those rows is either refused for reusing a serial or added a second time,
+   and the only way to correct an item in bulk was to delete it first. With
+   it, a row whose identity column matches exactly one record is an edit of
+   that record: cells that were filled in win, cells left empty keep what the
+   inventory already had, so a sheet with three columns in it is still a
+   valid update of three columns. */
+function buildBulkPlan(XLSX, wb, update) {
   var user = currentUser(), me = user ? user.name : 'Unknown';
-  var plan = { cats: {}, ignored: [], total: 0 };
+  var plan = { cats: {}, ignored: [], total: 0, updates: 0, update: !!update, seqClashes: [] };
+  var seqByStock = {};     // serial -> sequence, from the file and the inventory
+  (getInventory().stocks || []).forEach(function (st) {
+    if (st.serial && st.seq) seqByStock[bulkKey(st.serial)] = { seq: bulkSeq(st.seq).seq, where: 'already in the inventory' };
+  });
+  var plasmidSeqs = [];    // {name, stock, seq, row}
+
   wb.SheetNames.forEach(function (sheetName) {
     var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
     var h = 0;
@@ -3518,12 +3585,18 @@ function buildBulkPlan(XLSX, wb) {
     if (h >= rows.length) return; // empty sheet
     var pick = bulkPickCategory(sheetName, rows[h]);
     if (!pick) { if (bulkKey(sheetName) !== 'instructions') plan.ignored.push(sheetName); return; }
-    var cat = pick.cat, nameField = INV_CONFIG[cat].fields[0];
-    var p = plan.cats[cat] || (plan.cats[cat] = { items: [], noName: [], dupes: 0, badDates: [], taken: [] });
+    var cat = pick.cat, nameField = INV_CONFIG[cat].fields[0], idField = BULK_IDENTITY[cat] || nameField;
+    var p = plan.cats[cat] || (plan.cats[cat] = { items: [], updates: [], noName: [], dupes: 0, badDates: [], taken: [], badSeq: [], ambiguous: [] });
     var seen = {}, uniq = BULK_UNIQUE[cat], used = {};
-    (getInventory()[cat] || []).concat(p.items).forEach(function (it) {
+    // Existing records by identity. A key held by more than one record cannot
+    // be used to pick one of them out, so it is marked and left alone.
+    var byId = {};
+    (getInventory()[cat] || []).forEach(function (it) {
       seen[bulkSignature(cat, it)] = true;
       if (uniq && it[uniq]) used[bulkKey(it[uniq])] = true;
+      var k = it[idField] ? bulkKey(it[idField]) : '';
+      if (!k) return;
+      if (byId[k]) byId[k] = 'many'; else byId[k] = it;
     });
     for (var r = h + 1; r < rows.length; r++) {
       var item = {}, any = false;
@@ -3537,22 +3610,75 @@ function buildBulkPlan(XLSX, wb) {
       Object.keys(BULK_DATE_FIELDS).forEach(function (f) {
         if (item[f] && !/^\d{4}-\d{2}-\d{2}$/.test(item[f])) p.badDates.push(rowNo + ' (' + item[f] + ')');
       });
+      // A sequence becomes the record's own sequence, and its length.
+      if (item.seq) {
+        var sq = bulkSeq(item.seq);
+        if (sq.bad) { p.badSeq.push(rowNo); delete item.seq; }
+        else if (sq.seq) {
+          item.seq = sq.seq;
+          if (cat === 'plasmids') item.len = sq.seq.length;
+        } else delete item.seq;
+      }
+      if (cat === 'stocks' && item.serial && item.seq) seqByStock[bulkKey(item.serial)] = { seq: item.seq, where: rowNo };
+      if (cat === 'plasmids' && item.seq) plasmidSeqs.push({ name: item.name, stock: item.stock || '', seq: item.seq, row: rowNo, topology: item.topology });
+
+      var key = item[idField] ? bulkKey(item[idField]) : '';
+      var match = update && key ? byId[key] : null;
+      if (match === 'many') { p.ambiguous.push(rowNo + ' (' + item[idField] + ')'); continue; }
+      if (match) {
+        var merged = Object.assign({}, match, item);
+        var changes = bulkChanges(cat, match, item);
+        if (!changes.length) { p.dupes++; continue; }
+        p.updates.push({ id: match.id, item: merged, label: item[idField], changes: changes, row: rowNo });
+        plan.total++; plan.updates++;
+        continue;
+      }
       var sig = bulkSignature(cat, item);
       if (seen[sig]) { p.dupes++; continue; }
       if (uniq && used[bulkKey(item[uniq])]) { p.taken.push(rowNo + ' (' + item[uniq] + ')'); continue; }
       seen[sig] = true;
       if (uniq) used[bulkKey(item[uniq])] = true;
+      if (key) byId[key] = 'many';   // a second row of the same name in one file is not an update of the first
       if (!item.addedBy) item.addedBy = me;
       if (cat === 'stocks' && !item.owner) item.owner = me;
       p.items.push(item); plan.total++;
     }
   });
+
+  /* The same construct is filed twice: once as the plasmid prep and once as
+     the glycerol stock it was prepped from. If both carry a sequence they
+     should be the same sequence, and when they are not, one of the two is
+     wrong — which is worth knowing before either is used to design anything.
+     Nothing is blocked on it; it is said, with both rows named. */
+  plasmidSeqs.forEach(function (x) {
+    if (!x.stock) return;
+    var st = seqByStock[bulkKey(x.stock)];
+    if (!st || !st.seq) return;
+    if (sameSequence(x.seq, st.seq, x.topology !== 'linear')) return;
+    plan.seqClashes.push(x.name + ' (' + x.row + ') and glycerol stock ' + x.stock + ' (' + st.where + ')');
+  });
   return plan;
 }
 
-var bulkPlan = null;
+/* What an upload would actually change about a record, as "column: old →
+   new". A cell left empty is not a change: the template is filled in from
+   what is already there and emptying a cell is how people leave a column
+   alone, not how they clear it. */
+function bulkChanges(cat, was, now) {
+  var out = [];
+  bulkColumns(cat).forEach(function (c) {
+    if (!(c.field in now)) return;
+    var a = String(was[c.field] == null ? '' : was[c.field]).trim();
+    var b = String(now[c.field] == null ? '' : now[c.field]).trim();
+    if (a === b) return;
+    out.push({ field: c.field, label: c.label, from: a, to: b });
+  });
+  return out;
+}
+
+var bulkPlan = null, bulkWb = null, bulkUpdate = true;
 function openBulkUploadModal() {
-  bulkPlan = null;
+  bulkPlan = null; bulkWb = null;
   document.getElementById('ln-modal-content').innerHTML =
     '<button class="ln-close-btn" onclick="closeModal()">×</button><h3>Bulk upload inventory</h3>' +
     '<p class="ln-bulk-intro">Add many items at once, to any inventory category. The template has one sheet per category; a CSV exported from an inventory page works too.</p>' +
@@ -3562,15 +3688,35 @@ function openBulkUploadModal() {
     '<div class="ln-bulk-step"><span class="ln-bulk-num">2</span><div><strong>Upload the filled-in file</strong>' +
       '<div class="hint">Excel (.xlsx) or CSV. You will see what will be added before anything is saved.</div>' +
       '<input type="file" id="m-bulk-file" accept=".xlsx,.xls,.csv" onchange="previewBulkUpload(this)"></div></div>' +
+    '<label class="ln-bulk-opt"><input type="checkbox" id="m-bulk-update"' + (bulkUpdate ? ' checked' : '') +
+      ' onchange="setBulkUpdate(this.checked)"><span><strong>Update items that are already there</strong>' +
+      '<div class="hint">A row whose ' + esc(bulkIdentityList()) + ' matches an item in the inventory edits that item. ' +
+      'Columns you leave empty keep what they have, so a sheet with three columns filled in changes three columns. ' +
+      'Untick to add only, which is how this worked before.</div></span></label>' +
     '<div id="ln-bulk-preview"></div>' +
     '<div class="ln-modal-actions"><button class="ln-modal-cancel" onclick="closeModal()">Cancel</button><button class="ln-modal-save" id="ln-bulk-save" disabled onclick="saveBulkUpload()">Add items</button></div>';
   document.getElementById('ln-modal-bg').classList.add('open');
   loadXlsx().catch(function () { /* reported when a file is chosen */ }); // warm up while they pick a file
 }
 
+// The column that says "this row is that item", in the dialog's own words.
+function bulkIdentityList() {
+  var seen = [];
+  BULK_CATS.forEach(function (c) {
+    var f = BULK_IDENTITY[c] || INV_CONFIG[c].fields[0];
+    var label = INV_CONFIG[c].cols[INV_CONFIG[c].fields.indexOf(f)] || f;
+    if (seen.indexOf(label) < 0) seen.push(label);
+  });
+  return seen.join(' / ');
+}
+function setBulkUpdate(on) {
+  bulkUpdate = !!on;
+  if (bulkWb) renderBulkPlan();
+}
+
 async function previewBulkUpload(input) {
   var out = document.getElementById('ln-bulk-preview'), btn = document.getElementById('ln-bulk-save');
-  bulkPlan = null; btn.disabled = true; btn.textContent = 'Add items';
+  bulkPlan = null; bulkWb = null; btn.disabled = true; btn.textContent = 'Add items';
   var file = input.files && input.files[0];
   if (!file) { out.innerHTML = ''; return; }
   out.innerHTML = '<div class="ln-bulk-note">Reading ' + esc(file.name) + '…</div>';
@@ -3578,49 +3724,99 @@ async function previewBulkUpload(input) {
     var XLSX = await loadXlsx();
     var isCsv = /\.csv$/i.test(file.name);
     // CSV as text so UTF-8 (°C, ↓, ₂) survives; raw keeps catalog numbers like 0123 as typed.
-    var wb = isCsv ? XLSX.read(await file.text(), { type: 'string', raw: true })
+    bulkWb = isCsv ? XLSX.read(await file.text(), { type: 'string', raw: true })
                    : XLSX.read(await file.arrayBuffer(), { type: 'array' });
-    bulkPlan = buildBulkPlan(XLSX, wb);
   } catch (e) {
     out.innerHTML = '<div class="ln-bulk-note error">Could not read this file: ' + esc(e.message) + '</div>';
     return;
   }
+  renderBulkPlan();
+}
+
+/* The plan, and what it would do, drawn from the workbook already read — so
+   ticking "update" shows the difference straight away instead of asking for
+   the file again. */
+function renderBulkPlan() {
+  var out = document.getElementById('ln-bulk-preview'), btn = document.getElementById('ln-bulk-save');
+  bulkPlan = null; btn.disabled = true;
+  if (!bulkWb || !window.XLSX) return;
+  bulkPlan = buildBulkPlan(window.XLSX, bulkWb, bulkUpdate);
   // Untouched template sheets have no rows at all, so leave them out.
   var parts = BULK_CATS.filter(function (c) {
     var p = bulkPlan.cats[c];
-    return p && (p.items.length || p.dupes || p.noName.length || p.taken.length);
+    return p && (p.items.length || p.updates.length || p.dupes || p.noName.length || p.taken.length || p.badSeq.length || p.ambiguous.length);
   }).map(function (cat) {
     var p = bulkPlan.cats[cat], notes = [];
-    if (p.dupes) notes.push(p.dupes + ' already in the inventory, skipped');
+    if (p.updates.length) notes.push(bulkUpdateNote(p));
+    if (p.ambiguous.length) notes.push(p.ambiguous.length + ' match more than one item of that name, so it is not clear which to update, skipped: ' + esc(p.ambiguous.slice(0, 5).join(', ')) + (p.ambiguous.length > 5 ? '…' : ''));
+    if (p.badSeq.length) notes.push(p.badSeq.length + ' sequence cell(s) hold something that is not DNA, left out: ' + esc(p.badSeq.slice(0, 5).join(', ')) + (p.badSeq.length > 5 ? '…' : ''));
+    if (p.dupes) notes.push(p.dupes + (bulkUpdate ? ' already in the inventory and unchanged, skipped' : ' already in the inventory, skipped'));
     if (p.noName.length) notes.push(p.noName.length + ' missing \u201c' + esc(INV_CONFIG[cat].cols[0]) + '\u201d, skipped (' + esc(p.noName.slice(0, 5).join(', ')) + (p.noName.length > 5 ? '…' : '') + ')');
     if (p.taken.length) notes.push(p.taken.length + ' reuse a ' + esc(INV_CONFIG[cat].cols[0]) + ' that is already taken, skipped: ' + esc(p.taken.slice(0, 5).join(', ')) + (p.taken.length > 5 ? '…' : ''));
     if (p.badDates.length) notes.push('dates not in YYYY-MM-DD, kept as written: ' + esc(p.badDates.slice(0, 5).join(', ')) + (p.badDates.length > 5 ? '…' : ''));
     return '<li><strong>' + esc(BULK_SHEETS[cat]) + '</strong> — ' + p.items.length + ' new' +
+      (p.updates.length ? ', ' + p.updates.length + ' updated' : '') +
       (notes.length ? '<div class="ln-bulk-sub">' + notes.join('<br>') + '</div>' : '') + '</li>';
   });
+  if (bulkPlan.seqClashes.length) {
+    parts.push('<li class="warn"><strong>Sequences that do not match</strong><div class="ln-bulk-sub">' +
+      esc(bulkPlan.seqClashes.slice(0, 5).join('; ')) + (bulkPlan.seqClashes.length > 5 ? '…' : '') +
+      '<br>A plasmid and the glycerol stock it names carry different sequences. Both are saved as written — check which one is right.</div></li>');
+  }
   if (bulkPlan.ignored.length) parts.push('<li class="muted">Not recognised as an inventory category, ignored: ' + esc(bulkPlan.ignored.join(', ')) + '</li>');
   if (!parts.length) parts.push('<li class="muted">No inventory rows found. Check that the header row matches the template.</li>');
   out.innerHTML = '<ul class="ln-bulk-list">' + parts.join('') + '</ul>';
-  if (bulkPlan.total) { btn.disabled = false; btn.textContent = 'Add ' + bulkPlan.total + ' item' + (bulkPlan.total === 1 ? '' : 's'); }
+  if (bulkPlan.total) {
+    btn.disabled = false;
+    var added = bulkPlan.total - bulkPlan.updates;
+    btn.textContent = !bulkPlan.updates ? 'Add ' + added + ' item' + (added === 1 ? '' : 's')
+      : !added ? 'Update ' + bulkPlan.updates + ' item' + (bulkPlan.updates === 1 ? '' : 's')
+      : 'Add ' + added + ' and update ' + bulkPlan.updates;
+  } else btn.textContent = 'Add items';
+}
+
+/* Which items change and how — shown before anything is saved, because an
+   update overwrites what is there and "3 updated" is not enough to agree to. */
+function bulkUpdateNote(p) {
+  var lines = p.updates.slice(0, 4).map(function (u) {
+    var cols = u.changes.slice(0, 3).map(function (c) {
+      var from = c.from || '—', to = c.to;
+      if (c.field === 'seq') { from = c.from ? c.from.length + ' bp' : '—'; to = c.to.length + ' bp'; }
+      if (from.length > 24) from = from.slice(0, 24) + '…';
+      if (to.length > 24) to = to.slice(0, 24) + '…';
+      return esc(c.label) + ' ' + esc(from) + ' → ' + esc(to);
+    });
+    return '<em>' + esc(u.label) + '</em>: ' + cols.join(', ') +
+      (u.changes.length > 3 ? ' and ' + (u.changes.length - 3) + ' more' : '');
+  });
+  return p.updates.length + ' updated — ' + lines.join('; ') +
+    (p.updates.length > 4 ? '; and ' + (p.updates.length - 4) + ' more' : '');
 }
 
 async function saveBulkUpload() {
   if (!bulkPlan || !bulkPlan.total) return;
   var btn = document.getElementById('ln-bulk-save'), out = document.getElementById('ln-bulk-preview');
-  btn.disabled = true; btn.textContent = 'Adding…';
-  var done = [], error = null;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  var done = [], changed = [], error = null;
   for (var i = 0; i < BULK_CATS.length && !error; i++) {
     var cat = BULK_CATS[i], p = bulkPlan.cats[cat];
-    if (!p || !p.items.length) continue;
+    if (!p || (!p.items.length && !p.updates.length)) continue;
     try {
-      var n = await DB.addInventoryMany(cat, p.items);
-      done.push(n + ' ' + (n === 1 ? INV_LABELS[cat].one.toLowerCase() : INV_LABELS[cat].many));
+      if (p.items.length) {
+        var n = await DB.addInventoryMany(cat, p.items);
+        done.push(n + ' ' + (n === 1 ? INV_LABELS[cat].one.toLowerCase() : INV_LABELS[cat].many));
+      }
+      // One at a time: an update is an upsert of a record that already has an
+      // id, and addInventoryMany is for records that do not.
+      for (var u = 0; u < p.updates.length; u++) await DB.upsertInventory(cat, p.updates[u].item);
+      if (p.updates.length) changed.push(p.updates.length + ' ' + (p.updates.length === 1 ? INV_LABELS[cat].one.toLowerCase() : INV_LABELS[cat].many));
     }
     catch (e) { error = INV_LABELS[cat].many + ': ' + e.message; }
   }
-  bulkPlan = null;
+  bulkPlan = null; bulkWb = null;
   if (lnCurrentSection.indexOf('inv-') === 0) renderInventory();
   out.innerHTML = (done.length ? '<div class="ln-bulk-note ok">Added ' + esc(done.join(', ')) + '.</div>' : '') +
+    (changed.length ? '<div class="ln-bulk-note ok">Updated ' + esc(changed.join(', ')) + '.</div>' : '') +
     (error ? '<div class="ln-bulk-note error">Stopped on ' + esc(error) + '</div>' : '');
   btn.textContent = 'Done'; btn.disabled = false; btn.onclick = closeModal;
   document.getElementById('m-bulk-file').value = '';

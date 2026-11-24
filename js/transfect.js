@@ -246,11 +246,7 @@
         return '<tr><td><input data-pi="' + pi + '" data-f="name" value="' + esc(p.name) + '" placeholder="e.g. pCMV-PE6c (p38)"></td>' +
           '<td class="num"><input type="number" min="0" step="any" class="num" data-pi="' + pi + '" data-f="conc" value="' +
             esc(String(p.conc || '')) + '" placeholder="0"> ng/µL</td>' +
-          '<td>' + (lab.length
-            ? '<select data-pi="' + pi + '" data-f="pick"><option value="">— choose to fill in —</option>' +
-              lab.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name) + (x.conc ? ' · ' + x.conc + ' ng/µL' : ' · no concentration recorded') + '</option>'; }).join('') +
-              '</select>'
-            : '<span class="hint">nothing in the inventory yet</span>') + '</td>' +
+          '<td>' + labCell(lab, p, pi) + '</td>' +
           '<td><button type="button" class="ln-calc-x sm" data-act="delplasmid" data-pi="' + pi + '" title="Remove this plasmid">✕</button></td></tr>';
       }).join('') +
       '</tbody></table></div>' +
@@ -258,6 +254,25 @@
       plasmidBtn(st) + '</div>';
 
     block.innerHTML = head + ctrls + t1 + t2 + '<div class="tfx-derived">' + derivedHtml(st, k) + '</div>';
+  }
+
+  /* The cell that connects a row to the lab's own list: the picker, and —
+     when the inventory has since been re-measured — what it now says, with a
+     button to take it. A plan written last month keeps its numbers until
+     somebody chooses to move them, but it no longer hides that they have
+     changed. */
+  function labCell(lab, p, pi) {
+    if (!lab.length) return '<span class="hint">nothing in the inventory yet</span>';
+    var match = lab.filter(function (x) { return x.name.toLowerCase() === String(p.name || '').toLowerCase(); })[0];
+    var stale = match && match.conc > 0 && Math.abs(match.conc - p.conc) > 1e-6;
+    return '<select data-pi="' + pi + '" data-f="pick"><option value="">— choose to fill in —</option>' +
+      lab.map(function (x, i) {
+        return '<option value="' + i + '">' + esc(x.name) +
+          (x.conc ? ' · ' + x.conc + ' ng/µL' + (x.as ? ' (' + esc(x.as) + ')' : '') : ' · no concentration recorded') + '</option>';
+      }).join('') +
+      '</select>' +
+      (stale ? '<div class="tfx-stale">The inventory now says <strong>' + match.conc + ' ng/µL</strong> ' +
+        '<button type="button" class="tbl-btn sm" data-act="useconc" data-pi="' + pi + '" data-conc="' + match.conc + '">Use it</button></div>' : '');
   }
 
   /* One button, in two places, that stops offering once the plan is full
@@ -340,16 +355,30 @@
       'Worth testing two doses on a cell line you have not transfected before.</div>';
   }
 
-  /* The lab's own plasmids, for filling a row in without typing. The
-     concentration is stored as whatever somebody typed — "285", "285 ng/µL",
-     "~300" — so the number is taken off the front and the rest ignored. */
+  /* The lab's own plasmids, for filling a row in without typing.
+
+     The field is `conc`, which is what the plasmid page writes and what the
+     inventory table shows. It used to be read as `concentration` here, which
+     is not a field any record has, so every plasmid came back with no
+     concentration and choosing one filled in a name and nothing else.
+
+     A concentration is stored with its unit — "285 ng/µL", "1.3 µg/µL" — and
+     a plan is worked out in ng/µL, so the unit is converted rather than
+     ignored: 1.3 µg/µL read as 1.3 would be a thousandfold error in a volume
+     somebody pipettes. */
   function labPlasmids() {
     try {
       var inv = window.getInventory && window.getInventory();
       if (!inv || !Array.isArray(inv.plasmids)) return [];
       return inv.plasmids.filter(function (p) { return p && p.name; }).map(function (p) {
-        var m = /-?\d+(\.\d+)?/.exec(String(p.concentration || ''));
-        return { name: p.name, conc: m ? Math.max(0, parseFloat(m[0])) : 0 };
+        var raw = p.conc || p.concentration || '';
+        var c = window.parseConc ? window.parseConc(raw) : null;
+        if (!c) { var m = /-?\d+(\.\d+)?/.exec(String(raw)); c = m ? { ngul: parseFloat(m[0]), raw: String(raw), assumed: true } : null; }
+        return {
+          name: p.name,
+          conc: c && c.ngul > 0 ? Math.round(c.ngul * 1000) / 1000 : 0,
+          as: c && !c.assumed && Math.round(c.ngul * 1000) / 1000 !== c.n ? String(c.raw) : ''
+        };
       }).sort(function (a, b) { return a.name.localeCompare(b.name); });
     } catch (e) { return []; }
   }
@@ -376,6 +405,9 @@
         if (st.plasmids.length >= MAX_PLASMIDS) return;
         st.plasmids.push({ name: '', conc: 0 });
         st.groups.forEach(function (g) { g.ng.push(0); });
+      }
+      if (a === 'useconc') {
+        st.plasmids[+act.dataset.pi].conc = Math.max(0, num(act.dataset.conc));
       }
       if (a === 'delplasmid') {
         if (st.plasmids.length < 2) return;

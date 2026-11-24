@@ -77,8 +77,53 @@
   function g(id) { var el = document.getElementById(id); return el && el.value ? el.value.trim() : ''; }
   function djb2(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) & 0xFFFFFFFF; return (h >>> 0).toString(16); }
 
+  /* ---- concentrations ----
+     A concentration is stored as one string — "350 ng/µL" — because that is
+     what every table, CSV and template column already carries, and a number
+     with its unit split across two columns reads as two facts when it is one.
+     The form writes that string from a number box and a unit list; everything
+     that has to calculate with it comes back through here.
+
+     µg/mL and ng/µL are the same number, which is exactly the sort of thing
+     nobody should have to remember at the bench, so the conversion is here
+     and not in anybody's head. A bare number is read as ng/µL, which is what
+     it has always meant in this notebook, but the form no longer lets a new
+     one be saved that way. */
+  var CONC_UNITS = ['ng/µL', 'µg/µL', 'µg/mL', 'ng/mL', 'mg/mL', 'g/L'];
+  // Everything in ng/µL, which is what a transfection is planned in.
+  var CONC_FACTOR = { 'ng/ul': 1, 'ug/ul': 1000, 'ug/ml': 1, 'ng/ml': 0.001, 'mg/ml': 1000, 'g/l': 1000 };
+  function concUnitKey(u) {
+    return String(u == null ? '' : u).toLowerCase().replace(/\s+/g, '')
+      .replace(/[\u00b5\u03bc]/g, 'u')      // micro sign and Greek mu are the same unit
+      .replace(/^mcg/, 'ug').replace(/\/mcl$/, '/ul')
+      .replace(/litre|liter/g, 'l');
+  }
+  /* What somebody typed, read back. Returns null when there is no number in
+     it at all; `unit` is '' when none was written, and `assumed` says so. */
+  function parseConc(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    var m = /(-?\d+(?:[.,]\d+)?)\s*(.*)$/.exec(s);
+    if (!m) return null;
+    var n = parseFloat(m[1].replace(',', '.'));
+    if (!isFinite(n)) return null;
+    var key = concUnitKey(m[2]), f = CONC_FACTOR[key];
+    var unit = f ? CONC_UNITS.filter(function (u) { return concUnitKey(u) === key; })[0] : '';
+    return { n: n, unit: unit, raw: s, assumed: !unit, ngul: n * (f || 1) };
+  }
+  // The stored form: a number and a unit, with no trailing space when there
+  // is no unit to put after it.
+  function formatConc(n, unit) {
+    var v = parseFloat(String(n == null ? '' : n).replace(',', '.'));
+    if (!isFinite(v)) return '';
+    var key = concUnitKey(unit);
+    var u = CONC_FACTOR[key] ? CONC_UNITS.filter(function (x) { return concUnitKey(x) === key; })[0] : '';
+    return String(v) + (u ? ' ' + u : '');
+  }
+
   // expose helpers globally (UI uses them directly)
   window.uid = uid; window.esc = esc; window.g = g;
+  window.CONC_UNITS = CONC_UNITS; window.parseConc = parseConc; window.formatConc = formatConc;
 
   // ---- sync accessors (read cache) ----
   window.currentUser = function () { return state.currentUser; };

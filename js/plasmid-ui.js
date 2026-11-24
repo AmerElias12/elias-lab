@@ -730,9 +730,12 @@
         '</select></div></div>' +
 
       '<div class="ln-form-section">Preparation</div>' +
-      '<div class="ln-form-grid">' + row('pl-conc', 'Concentration', it.conc, 'e.g. 285 ng/µL') +
-        '<div class="ln-form-row"><label>Extraction kit</label><input id="pl-kit" list="pl-kit-list" value="' + esc(it.kit || '') + '" placeholder="e.g. QIAprep Spin Miniprep">' +
-          '<datalist id="pl-kit-list">' + KITS.map(function (k) { return '<option value="' + esc(k) + '">'; }).join('') + '</datalist></div></div>' +
+      /* A row of its own: the number and its unit together need more width
+         than half of this panel, and a concentration shown as "1" where 1.3
+         is stored is worse than the text box it replaced. */
+      concRow(it.conc) +
+      '<div class="ln-form-row"><label>Extraction kit</label><input id="pl-kit" list="pl-kit-list" value="' + esc(it.kit || '') + '" placeholder="e.g. QIAprep Spin Miniprep">' +
+        '<datalist id="pl-kit-list">' + KITS.map(function (k) { return '<option value="' + esc(k) + '">'; }).join('') + '</datalist></div>' +
       '<div class="ln-form-grid">' +
         '<div class="ln-form-row"><label>Source glycerol stock</label><input id="pl-stock" list="pl-stock-list" value="' + esc(it.stock || '') + '" placeholder="e.g. GS-0007">' +
           '<datalist id="pl-stock-list">' + stocks.map(function (s) { return '<option value="' + esc(s.serial) + '">' + esc(s.description || '') + '</option>'; }).join('') + '</datalist>' +
@@ -750,6 +753,27 @@
       '<div class="ln-form-section">Reference</div>' +
       row('pl-mapLink', 'Map link', it.mapLink, 'https://… (Addgene, Benchling, SnapGene)') +
       '<div class="ln-form-row"><label>Notes</label><textarea id="pl-notes">' + esc(it.notes || '') + '</textarea></div>' +
+      '</div>';
+  }
+  /* The concentration is a number and a unit, not a sentence. It was one
+     text box, and what came out of it was "350" as often as "350 ng/µL" —
+     which reads fine on the page and is useless to anything that has to
+     calculate with it, the transfection planner above all. A value that was
+     saved before this, or typed as something other than a number, is kept
+     exactly as it is until somebody puts a number in the box. */
+  function concRow(value) {
+    var units = window.CONC_UNITS || ['ng/µL'];
+    var p = window.parseConc ? window.parseConc(value) : null;
+    var unit = (p && p.unit) || units[0];
+    var keep = !p && value ? value : '';
+    return '<div class="ln-form-row"><label>Concentration</label><div class="pl-conc-pair">' +
+      '<input type="number" id="pl-conc" min="0" step="any" value="' + esc(p ? String(p.n) : '') + '"' +
+        (keep ? ' data-raw="' + esc(keep) + '"' : '') + ' placeholder="e.g. 285">' +
+      '<select id="pl-conc-unit">' + units.map(function (u) {
+        return '<option value="' + esc(u) + '"' + (u === unit ? ' selected' : '') + '>' + esc(u) + '</option>';
+      }).join('') + '</select></div>' +
+      (keep ? '<div class="hint">Saved as “' + esc(keep) + '”, which is not a number. Type one to replace it.</div>'
+            : (p && p.assumed ? '<div class="hint">Recorded without a unit; it will be saved as ' + esc(unit) + '.</div>' : '')) +
       '</div>';
   }
   function stockNote(serial) {
@@ -3789,6 +3813,15 @@
   }
 
   // ---------- saving ----------
+  /* Empty number box: whatever was there before, so a value this form could
+     not show as a number is not quietly wiped by opening the page. */
+  function concFromForm(was) {
+    var el = document.getElementById('pl-conc');
+    if (!el) return was || '';
+    var n = String(el.value || '').trim();
+    if (!n) return el.dataset.raw || '';
+    return window.formatConc ? window.formatConc(n, g('pl-conc-unit')) : n + ' ' + g('pl-conc-unit');
+  }
   function savePlasmid() {
     var it = rec(); if (!it) return;
     if (!stored()) { alert('This plasmid is no longer in the inventory, so it cannot be saved.'); return; }
@@ -3810,7 +3843,7 @@
       species: kept('pl-species', it.species), accession: kept('pl-accession', it.accession),
       locus: kept('pl-locus', it.locus), source: kept('pl-source', it.source),
       topology: g('pl-topology') === 'linear' ? 'linear' : 'circular',
-      conc: g('pl-conc'), kit: g('pl-kit'), stock: g('pl-stock'), owner: getSelectOrManual('pl-owner'),
+      conc: concFromForm(it.conc), kit: g('pl-kit'), stock: g('pl-stock'), owner: getSelectOrManual('pl-owner'),
       freezer: g('pl-freezer'), box: g('pl-box'), position: g('pl-position'), location: g('pl-location'),
       mapLink: g('pl-mapLink'), notes: g('pl-notes'),
       seq: P.clean(it.seq || ''), features: it.features || [], primers: it.primers || [], len: P.clean(it.seq || '').length

@@ -439,3 +439,14 @@
 /* ---- a base that does not match, lifted out of the primer ---- */
 .pl-primer-gap{fill:#fff;stroke:none;}
 .pcr-mm{text-decoration:underline;}
+
+/* A concentration is a number and a unit side by side, not two form rows:
+   they are one answer. The unit keeps its natural width so "ng/µL" is not
+   cut off, and the number takes the rest. */
+.pl-conc-pair{display:flex;gap:.35rem;align-items:stretch;}
+/* The details panel is narrow, so both halves are trimmed to leave the
+   number room to be read: a box showing "1" where 1.3 is stored is worse
+   than no unit box at all. The spinner goes for the same reason. */
+.pl-conc-pair input{flex:1 1 auto;min-width:0;padding-left:.6rem;padding-right:.35rem;-moz-appearance:textfield;}
+.pl-conc-pair input::-webkit-outer-spin-button,.pl-conc-pair input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.pl-conc-pair select{flex:0 0 auto;width:auto;padding-left:.5rem;padding-right:1.3rem;font-size:13px;}
