@@ -213,7 +213,7 @@
 
     // ---- 1. DNA per well ----
     var t1 = '<div class="tfx-sec">1 · DNA per well (ng)</div>' +
-      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl tfx-t1"><thead><tr><th>Group</th>' +
+      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl tfx-t1"><thead><tr><th class="tfx-n">#</th><th>Group</th>' +
       st.plasmids.map(function (p, i) {
         return '<th>' + esc(p.name || 'Plasmid ' + (i + 1)) +
           (st.plasmids.length > 1
@@ -225,7 +225,8 @@
       '</th></tr></thead><tbody>' +
       st.groups.map(function (g, gi) {
         var r = k.rows[gi];
-        return '<tr><td><input data-gi="' + gi + '" data-f="name" value="' + esc(g.name) + '" placeholder="e.g. TwinPE + Donor"></td>' +
+        return '<tr><td class="tfx-n">' + (gi + 1) + '</td>' +
+          '<td><input data-gi="' + gi + '" data-f="name" value="' + esc(g.name) + '" placeholder="e.g. TwinPE + Donor"></td>' +
           st.plasmids.map(function (p, pi) {
             return '<td class="num"><input type="number" min="0" step="any" class="num" data-gi="' + gi + '" data-pi="' + pi + '" value="' +
               esc(String(g.ng[pi] || 0)) + '"></td>';
@@ -244,9 +245,10 @@
     // ---- 2. the plasmids ----
     var lab = labPlasmids();
     var t2 = '<div class="tfx-sec">2 · The plasmids, as measured</div>' +
-      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl"><thead><tr><th>Plasmid</th><th>Concentration</th><th>In the lab’s list</th><th></th></tr></thead><tbody>' +
+      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl tfx-t2"><thead><tr><th class="tfx-n">#</th><th>Plasmid</th><th>Concentration</th><th>In the lab’s list</th><th></th></tr></thead><tbody>' +
       st.plasmids.map(function (p, pi) {
-        return '<tr><td><input data-pi="' + pi + '" data-f="name" value="' + esc(p.name) + '" placeholder="e.g. pCMV-PE6c (p38)"></td>' +
+        return '<tr><td class="tfx-n">' + (pi + 1) + '</td>' +
+          '<td><input data-pi="' + pi + '" data-f="name" value="' + esc(p.name) + '" placeholder="e.g. pCMV-PE6c (p38)"></td>' +
           '<td class="num"><input type="number" min="0" step="any" class="num" data-pi="' + pi + '" data-f="conc" value="' +
             esc(String(p.conc || '')) + '" placeholder="0"> ng/µL</td>' +
           '<td>' + labCell(lab, p, pi) + '</td>' +
@@ -289,17 +291,17 @@
   function derivedHtml(st, k) {
     var s = k.s;
     var t3 = '<div class="tfx-sec">3 · What to pipette, per group (µL)</div>' +
-      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl"><thead><tr><th>Group</th>' +
+      '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl tfx-t3"><thead><tr><th class="tfx-n">#</th><th>Group</th>' +
       st.plasmids.map(function (p, i) { return '<th>' + esc(p.name || 'Plasmid ' + (i + 1)) + '</th>'; }).join('') +
       '<th>DNA total</th><th>' + esc(s.r.medium) + '</th>' + (s.r.p3000 ? '<th>P3000</th>' : '') + '</tr></thead><tbody>' +
       st.groups.map(function (g, gi) {
         var r = k.rows[gi];
         if (!r.totalNg) {
-          return '<tr class="muted"><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
+          return '<tr class="muted"><td class="tfx-n">' + (gi + 1) + '</td><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
             st.plasmids.map(function () { return '<td class="num">—</td>'; }).join('') +
             '<td class="num">—</td><td class="num">—</td>' + (s.r.p3000 ? '<td class="num">—</td>' : '') + '</tr>';
         }
-        return '<tr><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
+        return '<tr><td class="tfx-n">' + (gi + 1) + '</td><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
           r.vols.map(function (v, i) {
             if (!num(g.ng[i])) return '<td class="num">—</td>';
             if (v == null) return '<td class="num warn" title="This plasmid has no concentration yet">?</td>';
@@ -493,25 +495,25 @@
       esc(FORMATS[st.format]) + ', ' + st.groups.length + ' group' + (st.groups.length === 1 ? '' : 's') +
       ' × ' + st.reps + ' well' + (st.reps === 1 ? '' : 's') + (st.extra ? ' + ' + ng(st.extra) + '% extra' : '') + '</p>';
 
-    out += '<p>DNA per well (ng)</p><table><thead><tr><th>Group</th>' +
+    out += '<p>DNA per well (ng)</p><table><thead><tr><th>#</th><th>Group</th>' +
       cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + '<th>Total</th></tr></thead><tbody>' +
       st.groups.map(function (g, gi) {
-        return '<tr><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
+        return '<tr><td>' + (gi + 1) + '</td><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
           g.ng.map(function (v) { return '<td>' + (v ? ng(v) : '—') + '</td>'; }).join('') +
           '<td>' + ng(k.rows[gi].totalNg) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
-    out += '<p>Plasmids</p><table><thead><tr><th>Plasmid</th><th>ng/µL</th></tr></thead><tbody>' +
+    out += '<p>Plasmids</p><table><thead><tr><th>#</th><th>Plasmid</th><th>ng/µL</th></tr></thead><tbody>' +
       st.plasmids.map(function (p, i) {
-        return '<tr><td>' + esc(p.name || 'Plasmid ' + (i + 1)) + '</td><td>' + (p.conc ? ng(p.conc) : '—') + '</td></tr>';
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.name || 'Plasmid ' + (i + 1)) + '</td><td>' + (p.conc ? ng(p.conc) : '—') + '</td></tr>';
       }).join('') + '</tbody></table>';
 
-    out += '<p>Volumes per group (µL)</p><table><thead><tr><th>Group</th>' +
+    out += '<p>Volumes per group (µL)</p><table><thead><tr><th>#</th><th>Group</th>' +
       cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
       '<th>DNA total</th><th>' + esc(s.r.medium) + '</th>' + (s.r.p3000 ? '<th>P3000</th>' : '') + '</tr></thead><tbody>' +
       st.groups.map(function (g, gi) {
         var r = k.rows[gi];
-        return '<tr><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
+        return '<tr><td>' + (gi + 1) + '</td><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
           r.vols.map(function (v, i) { return '<td>' + (!num(g.ng[i]) ? '—' : v == null ? '?' : vol(v)) + '</td>'; }).join('') +
           '<td>' + (r.totalNg ? vol(r.dnaVol) : '—') + '</td>' +
           '<td>' + (r.totalNg ? vol(Math.max(0, r.tubeMedium - (s.r.tubes === 1 ? r.dnaVol : 0))) : '—') + '</td>' +

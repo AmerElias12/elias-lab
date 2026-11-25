@@ -781,12 +781,21 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tbl-btn[disabled]:hover{background:#fff;border-color:rgba(22,36,31,.16);}
 .tfx-tbl th .ln-calc-x.sm{vertical-align:baseline;}
 /* The inventory has been re-measured since this plan was written. */
-/* With no limit on the plasmids, the tables scroll sideways — so the group
-   column is pinned: a row of volumes is no use if you cannot see whose it
-   is. The background is the block's own, since the cells are transparent
-   and the columns would otherwise scroll through each other. */
-.ln-tfx .tfx-tbl th:first-child,.ln-tfx .tfx-tbl td:first-child{position:sticky;left:0;z-index:1;background:#fbfaf5;box-shadow:1px 0 0 rgba(22,36,31,.07);}
-.ln-tfx .tfx-tbl th:first-child{z-index:2;}
+/* With no limit on the plasmids, the tables scroll sideways — so the row
+   number and the group it names are pinned: a row of volumes is no use if
+   you cannot see whose it is. The background is the block's own, since the
+   cells are transparent and the columns would otherwise scroll through each
+   other. The number column is a fixed width so the name beside it knows
+   where to stop; it also overrides the 7.5rem the editor gives a first
+   column, which is meant for the name, not for "12". */
+.ln-tfx .tfx-tbl th:first-child,.ln-tfx .tfx-tbl td:first-child,
+.ln-tfx .tfx-tbl th:nth-child(2),.ln-tfx .tfx-tbl td:nth-child(2){position:sticky;background:#fbfaf5;}
+.ln-tfx .tfx-tbl th:first-child,.ln-tfx .tfx-tbl td:first-child{left:0;z-index:3;}
+.ln-tfx .tfx-tbl th:nth-child(2),.ln-tfx .tfx-tbl td:nth-child(2){left:2.6rem;z-index:2;box-shadow:1px 0 0 rgba(22,36,31,.07);}
+.ln-tfx .tfx-tbl th:nth-child(2),.ln-page-editor .ln-tfx .tfx-tbl td:nth-child(2){min-width:7.5rem;}
+.ln-tfx .tfx-tbl th.tfx-n,.ln-tfx .tfx-tbl td.tfx-n{box-sizing:border-box;width:2.6rem;min-width:2.6rem;max-width:2.6rem;
+  text-align:right;font-family:var(--mono);font-size:11px;color:#9aa49d;padding-right:.45rem;}
+.ln-tfx .tfx-tbl tr.muted td.tfx-n{color:#c3cac5;}
 .tfx-stale{margin-top:.3rem;font-size:11px;color:#8f6a2a;line-height:1.5;}
 .tfx-stale strong{color:#16241f;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}
