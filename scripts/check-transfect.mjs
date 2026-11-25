@@ -122,6 +122,25 @@ check('a plan has no limit on its groups either', () => {
   assert.equal(back.groups[n - 1].name, 'g' + n);
   assert.equal(round(T.compute(back).rows[n - 1].totalNg), 500);
 });
+check('what has been pipetted is kept with the plan', () => {
+  const st = plan();
+  st.groups[1].done = [true, false, false];
+  st.groups[1].doneMix = true;
+  const back = T.load(JSON.stringify(st));
+  assert.equal(back.groups[1].done[0], true);
+  assert.equal(back.groups[1].done[1], false);
+  assert.equal(back.groups[1].doneMix, true);
+  assert.equal(back.groups[0].doneMix, false);
+  // One flag per plasmid column, however the plan was edited in between.
+  assert.equal(back.groups[1].done.length, st.plasmids.length);
+  const wider = T.load(JSON.stringify({ ...st, plasmids: st.plasmids.concat([{ name: 'p4', conc: 500 }]) }));
+  assert.equal(wider.groups[1].done.length, 4);
+  assert.equal(wider.groups[1].done[3], false);
+  // A plan saved before ticks existed loads with nothing ticked, not undefined.
+  const old = T.load(JSON.stringify({ ...st, groups: [{ name: 'g', ng: [500, 0, 0] }] }));
+  assert.equal(old.groups[0].done.join(','), 'false,false,false');
+  assert.equal(old.groups[0].doneMix, false);
+});
 check('a plan that has been tampered with still loads', () => {
   const back = T.load('{"format":"nonsense","reagent":"x","reps":-4,"plasmids":"no","groups":[{"ng":[5]}]}');
   assert.equal(back.format, '24');

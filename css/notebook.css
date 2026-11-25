@@ -796,6 +796,14 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .ln-tfx .tfx-tbl th.tfx-n,.ln-tfx .tfx-tbl td.tfx-n{box-sizing:border-box;width:2.6rem;min-width:2.6rem;max-width:2.6rem;
   text-align:right;font-family:var(--mono);font-size:11px;color:#9aa49d;padding-right:.45rem;}
 .ln-tfx .tfx-tbl tr.muted td.tfx-n{color:#c3cac5;}
+/* A tick beside every volume in table 3: what is done, at the bench, with
+   gloves on. The box sits left of the number so a column of them reads as a
+   column, and a taken volume greys out without moving anything. */
+.tfx-tick{display:inline-flex;align-items:center;gap:.35rem;justify-content:flex-end;cursor:pointer;}
+.tfx-tick input{width:13px;height:13px;margin:0;flex:0 0 auto;accent-color:#0c4a44;cursor:pointer;}
+.tfx-tick.on span{color:#9aa49d;text-decoration:line-through;}
+.tfx-count{font-family:var(--mono);font-size:11px;color:#0c4a44;}
+.tfx-count.all{color:#0a7f5c;}
 .tfx-stale{margin-top:.3rem;font-size:11px;color:#8f6a2a;line-height:1.5;}
 .tfx-stale strong{color:#16241f;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}

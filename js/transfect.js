@@ -118,7 +118,7 @@
     return {
       title: '', format: '24', reagent: 'lipostem', reps: 3, extra: 0, perWell: 500,
       plasmids: [{ name: '', conc: 0 }, { name: '', conc: 0 }],
-      groups: [{ name: 'Untransfected', ng: [0, 0] }, { name: '', ng: [0, 0] }]
+      groups: [{ name: 'Untransfected', ng: [0, 0], done: [] }, { name: '', ng: [0, 0], done: [] }]
     };
   }
 
@@ -148,9 +148,13 @@
     out.groups = (Array.isArray(st.groups) ? st.groups : []).map(function (g) {
       g = g || {};
       var row = out.plasmids.map(function (_, i) { return Math.max(0, num((g.ng || [])[i])); });
-      return { name: String(g.name || '').slice(0, 80), ng: row };
+      // What has already been pipetted, one flag per column of table 3. It
+      // is kept with the plan rather than in the page, so a tick survives a
+      // reload at the bench and the entry records what was actually done.
+      var done = out.plasmids.map(function (_, i) { return !!(g.done || [])[i]; });
+      return { name: String(g.name || '').slice(0, 80), ng: row, done: done, doneMix: !!g.doneMix, doneP3000: !!g.doneP3000 };
     });
-    if (!out.groups.length) out.groups = [{ name: '', ng: out.plasmids.map(function () { return 0; }) }];
+    if (!out.groups.length) out.groups = [{ name: '', ng: out.plasmids.map(function () { return 0; }), done: [] }];
     return out;
   }
 
@@ -289,7 +293,7 @@
      field anybody types into. Kept apart so that typing a number can redraw
      it without touching the tables above, where the caret is. */
   function derivedHtml(st, k) {
-    var s = k.s;
+    var s = k.s, p = progress(st, k);
     var t3 = '<div class="tfx-sec">3 · What to pipette, per group (µL)</div>' +
       '<div class="ln-calc-scroll"><table class="ln-calc-tbl tfx-tbl tfx-t3"><thead><tr><th class="tfx-n">#</th><th>Group</th>' +
       st.plasmids.map(function (p, i) { return '<th>' + esc(p.name || 'Plasmid ' + (i + 1)) + '</th>'; }).join('') +
@@ -305,22 +309,55 @@
           r.vols.map(function (v, i) {
             if (!num(g.ng[i])) return '<td class="num">—</td>';
             if (v == null) return '<td class="num warn" title="This plasmid has no concentration yet">?</td>';
-            return '<td class="num' + (v < TINY ? ' warn' : '') + '"' + (v < TINY ? ' title="Under ' + TINY + ' µL — dilute the stock first"' : '') + '>' + vol(v) + '</td>';
+            return '<td class="num' + (v < TINY ? ' warn' : '') + '"' + (v < TINY ? ' title="Under ' + TINY + ' µL — dilute the stock first"' : '') + '>' +
+              tick(gi, String(i), (g.done || [])[i], vol(v)) + '</td>';
           }).join('') +
+          // The DNA total is a sum to check the tube against, not a step.
           '<td class="num total">' + vol(r.dnaVol) + '</td>' +
-          '<td class="num' + (r.overflow ? ' warn' : '') + '">' + vol(Math.max(0, r.tubeMedium - (s.r.tubes === 1 ? r.dnaVol : 0))) + '</td>' +
-          (s.r.p3000 ? '<td class="num">' + vol(r.p3000) + '</td>' : '') +
+          '<td class="num' + (r.overflow ? ' warn' : '') + '">' +
+            tick(gi, 'mix', g.doneMix, vol(Math.max(0, r.tubeMedium - (s.r.tubes === 1 ? r.dnaVol : 0)))) + '</td>' +
+          (s.r.p3000 ? '<td class="num">' + tick(gi, 'p3000', g.doneP3000, vol(r.p3000)) + '</td>' : '') +
           '</tr>';
       }).join('') +
       '</tbody></table></div>' +
       '<div class="ln-calc-foot"><span>' +
+        (p.total ? '<strong class="tfx-count' + (p.done === p.total ? ' all' : '') + '">' + p.done + ' of ' + p.total + ' pipetted</strong>. ' : '') +
         'Each volume covers <strong>' + st.reps + '</strong> well' + (st.reps === 1 ? '' : 's') +
         (st.extra ? ' plus ' + ng(st.extra) + '% extra' : '') + '. ' +
         (k.rows.some(function (r) { return r.short; }) ? '<span class="warn">A volume under ' + TINY + ' µL cannot be pipetted — dilute that stock.</span> ' : '') +
         (k.rows.some(function (r) { return r.overflow; }) ? '<span class="warn">A DNA mix is larger than the tube it is diluted into.</span> ' : '') +
         (k.rows.some(function (r) { return r.unknown; }) ? '<span class="warn">A plasmid in use has no concentration.</span>' : '') +
-      '</span></div>';
+      '</span>' +
+      (p.done ? '<button type="button" class="tbl-btn" data-act="untick">Clear ticks</button>' : '') +
+      '</div>';
     return t3 + protocolHtml(st, k);
+  }
+
+  /* One pipetting step: the volume, and whether it has been taken. A box
+     beside every number rather than one per row, because a row is several
+     tubes' worth of pipetting and the thing that gets lost is which plasmid
+     in the row you had got to. */
+  function tick(gi, key, on, text) {
+    return '<label class="tfx-tick' + (on ? ' on' : '') + '">' +
+      '<input type="checkbox" data-act="tick" data-gi="' + gi + '" data-tk="' + esc(key) + '"' + (on ? ' checked' : '') + '>' +
+      '<span>' + text + '</span></label>';
+  }
+  /* How many steps there are and how many are done. A step is a volume
+     somebody takes: the plasmids a group uses, its medium, and the P3000
+     where the reagent has one. */
+  function progress(st, k) {
+    var total = 0, done = 0;
+    st.groups.forEach(function (g, gi) {
+      var r = k.rows[gi];
+      if (!r.totalNg) return;
+      st.plasmids.forEach(function (_, i) {
+        if (!num(g.ng[i]) || r.vols[i] == null) return;
+        total++; if ((g.done || [])[i]) done++;
+      });
+      total++; if (g.doneMix) done++;
+      if (k.s.r.p3000) { total++; if (g.doneP3000) done++; }
+    });
+    return { total: total, done: done };
   }
 
   /* The same numbers as steps, in the reagent's own words. Written out
@@ -393,18 +430,28 @@
       var act = el.closest('[data-act]');
       if (!act) return;
       var a = act.dataset.act;
+      if (a === 'tick') return;        // handled on change, so it is not done twice
+      if (a === 'untick') {
+        if (!confirm('Clear every tick in table 3? The volumes themselves are not changed.')) return;
+        st.groups.forEach(function (g) {
+          g.done = (g.done || []).map(function () { return false; });
+          g.doneMix = false; g.doneP3000 = false;
+        });
+        refresh(block); mark();
+        return;
+      }
       if (a === 'remove') {
         if (confirm('Remove this transfection plan from the page?')) { block.remove(); mark(); }
         return;
       }
-      if (a === 'addgroup') st.groups.push({ name: '', ng: st.plasmids.map(function () { return 0; }) });
+      if (a === 'addgroup') st.groups.push({ name: '', ng: st.plasmids.map(function () { return 0; }), done: [] });
       if (a === 'delgroup') {
         if (st.groups.length < 2) return;
         st.groups.splice(+act.dataset.gi, 1);
       }
       if (a === 'addplasmid') {
         st.plasmids.push({ name: '', conc: 0 });
-        st.groups.forEach(function (g) { g.ng.push(0); });
+        st.groups.forEach(function (g) { g.ng.push(0); (g.done || (g.done = [])).push(false); });
       }
       if (a === 'useconc') {
         st.plasmids[+act.dataset.pi].conc = Math.max(0, num(act.dataset.conc));
@@ -413,12 +460,25 @@
         if (st.plasmids.length < 2) return;
         var pi = +act.dataset.pi;
         st.plasmids.splice(pi, 1);
-        st.groups.forEach(function (g) { g.ng.splice(pi, 1); });
+        st.groups.forEach(function (g) { g.ng.splice(pi, 1); if (g.done) g.done.splice(pi, 1); });
       }
       render(block); mark();
       return;
     }
 
+    // A pipetting step ticked off. Only the derived half is redrawn, so the
+    // tables above keep the caret and the plasmid pickers keep their place.
+    if (el.dataset.act === 'tick') {
+      var g = st.groups[+el.dataset.gi];
+      if (g) {
+        var key = el.dataset.tk;
+        if (key === 'mix') g.doneMix = el.checked;
+        else if (key === 'p3000') g.doneP3000 = el.checked;
+        else { if (!g.done) g.done = []; g.done[+key] = el.checked; }
+      }
+      refresh(block); mark();
+      return;
+    }
     // Choosing a plasmid from the lab's list fills the row and redraws.
     if (el.dataset.f === 'pick') {
       var chosen = labPlasmids()[+el.value];
@@ -514,7 +574,11 @@
       st.groups.map(function (g, gi) {
         var r = k.rows[gi];
         return '<tr><td>' + (gi + 1) + '</td><td>' + esc(g.name || 'Group ' + (gi + 1)) + '</td>' +
-          r.vols.map(function (v, i) { return '<td>' + (!num(g.ng[i]) ? '—' : v == null ? '?' : vol(v)) + '</td>'; }).join('') +
+          r.vols.map(function (v, i) {
+            if (!num(g.ng[i])) return '<td>—</td>';
+            // A tick is part of the record: the saved table says it was taken.
+            return '<td>' + (v == null ? '?' : vol(v) + ((g.done || [])[i] ? ' ✓' : '')) + '</td>';
+          }).join('') +
           '<td>' + (r.totalNg ? vol(r.dnaVol) : '—') + '</td>' +
           '<td>' + (r.totalNg ? vol(Math.max(0, r.tubeMedium - (s.r.tubes === 1 ? r.dnaVol : 0))) : '—') + '</td>' +
           (s.r.p3000 ? '<td>' + (r.totalNg ? vol(r.p3000) : '—') + '</td>' : '') + '</tr>';
