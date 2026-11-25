@@ -106,6 +106,22 @@ check('a co-transfection has no limit on its plasmids', () => {
   assert.equal(back.groups[0].ng.length, n);
   assert.equal(round(T.compute(back).rows[0].totalNg), 100 * n);
 });
+check('a plan has no limit on its groups either', () => {
+  const st = plan();
+  const n = 96;                                     // a whole plate, one group per well
+  st.reps = 1;
+  st.groups = Array.from({ length: n }, (_, i) => ({ name: 'g' + (i + 1), ng: [500, 0, 0] }));
+  const k = T.compute(st);
+  assert.equal(k.rows.length, n);
+  assert.equal(k.totalWells, n);
+  assert.equal(round(k.rows[n - 1].vols[0]), 1.19);  // 500 × 1 / 420
+  // The limit that used to be here only bit on the way back in, so that is
+  // where this is checked: a saved plan keeps every row it was saved with.
+  const back = T.load(JSON.stringify(st));
+  assert.equal(back.groups.length, n);
+  assert.equal(back.groups[n - 1].name, 'g' + n);
+  assert.equal(round(T.compute(back).rows[n - 1].totalNg), 500);
+});
 check('a plan that has been tampered with still loads', () => {
   const back = T.load('{"format":"nonsense","reagent":"x","reps":-4,"plasmids":"no","groups":[{"ng":[5]}]}');
   assert.equal(back.format, '24');

@@ -141,7 +141,11 @@
       })
     };
     if (!out.plasmids.length) out.plasmids = [{ name: '', conc: 0 }];
-    out.groups = (Array.isArray(st.groups) ? st.groups : []).slice(0, 60).map(function (g) {
+    /* No ceiling on the groups either. The one that was here, of 60, only
+       ever bit on the way back in: a plan could be built with more rows than
+       that and would come back from a save with the extra ones gone, which
+       is the worst of the three possible behaviours. */
+    out.groups = (Array.isArray(st.groups) ? st.groups : []).map(function (g) {
       g = g || {};
       var row = out.plasmids.map(function (_, i) { return Math.max(0, num((g.ng || [])[i])); });
       return { name: String(g.name || '').slice(0, 80), ng: row };
