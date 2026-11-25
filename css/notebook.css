@@ -781,6 +781,12 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tbl-btn[disabled]:hover{background:#fff;border-color:rgba(22,36,31,.16);}
 .tfx-tbl th .ln-calc-x.sm{vertical-align:baseline;}
 /* The inventory has been re-measured since this plan was written. */
+/* With no limit on the plasmids, the tables scroll sideways — so the group
+   column is pinned: a row of volumes is no use if you cannot see whose it
+   is. The background is the block's own, since the cells are transparent
+   and the columns would otherwise scroll through each other. */
+.ln-tfx .tfx-tbl th:first-child,.ln-tfx .tfx-tbl td:first-child{position:sticky;left:0;z-index:1;background:#fbfaf5;box-shadow:1px 0 0 rgba(22,36,31,.07);}
+.ln-tfx .tfx-tbl th:first-child{z-index:2;}
 .tfx-stale{margin-top:.3rem;font-size:11px;color:#8f6a2a;line-height:1.5;}
 .tfx-stale strong{color:#16241f;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}

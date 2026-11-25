@@ -88,10 +88,11 @@
   var FORMAT_ORDER = ['96', '24', '12', '6', '10cm'];
   // Below this, a volume is smaller than most people can pipette honestly.
   var TINY = 0.5;
-  /* How many plasmids one group can be co-transfected with. Six is past
-     anything the lab does in one well, and it is also about as many columns
-     as table 1 can show without scrolling sideways on a laptop. */
-  var MAX_PLASMIDS = 6;
+  /* There is no limit on how many plasmids a group is co-transfected with.
+     There was one, of six, on the grounds that more would not fit across a
+     laptop — which is a reason to make the tables scroll, not a reason to
+     refuse the experiment. The group column stays put while the rest scrolls,
+     so the row being read stays named however many columns there are. */
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -134,7 +135,7 @@
       reps: Math.max(1, Math.round(num(st.reps, 3))),
       extra: Math.max(0, num(st.extra, 0)),
       perWell: Math.max(0, num(st.perWell, 500)),
-      plasmids: (Array.isArray(st.plasmids) ? st.plasmids : []).slice(0, MAX_PLASMIDS).map(function (p) {
+      plasmids: (Array.isArray(st.plasmids) ? st.plasmids : []).map(function (p) {
         p = p || {};
         return { name: String(p.name || '').slice(0, 80), conc: Math.max(0, num(p.conc)) };
       })
@@ -216,9 +217,7 @@
             : '') + '</th>';
       }).join('') +
       '<th>Total</th><th class="tfx-add">' +
-        (st.plasmids.length < MAX_PLASMIDS
-          ? '<button type="button" class="tbl-btn sm" data-act="addplasmid" title="Another plasmid to co-transfect (up to ' + MAX_PLASMIDS + ')">+</button>'
-          : '') +
+        '<button type="button" class="tbl-btn sm" data-act="addplasmid" title="Another plasmid to co-transfect">+</button>' +
       '</th></tr></thead><tbody>' +
       st.groups.map(function (g, gi) {
         var r = k.rows[gi];
@@ -234,9 +233,9 @@
       '<div class="ln-calc-foot"><span>' +
         (k.rows.some(function (r) { return r.off; })
           ? '<span class="warn">A group marked in red does not add up to ' + ng(st.perWell) + ' ng.</span>'
-          : 'Rows are groups, columns are plasmids — one column per plasmid in a co-transfection, up to ' + MAX_PLASMIDS + '.') +
+          : 'Rows are groups, columns are plasmids — one column per plasmid in a co-transfection, as many as the experiment needs.') +
       '</span><button type="button" class="tbl-btn" data-act="addgroup">+ Group</button>' +
-      plasmidBtn(st) + '</div>';
+      plasmidBtn() + '</div>';
 
     // ---- 2. the plasmids ----
     var lab = labPlasmids();
@@ -251,7 +250,7 @@
       }).join('') +
       '</tbody></table></div>' +
       '<div class="ln-calc-foot"><span>The concentration of the prep you are using today. Correct it here and every volume below follows.</span>' +
-      plasmidBtn(st) + '</div>';
+      plasmidBtn() + '</div>';
 
     block.innerHTML = head + ctrls + t1 + t2 + '<div class="tfx-derived">' + derivedHtml(st, k) + '</div>';
   }
@@ -275,13 +274,9 @@
         '<button type="button" class="tbl-btn sm" data-act="useconc" data-pi="' + pi + '" data-conc="' + match.conc + '">Use it</button></div>' : '');
   }
 
-  /* One button, in two places, that stops offering once the plan is full
-     rather than silently doing nothing when it is pressed. */
-  function plasmidBtn(st) {
-    var full = st.plasmids.length >= MAX_PLASMIDS;
-    return '<button type="button" class="tbl-btn" data-act="addplasmid"' +
-      (full ? ' disabled title="' + MAX_PLASMIDS + ' plasmids is as far as this table goes"' : '') +
-      '>+ Plasmid</button>';
+  // The same button under table 1 and under the plasmid list.
+  function plasmidBtn() {
+    return '<button type="button" class="tbl-btn" data-act="addplasmid">+ Plasmid</button>';
   }
 
   /* Section 3 and the protocol: everything that is only worked out, with no
@@ -402,7 +397,6 @@
         st.groups.splice(+act.dataset.gi, 1);
       }
       if (a === 'addplasmid') {
-        if (st.plasmids.length >= MAX_PLASMIDS) return;
         st.plasmids.push({ name: '', conc: 0 });
         st.groups.forEach(function (g) { g.ng.push(0); });
       }
@@ -528,7 +522,7 @@
   }
 
   window.LabTransfect = {
-    REAGENTS: REAGENTS, FORMATS: FORMATS, MAX_PLASMIDS: MAX_PLASMIDS,
+    REAGENTS: REAGENTS, FORMATS: FORMATS,
     blank: blank, load: load, compute: compute,
     render: render, hydrate: hydrate, snapshot: snapshot, handle: handle
   };

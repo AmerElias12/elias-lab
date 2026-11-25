@@ -90,18 +90,21 @@ check('a saved plan is read back as it was written', () => {
   assert.equal(back.groups[3].ng[1], 250);
   assert.equal(round(T.compute(back).rows[3].vols[1]), 0.58);
 });
-check('a co-transfection can run to six plasmids, and no further', () => {
+check('a co-transfection has no limit on its plasmids', () => {
   const st = plan();
-  assert.equal(T.MAX_PLASMIDS, 6);
-  st.plasmids = [1, 2, 3, 4, 5, 6].map((n) => ({ name: 'p' + n, conc: 100 }));
-  st.groups = [{ name: 'all six', ng: [100, 100, 100, 100, 100, 100] }];
+  const n = 12;                                     // past any limit this block ever had
+  st.plasmids = Array.from({ length: n }, (_, i) => ({ name: 'p' + (i + 1), conc: 100 }));
+  st.groups = [{ name: 'all of them', ng: st.plasmids.map(() => 100) }];
   const k = T.compute(st);
-  assert.equal(k.rows[0].vols.length, 6);
-  assert.equal(round(k.rows[0].totalNg), 600);
-  assert.equal(round(k.rows[0].vols[5]), 3);        // 100 × 3 / 100
-  // A seventh is dropped on the way back in rather than quietly kept.
-  const back = T.load(JSON.stringify({ ...st, plasmids: st.plasmids.concat([{ name: 'p7', conc: 100 }]) }));
-  assert.equal(back.plasmids.length, 6);
+  assert.equal(k.rows[0].vols.length, n);
+  assert.equal(round(k.rows[0].totalNg), 100 * n);
+  assert.equal(round(k.rows[0].vols[n - 1]), 3);    // 100 × 3 / 100
+  assert.equal(round(k.rows[0].dnaVol), 3 * n);
+  // And they all come back out of a saved plan.
+  const back = T.load(JSON.stringify(st));
+  assert.equal(back.plasmids.length, n);
+  assert.equal(back.groups[0].ng.length, n);
+  assert.equal(round(T.compute(back).rows[0].totalNg), 100 * n);
 });
 check('a plan that has been tampered with still loads', () => {
   const back = T.load('{"format":"nonsense","reagent":"x","reps":-4,"plasmids":"no","groups":[{"ng":[5]}]}');
