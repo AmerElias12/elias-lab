@@ -118,7 +118,8 @@
     return {
       title: '', format: '24', reagent: 'lipostem', reps: 3, extra: 0, perWell: 500,
       plasmids: [{ name: '', conc: 0 }, { name: '', conc: 0 }],
-      groups: [{ name: 'Untransfected', ng: [0, 0], done: [] }, { name: '', ng: [0, 0], done: [] }]
+      groups: [{ name: 'Untransfected', ng: [0, 0], done: [] }, { name: '', ng: [0, 0], done: [] }],
+      doneSteps: {}
     };
   }
 
@@ -155,6 +156,12 @@
       return { name: String(g.name || '').slice(0, 80), ng: row, done: done, doneMix: !!g.doneMix, doneP3000: !!g.doneP3000 };
     });
     if (!out.groups.length) out.groups = [{ name: '', ng: out.plasmids.map(function () { return 0; }), done: [] }];
+    /* Which protocol steps have been done, by step key rather than by
+       position: only the keys this version knows are kept, so a plan saved
+       by another one cannot put a tick against a step that is not there. */
+    out.doneSteps = {};
+    var ds = st.doneSteps && typeof st.doneSteps === 'object' ? st.doneSteps : {};
+    PROTO_KEYS.forEach(function (key) { if (ds[key]) out.doneSteps[key] = true; });
     return out;
   }
 
@@ -328,7 +335,7 @@
         (k.rows.some(function (r) { return r.overflow; }) ? '<span class="warn">A DNA mix is larger than the tube it is diluted into.</span> ' : '') +
         (k.rows.some(function (r) { return r.unknown; }) ? '<span class="warn">A plasmid in use has no concentration.</span>' : '') +
       '</span>' +
-      (p.done ? '<button type="button" class="tbl-btn" data-act="untick">Clear ticks</button>' : '') +
+      (p.done || stepsDone(st, k) ? '<button type="button" class="tbl-btn" data-act="untick">Clear ticks</button>' : '') +
       '</div>';
     return t3 + protocolHtml(st, k);
   }
@@ -363,33 +370,61 @@
   /* The same numbers as steps, in the reagent's own words. Written out
      rather than linked to, because this is what gets read at the hood with
      gloves on, and a step that says "as calculated above" is a step that
-     gets guessed. */
-  function protocolHtml(st, k) {
+     gets guessed.
+
+     Each step carries a key of its own, and that — not its position in the
+     list — is what a tick is stored against. Switching reagent rewrites the
+     list, since jetOPTIMUS is one tube and Lipofectamine is two, and a tick
+     against the incubation should still mean the incubation afterwards and
+     not whatever step has ended up fourth. */
+  var PROTO_KEYS = ['warm', 'tubeA', 'tubeB', 'combine', 'tube', 'reagent', 'incubate', 'add', 'return'];
+  function protocolSteps(st, k) {
     var s = k.s, r = s.r, out = [];
     var mediumPer = vol(k.mediumPer), reagentPer = vol(k.reagentPer);
-    out.push('Warm the medium and bring the reagent to room temperature. Vortex the reagent 5 s and spin it down; do the same with the plasmid tubes.');
+    function step(key, html) { out.push({ key: key, html: html }); }
+    step('warm', 'Warm the medium and bring the reagent to room temperature. Vortex the reagent 5 s and spin it down; do the same with the plasmid tubes.');
     if (r.tubes === 2) {
-      out.push('<strong>Tube A (lipid)</strong>, one per group: <strong>' + reagentPer + ' µL</strong> ' + esc(r.name) +
-        ' in <strong>' + mediumPer + ' µL</strong> ' + esc(r.medium) + '. Mix.');
-      out.push('<strong>Tube B (DNA)</strong>, one per group: the plasmid volumes from table 3, made up to <strong>' +
-        mediumPer + ' µL</strong> with ' + esc(r.medium) +
+      step('tubeA', '<strong>Tube A (lipid)</strong>, one per group: <strong>' + reagentPer + ' \u00b5L</strong> ' + esc(r.name) +
+        ' in <strong>' + mediumPer + ' \u00b5L</strong> ' + esc(r.medium) + '. Mix.');
+      step('tubeB', '<strong>Tube B (DNA)</strong>, one per group: the plasmid volumes from table 3, made up to <strong>' +
+        mediumPer + ' \u00b5L</strong> with ' + esc(r.medium) +
         (r.p3000 ? ', plus the P3000 in the last column' : '') + '. Mix.');
-      out.push('Add tube A to tube B — lipid into DNA, not the other way round. Vortex briefly and spin down.');
-      out.push('Leave <strong>10–15 min</strong> at room temperature.');
-      out.push('Add <strong>' + vol(k.addPer) + ' µL</strong> of the complex to each well, dropwise onto the medium already there. Rock the plate back and forth and side to side.');
+      step('combine', 'Add tube A to tube B \u2014 lipid into DNA, not the other way round. Vortex briefly and spin down.');
+      step('incubate', 'Leave <strong>10\u201315 min</strong> at room temperature.');
+      step('add', 'Add <strong>' + vol(k.addPer) + ' \u00b5L</strong> of the complex to each well, dropwise onto the medium already there. Rock the plate back and forth and side to side.');
     } else {
-      out.push('<strong>One tube per group</strong>: the plasmid volumes from table 3 in <strong>' + mediumPer + ' µL</strong> ' +
-        esc(r.medium) + ' (the kit’s own buffer, not a serum-free medium). Vortex 10 s and spin down.');
-      out.push('Add <strong>' + reagentPer + ' µL</strong> ' + esc(r.name) + ' reagent to the tube. Vortex 10 s immediately — do not pipette up and down. Spin down.');
-      out.push('Leave <strong>10 min</strong> at room temperature.');
-      out.push('Add <strong>' + vol(k.addPer) + ' µL</strong> per well, dropwise, and rock the plate.');
+      step('tube', '<strong>One tube per group</strong>: the plasmid volumes from table 3 in <strong>' + mediumPer + ' \u00b5L</strong> ' +
+        esc(r.medium) + ' (the kit\u2019s own buffer, not a serum-free medium). Vortex 10 s and spin down.');
+      step('reagent', 'Add <strong>' + reagentPer + ' \u00b5L</strong> ' + esc(r.name) + ' reagent to the tube. Vortex 10 s immediately \u2014 do not pipette up and down. Spin down.');
+      step('incubate', 'Leave <strong>10 min</strong> at room temperature.');
+      step('add', 'Add <strong>' + vol(k.addPer) + ' \u00b5L</strong> per well, dropwise, and rock the plate.');
     }
-    out.push('Return the plate to the incubator (37 °C, 5% CO₂). No medium change is needed unless the cells look unhappy the next morning.');
-    return '<div class="tfx-sec">4 · The protocol</div><ol class="tfx-steps">' +
-      out.map(function (line) { return '<li>' + line + '</li>'; }).join('') + '</ol>' +
-      '<div class="ln-calc-note">' + esc(r.source) + '. The per-well amounts are the manufacturer’s starting point for ' +
-      esc(FORMATS[st.format]) + ': ' + ng(s.per.dna) + ' ng DNA, ' + vol(s.per.reagent) + ' µL reagent, ' +
-      vol(s.per.medium) + ' µL ' + esc(r.medium) + (r.tubes === 2 ? ' per tube' : '') + '. ' +
+    step('return', 'Return the plate to the incubator (37 \u00b0C, 5% CO\u2082). No medium change is needed unless the cells look unhappy the next morning.');
+    return out;
+  }
+  // How many of the steps on offer have been ticked off.
+  function stepsDone(st, k) {
+    var done = st.doneSteps || {};
+    return protocolSteps(st, k).filter(function (x) { return done[x.key]; }).length;
+  }
+
+  /* `plain` is the saved form: the ticks become a mark in the text, because
+     the entry is read without this script running. */
+  function protocolHtml(st, k, plain) {
+    var s = k.s, r = s.r;
+    var steps = protocolSteps(st, k), done = st.doneSteps || {}, n = stepsDone(st, k);
+    var list = steps.map(function (x) {
+      if (plain) return '<li>' + x.html + (done[x.key] ? ' \u2713' : '') + '</li>';
+      return '<li class="tfx-step"><label class="tfx-tick tfx-steptick' + (done[x.key] ? ' on' : '') + '">' +
+        '<input type="checkbox" data-act="stick" data-sk="' + esc(x.key) + '"' + (done[x.key] ? ' checked' : '') + '>' +
+        '<span>' + x.html + '</span></label></li>';
+    }).join('');
+    return '<div class="tfx-sec">4 \u00b7 The protocol' +
+      (plain ? '' : ' <span class="tfx-count' + (n === steps.length ? ' all' : '') + '">' + n + ' of ' + steps.length + ' done</span>') +
+      '</div><ol class="tfx-steps">' + list + '</ol>' +
+      '<div class="ln-calc-note">' + esc(r.source) + '. The per-well amounts are the manufacturer\u2019s starting point for ' +
+      esc(FORMATS[st.format]) + ': ' + ng(s.per.dna) + ' ng DNA, ' + vol(s.per.reagent) + ' \u00b5L reagent, ' +
+      vol(s.per.medium) + ' \u00b5L ' + esc(r.medium) + (r.tubes === 2 ? ' per tube' : '') + '. ' +
       'Worth testing two doses on a cell line you have not transfected before.</div>';
   }
 
@@ -430,13 +465,14 @@
       var act = el.closest('[data-act]');
       if (!act) return;
       var a = act.dataset.act;
-      if (a === 'tick') return;        // handled on change, so it is not done twice
+      if (a === 'tick' || a === 'stick') return;   // handled on change, so it is not done twice
       if (a === 'untick') {
-        if (!confirm('Clear every tick in table 3? The volumes themselves are not changed.')) return;
+        if (!confirm('Clear every tick \u2014 the volumes in table 3 and the protocol steps? Nothing else is changed.')) return;
         st.groups.forEach(function (g) {
           g.done = (g.done || []).map(function () { return false; });
           g.doneMix = false; g.doneP3000 = false;
         });
+        st.doneSteps = {};
         refresh(block); mark();
         return;
       }
@@ -476,6 +512,14 @@
         else if (key === 'p3000') g.doneP3000 = el.checked;
         else { if (!g.done) g.done = []; g.done[+key] = el.checked; }
       }
+      refresh(block); mark();
+      return;
+    }
+    // A protocol step done. Stored against the step's key, so it keeps its
+    // meaning if the list is rewritten under it.
+    if (el.dataset.act === 'stick') {
+      if (!st.doneSteps) st.doneSteps = {};
+      if (el.checked) st.doneSteps[el.dataset.sk] = true; else delete st.doneSteps[el.dataset.sk];
       refresh(block); mark();
       return;
     }
@@ -585,7 +629,7 @@
       }).join('') + '</tbody></table>';
 
     var steps = document.createElement('div');
-    steps.innerHTML = protocolHtml(st, k);   // the steps alone, not the live tables
+    steps.innerHTML = protocolHtml(st, k, true);   // the steps alone, marked, not the live tables
     var ol = steps.querySelector('ol'), note = steps.querySelector('.ln-calc-note');
     out += '<p>Protocol</p>' + (ol ? ol.outerHTML : '') + (note ? '<p>' + note.innerHTML + '</p>' : '');
     block.innerHTML = out;
@@ -593,7 +637,7 @@
 
   window.LabTransfect = {
     REAGENTS: REAGENTS, FORMATS: FORMATS,
-    blank: blank, load: load, compute: compute,
+    blank: blank, load: load, compute: compute, steps: protocolSteps,
     render: render, hydrate: hydrate, snapshot: snapshot, handle: handle
   };
   if (typeof module === 'object' && module.exports) module.exports = window.LabTransfect;   // tests

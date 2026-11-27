@@ -141,6 +141,27 @@ check('what has been pipetted is kept with the plan', () => {
   assert.equal(old.groups[0].done.join(','), 'false,false,false');
   assert.equal(old.groups[0].doneMix, false);
 });
+check('a protocol step keeps its tick when the list is rewritten', () => {
+  const st = plan();
+  // Lipofectamine Stem is two tubes; its steps run tube A, tube B, combine.
+  const two = T.steps(st, T.compute(st)).map((s) => s.key);
+  assert.equal(two.join(','), 'warm,tubeA,tubeB,combine,incubate,add,return');
+  st.doneSteps = { warm: true, incubate: true, tubeB: true };
+  const back = T.load(JSON.stringify(st));
+  assert.equal(back.doneSteps.warm, true);
+  assert.equal(back.doneSteps.incubate, true);
+  assert.equal(back.doneSteps.add, undefined);
+  // jetOPTIMUS is one tube, so the list is a different one. The ticks that
+  // still name a step on it survive; the one for tube B simply is not shown.
+  back.reagent = 'jetoptimus';
+  const one = T.steps(back, T.compute(back)).map((s) => s.key);
+  assert.equal(one.join(','), 'warm,tube,reagent,incubate,add,return');
+  assert.equal(one.filter((key) => back.doneSteps[key]).join(','), 'warm,incubate');
+  // Nothing a plan was not saved with gets a tick.
+  const odd = T.load(JSON.stringify({ ...st, doneSteps: { nonsense: true, add: 1 } }));
+  assert.equal(Object.keys(odd.doneSteps).join(','), 'add');
+  assert.equal(Object.keys(T.load(JSON.stringify({ ...st, doneSteps: 'no' })).doneSteps).length, 0);
+});
 check('a plan that has been tampered with still loads', () => {
   const back = T.load('{"format":"nonsense","reagent":"x","reps":-4,"plasmids":"no","groups":[{"ng":[5]}]}');
   assert.equal(back.format, '24');

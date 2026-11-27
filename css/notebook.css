@@ -808,6 +808,11 @@ ul.ln-checklist>li.checked::after{content:'';position:absolute;left:5px;top:calc
 .tfx-stale strong{color:#16241f;}
 .tfx-steps{margin:.2rem 0 .6rem 1.2rem;font-size:13.5px;line-height:1.65;color:#16241f;}
 .tfx-steps li{margin-bottom:.3rem;}
+.tfx-steps li.tfx-step{margin-bottom:.45rem;}
+.tfx-steptick{justify-content:flex-start;align-items:flex-start;gap:.5rem;}
+.tfx-steptick input{margin-top:.28rem;}
+.tfx-steptick span{text-align:left;}
+.tfx-tick.tfx-steptick.on span{text-decoration:none;color:#8b968f;}
 .ln-calc-wide{grid-column:1/-1;}
 @media print{.ln-tfx{break-inside:avoid;background:#fff;}.ln-tfx .ln-calc-x,.ln-tfx .tbl-btn{display:none !important;}}
 
