@@ -244,15 +244,17 @@
     regular.forEach(function (r) {
       if (!r || !r.sequence) return;
       out.push({ name: r.name || ('PR' + (r.number || '')), seq: String(r.sequence).toUpperCase(),
-        kind: 'primer', note: r.description || '', where: where(r) });
+        kind: 'primer', note: r.description || '', where: where(r), status: r.status || '' });
     });
     grna.forEach(function (r) {
       if (!r) return;
       const note = [r.description, r.spacerSeq ? 'spacer ' + r.spacerSeq : ''].filter(Boolean).join(' · ');
+      // The status travels with the primer: whether it is in the freezer
+      // decides how the sequence map draws it, not just what the list says.
       if (r.forwardPrimer) out.push({ name: r.forwardName || 'gRNA forward',
-        seq: String(r.forwardPrimer).toUpperCase(), kind: 'gRNA cloning', note: note, where: where(r) });
+        seq: String(r.forwardPrimer).toUpperCase(), kind: 'gRNA cloning', note: note, where: where(r), status: r.status || '' });
       if (r.reversePrimer) out.push({ name: r.reverseName || 'gRNA reverse',
-        seq: String(r.reversePrimer).toUpperCase(), kind: 'gRNA cloning', note: note, where: where(r) });
+        seq: String(r.reversePrimer).toUpperCase(), kind: 'gRNA cloning', note: note, where: where(r), status: r.status || '' });
     });
     return out.filter(function (x) { return x.seq.length; });
   }

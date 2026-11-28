@@ -291,6 +291,22 @@ await check('flat() lists what you would order', async () => {
   assert.ok(flat.every((x) => x.seq && x.seq === x.seq.toUpperCase()));
 });
 
+await check('a primer\u2019s status travels with it', async () => {
+  host();
+  await store.save('regular', [regular({ name: 'PR1', status: 'Ordered' }), regular({ id: store.newId(), number: 2, name: 'PR2', status: 'Received' })]);
+  await store.save('grna', [grnaPair({ status: 'Designed' })]);
+  const by = Object.fromEntries(store.flat().map((x) => [x.name, x.status]));
+  // The sequence map shades a primer that cannot be pipetted yet, so it
+  // needs the status here. flat() used to drop it on the floor.
+  assert.equal(by.PR1, 'Ordered');
+  assert.equal(by.PR2, 'Received');
+  assert.equal(by.PRg1_Frw, 'Designed', 'both halves of a pair are as available as the pair is');
+  assert.equal(by.PRg2_Rev, 'Designed');
+  host();
+  await store.save('regular', [regular({ name: 'PR9' })]);
+  assert.equal(store.flat()[0].status, '', 'a record with no status says nothing, rather than guessing');
+});
+
 await check('the next primer number carries on from the list', () => {
   const c = store.counters([grnaPair({ forwardNumber: 7, reverseNumber: 8 })],
                            [regular({ number: 4 })]);

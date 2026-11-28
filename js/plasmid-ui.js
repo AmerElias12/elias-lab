@@ -195,6 +195,7 @@
     Array.prototype.forEach.call(ws.querySelectorAll('.pl-rail-btn'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-side') === plSide);
     });
+    plApplySideW();
     // The viewers measure the box they are in; both boxes have just changed.
     window.dispatchEvent(new Event('resize'));
     schedulePrimerPaint();
@@ -202,6 +203,72 @@
   /* The workspace is exactly as tall as the room under the tab strip, so the
      sequence scrolls inside it and the bars stay put. On a narrow screen it
      goes back to being an ordinary page. */
+  /* How much of the width the panel beside the sequence takes. It was a
+     fixed share of the window, a little under half, which left the bases a
+     narrow column with the panel mostly empty beside them: the panel is
+     glanced at, the sequence is worked in all day. So it starts narrower,
+     and the border between the two can be dragged — with the arrow keys as
+     well as the pointer, since it is a separator in the tab order. Kept per
+     browser, like which panel is open, and clamped on the way out so a
+     width saved on a wide screen cannot squeeze the sequence on a small one. */
+  var PL_SIDE_MIN = 240, PL_SEQ_MIN = 420;
+  var plSideW = 0;
+  try { plSideW = Math.max(0, parseInt(localStorage.getItem('elias_pl_sidew'), 10) || 0); } catch (e) { /* blocked */ }
+  function plSideRoom() {
+    /* The panel and the drawing share whatever the rail and the grip leave,
+       so the room is what those two hold between them. Measuring the whole
+       row instead handed the sequence the rail's 66 px as well, and dragging
+       the panel all the way out left the bases below their floor. */
+    var pane = document.querySelector('.pl-ws-sidepane');
+    var ws = document.querySelector('.pl-ws');
+    var box = ws && ws.getAttribute('data-view') === 'map'
+      ? document.querySelector('.pl-ws-map') : document.querySelector('.pl-ws-seq');
+    if (!pane || !box) return 2000;
+    return Math.max(PL_SIDE_MIN, pane.offsetWidth + box.offsetWidth - PL_SEQ_MIN);
+  }
+  function plApplySideW() {
+    var pane = document.querySelector('.pl-ws-sidepane');
+    if (!pane) return;
+    // Below the breakpoint the panel is stacked under the sequence and owns
+    // the width; a dragged number there would be meaningless.
+    if (!plSideW || (window.matchMedia && window.matchMedia('(max-width: 900px)').matches)) { pane.style.width = ''; return; }
+    pane.style.width = Math.round(Math.min(plSideRoom(), Math.max(PL_SIDE_MIN, plSideW))) + 'px';
+  }
+  function plSetSideW(px, keep) {
+    plSideW = Math.round(Math.min(plSideRoom(), Math.max(PL_SIDE_MIN, px)));
+    plApplySideW();
+    if (keep) { try { localStorage.setItem('elias_pl_sidew', String(plSideW)); } catch (e) { /* blocked */ } }
+    window.dispatchEvent(new Event('resize'));   // SeqViz re-wraps to the new width
+    schedulePrimerPaint();
+    paintCaret();
+  }
+  function plGripDown(ev) {
+    if (ev.button != null && ev.button !== 0) return;
+    var pane = document.querySelector('.pl-ws-sidepane'); if (!pane) return;
+    var startX = ev.clientX, startW = pane.getBoundingClientRect().width;
+    ev.preventDefault();
+    document.body.classList.add('pl-resizing');
+    function at(e) { return startW + (startX - e.clientX); }   // drag left, panel grows
+    function move(e) { plSetSideW(at(e), false); }
+    function up(e) {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.body.classList.remove('pl-resizing');
+      plSetSideW(at(e), true);
+    }
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  }
+  function plGripKey(ev) {
+    var pane = document.querySelector('.pl-ws-sidepane'); if (!pane) return;
+    var step = ev.shiftKey ? 64 : 16, w = pane.getBoundingClientRect().width;
+    if (ev.key === 'ArrowLeft') plSetSideW(w + step, true);
+    else if (ev.key === 'ArrowRight') plSetSideW(w - step, true);
+    else return;
+    ev.preventDefault();
+  }
+  window.addEventListener('resize', plApplySideW);
+
   function fitWs() {
     var ws = document.querySelector('.pl-ws'); if (!ws) return;
     var main = ws.closest('.ln-main');
@@ -287,6 +354,8 @@
         '<div class="pl-ws-seq">' + seqPanelHtml(p) + '</div>' +
         (ring ? '<div class="pl-ws-map"><div class="ln-pl-mapbox" id="pl-map"></div>' +
           '<div class="ln-pl-mapsel" id="pl-map-selection">Click a feature on the ring to select it.</div></div>' : '') +
+        '<div class="pl-ws-grip" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the panel" ' +
+          'title="Drag, or use the arrow keys, to give the sequence more room" onpointerdown="plGripDown(event)" onkeydown="plGripKey(event)"></div>' +
         '<div class="pl-ws-sidepane">' +
           '<div class="pl-side" data-side="features">' + featuresHtml(p) + '</div>' +
           '<div class="pl-side" data-side="primers">' + primersHtml(p) + '</div>' +
@@ -301,6 +370,7 @@
         '</div>' +
       '</div></div>';
     fitWs();
+    plApplySideW();
     setTimeout(fitWs, 0);
     wire();
     plApplyFields();
@@ -397,19 +467,42 @@
   var GLYPH_ROWS = 3, GLYPH_ROW_H = 16;
   var plGlyphs = [];
   function reverseStr(x) { return x.split('').reverse().join(''); }
+  /* What the lab's list says about a primer, by its sequence. A primer that
+     has only been designed, or ordered and not yet delivered, anneals just
+     as well on paper as one in the freezer — which is the trouble: a plan
+     gets laid around a primer nobody can pipette tomorrow. The map draws
+     those pale and dashed, so the map itself says what can be used today.
+
+     A primer the list has never heard of is not shaded: unknown is not the
+     same as unavailable, and shading it would cry wolf. */
+  var PL_PENDING = { designed: 'designed', ordered: 'ordered', requested: 'requested', ordering: 'on order',
+    'in design': 'in design', pending: 'pending', planned: 'planned' };
+  function primerStock() {
+    var out = {};
+    try {
+      ((window.PrimerStore && window.PrimerStore.flat()) || []).forEach(function (r) {
+        var seq = P.clean(r && r.seq);
+        if (seq && out[seq] == null) out[seq] = String((r && r.status) || '');
+      });
+    } catch (e) { /* no list to read: nothing is shaded */ }
+    return out;
+  }
+  function pendingWord(status) {
+    return PL_PENDING[String(status || '').trim().toLowerCase()] || '';
+  }
   function primerGlyphs(p) {
-    var len = p.seq.length, binds = primerBindings(p), out = [];
+    var len = p.seq.length, binds = primerBindings(p), out = [], stock = primerStock();
     p.features.forEach(function (f, fi) {
       if (f.type !== 'primer_bind' || f.strand === 0 || f.end <= f.start) return;   // across the origin stays a ribbon
       /* The attached primer this annotation is, if it still is one: the
          same name, strand and 3' end. Where it lies is then taken from the
          primer, not from the annotation — an annotation made before
          mismatches were bridged covers only the 3' part. */
-      var hit = null, fwd = f.strand === 1;
+      var hit = null, hitPr = null, fwd = f.strand === 1;
       binds.forEach(function (b) {
         b.hits.forEach(function (h) {
           if (h.strand !== f.strand || (fwd ? h.end !== f.end : h.start !== f.start)) return;
-          if (!hit || b.primer.name === f.name) hit = h;
+          if (!hit || b.primer.name === f.name) { hit = h; hitPr = b.primer; }
         });
       });
       var a0 = hit ? hit.start : f.start, a1 = hit ? hit.end : f.end;
@@ -428,8 +521,9 @@
         : reverseStr(own) + reverseStr(tail).slice(0, to - a1);
       var mm = {};
       (hit ? hit.mismatches : []).forEach(function (pos) { mm[pos] = true; });
+      var waiting = hitPr ? pendingWord(stock[P.clean(hitPr.seq)]) : '';
       out.push({ feature: fi, name: f.name, from: from, to: to, a0: a0, a1: a1, dir: f.strand, mm: mm,
-        shown: shown.toLowerCase() });
+        shown: shown.toLowerCase(), waiting: waiting });
     });
     plGlyphs = out;
     return out;
@@ -499,8 +593,9 @@
     var far = fwd ? near - lift : near + lift;                 // the tail's box
     var lo = Math.max(d.from, first), hi = Math.min(d.to, first + count);
     function x(pos) { return (pos - first) * cw; }
-    var gEl = svgEl('g', { 'class': 'pl-primer-glyph' + (fwd ? '' : ' rev'), 'data-a0': d.a0, 'data-a1': d.a1 });
-    gEl.appendChild(svgEl('title', {}, d.name));
+    var gEl = svgEl('g', { 'class': 'pl-primer-glyph' + (fwd ? '' : ' rev') + (d.waiting ? ' waiting' : ''),
+      'data-a0': d.a0, 'data-a1': d.a1 });
+    gEl.appendChild(svgEl('title', {}, d.name + (d.waiting ? ' — ' + d.waiting + ', not in the freezer yet' : '')));
 
     // the tail: the part of the footprint outside the annealed stretch
     var t0 = fwd ? lo : Math.max(lo, d.a1), t1 = fwd ? Math.min(hi, d.a0) : hi;
@@ -522,7 +617,8 @@
       gEl.appendChild(svgEl('path', { 'class': 'pl-primer-body', d: path }));
       // the name, once, on the row where the annealed stretch begins
       if (d.a0 >= first) {
-        var name = d.name.length > 28 ? d.name.slice(0, 27) + '…' : d.name;
+        var label = d.name + (d.waiting ? ' · ' + d.waiting : '');
+        var name = label.length > 34 ? label.slice(0, 33) + '…' : label;
         var lw = name.length * 6.4 + 14, total = count * cw;
         var cx = Math.max(lw / 2, Math.min(total - lw / 2, (l + r) / 2));
         var ly = fwd ? top + 1 : top + band - 15;
@@ -2692,7 +2788,7 @@
     return bits.join(', ') || 'full match';
   }
   function primersHtml(p) {
-    var binds = primerBindings(p);
+    var binds = primerBindings(p), stock = primerStock();
     var rows = binds.map(function (b, i) {
       var h = b.hits[0];
       /* Other places it would prime. Eight bases is enough to attach, but
@@ -2702,8 +2798,12 @@
       var where = !h ? '<span class="warn">does not bind</span>'
         : (h.start + 1) + '–' + h.end + ' ' + (h.strand === -1 ? '←' : '→') +
           (others ? ' <span class="warn">(+' + others + ' more)</span>' : '');
+      var waiting = pendingWord(stock[P.clean(b.primer.seq)]);
       return '<tr><td><input type="checkbox" class="pl-pr-pick" value="' + i + '"' + (plPrSel[i] ? ' checked' : '') +
-          ' onchange="plPrPick(' + i + ', this.checked)" aria-label="Choose ' + esc(b.primer.name) + '"></td><td>' + esc(b.primer.name) + '</td>' +
+          ' onchange="plPrPick(' + i + ', this.checked)" aria-label="Choose ' + esc(b.primer.name) + '"></td>' +
+        '<td>' + esc(b.primer.name) +
+          (waiting ? ' <span class="pl-pr-waiting" title="The lab’s primer list has this one as ' + esc(waiting) +
+            ', so it cannot be used at the bench yet">' + esc(waiting) + '</span>' : '') + '</td>' +
         '<td><code>' + (h && h.tail ? '<span class="pcr-tailtext">' + esc(h.tail) + '</span>' : '') +
           (h ? annealHtml(h) : esc(b.primer.seq)) + '</code></td>' +
         '<td class="ln-nowrap">' + b.primer.seq.length + ' nt</td>' +
@@ -4280,6 +4380,8 @@
   window.plRunImport = plRunImport;
   window.plExportMenu = plExportMenu;
   window.plSidePick = plSidePick;
+  window.plGripDown = plGripDown;
+  window.plGripKey = plGripKey;
   window.plViewPick = plViewPick;
   window.plPrPick = plPrPick;
   window.plPrAll = plPrAll;
