@@ -342,6 +342,10 @@ function lnShow(section) {
   document.querySelectorAll('.ln-section').forEach(function (s) { s.classList.remove('active'); });
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { n.classList.remove('active'); });
   var sec = document.getElementById('ln-' + section); if (sec) sec.classList.add('active');
+  /* The sequence workspace is a screenful in its own right: it asks for the
+     shell to be the window rather than as tall as the menu down the side. */
+  document.body.classList.toggle('ln-full', section === 'plasmid');
+  if (window.plFitShell) window.plFitShell();
   document.querySelectorAll('.ln-nav-item').forEach(function (n) { var oc = n.getAttribute('onclick'), nav = section === 'entry' ? 'notebooks' : section === 'plasmid' ? 'inv-plasmids' : section;
     if (oc && oc.indexOf("'" + nav + "'") >= 0) n.classList.add('active'); });
   if (section === 'dashboard') renderDashboard();

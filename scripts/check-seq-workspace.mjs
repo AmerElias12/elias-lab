@@ -74,6 +74,39 @@ check('a dragged width cannot squeeze the sequence out, and is remembered', () =
   assert.match(fn, /schedulePrimerPaint\(\)/, 'and the primers painted over it must follow');
 });
 
+check('nothing blank is left under the sequence', () => {
+  const nb = read('js', 'notebook.js');
+  // The menu down the side is taller than the window, and the shell is a row,
+  // so the row used to run past the bottom of the workspace: a few hundred
+  // pixels of nothing, and a page that scrolled for no reason.
+  assert.match(nb, /classList\.toggle\('ln-full', section === 'plasmid'\)/,
+    'the page being shown has to say so, or the shell cannot be sized');
+  assert.match(nb, /window\.plFitShell\(\)/, 'and the sizing has to run on the way in and out');
+  const fn = ui.slice(ui.indexOf('function fitShell'), ui.indexOf('var PL_SEQ_MIN_H'));
+  assert.match(fn, /classList\.contains\('ln-full'\)/);
+  assert.match(fn, /shell\.style\.height = ''/, 'and be undone for every other page');
+  assert.match(css, /body\.ln-full \.ln-sidebar\{overflow:auto;\}/, 'the menu scrolls inside itself instead');
+});
+
+check('the bases can be dragged taller than the window', () => {
+  assert.match(ui, /class="pl-ws-vgrip" role="separator" aria-orientation="horizontal"/);
+  assert.match(ui, /onpointerdown="plVGripDown\(event\)"/);
+  assert.match(ui, /onkeydown="plVGripKey\(event\)"/);
+  assert.match(ui, /ondblclick="plSeqFit\(\)"/, 'and put back to the window with a double-click');
+  for (const name of ['plVGripDown', 'plVGripKey', 'plSeqFit', 'plFitShell']) {
+    assert.ok(ui.includes('window.' + name + ' = '), name + ' must be reachable from the markup');
+  }
+  const fit = ui.slice(ui.indexOf('function fitWs()'), ui.indexOf("window.addEventListener('resize', fitWs)"));
+  assert.match(fit, /if \(plSeqH\) \{ ws\.style\.height = ''; return; \}/,
+    'asked for a taller sequence, the workspace must stop pinning itself to the window');
+  const set = ui.slice(ui.indexOf('var PL_SEQ_MIN_H'), ui.indexOf('function plVGripDown'));
+  assert.match(set, /PL_SEQ_MIN_H = 260/);
+  assert.match(set, /localStorage\.setItem\('elias_pl_seqh'/);
+  assert.match(set, /localStorage\.removeItem\('elias_pl_seqh'/, 'fitting the window again forgets the number');
+  assert.match(set, /plNarrow\(\)/, 'stacked on a phone, a dragged height means nothing');
+  assert.match(css, /\.pl-ws-vgrip\{[^}]*cursor:row-resize/);
+});
+
 console.log('\nPrimers that are not in the freezer yet');
 
 /* pendingWord, run as the page runs it. */

@@ -393,6 +393,19 @@
 .pl-side .ln-pl-panel{border:none;border-radius:0;background:transparent;padding:0;margin:0;}
 .pl-side .ln-pl-panel-head .ln-add-btn{padding:.38rem .8rem;font-size:12px;}
 
+/* the bar under the bases, which drags the sequence taller */
+.pl-ws-vgrip{order:8;flex:none;height:9px;cursor:row-resize;background:#f4f7f3;position:relative;touch-action:none;
+  border-top:1px solid rgba(22,36,31,.08);}
+.pl-ws-vgrip::after{content:"";position:absolute;left:50%;top:3px;width:46px;height:3px;margin-left:-23px;
+  border-radius:2px;background:rgba(22,36,31,.22);}
+.pl-ws-vgrip:hover::after{background:#0c4a44;}
+.pl-ws-vgrip:focus-visible{outline:2px solid #10b07e;outline-offset:-2px;}
+body.pl-rowsizing{cursor:row-resize;user-select:none;}
+/* While the workspace is the page, the shell is the window and the menu
+   scrolls inside itself, so nothing blank is left under the sequence. */
+body.ln-full .ln-sidebar{overflow:auto;}
+body.ln-full .ln-shell{min-height:0;}
+
 /* the border between them, which can be dragged */
 .pl-ws-grip{flex:none;width:8px;cursor:col-resize;background:#f4f7f3;position:relative;touch-action:none;}
 .pl-ws-grip::after{content:"";position:absolute;top:50%;left:2.5px;width:3px;height:36px;margin-top:-18px;
@@ -412,7 +425,7 @@ body.pl-resizing{cursor:col-resize;user-select:none;}
 
 @media(max-width:900px){
   .pl-ws-main{flex-direction:column;}
-  .pl-ws-grip{display:none;}
+  .pl-ws-grip,.pl-ws-vgrip{display:none;}
   .pl-ws-rail{order:-1;width:auto;flex-direction:row;border-left:none;border-bottom:1px solid rgba(22,36,31,.12);}
   .pl-rail-btn{flex:1;}
   .pl-ws-seq .ln-pl-seqmap{flex:none;height:460px;}
@@ -422,7 +435,7 @@ body.pl-resizing{cursor:col-resize;user-select:none;}
 @media print{
   .pl-ws{height:auto !important;display:block;}
   .pl-ws-main{display:block;}
-  .pl-ws-rail,.pl-ws-grip,.pl-ws-top .ln-header-actions,.pl-ws-top .ln-back-link{display:none !important;}
+  .pl-ws-rail,.pl-ws-grip,.pl-ws-vgrip,.pl-ws-top .ln-header-actions,.pl-ws-top .ln-back-link{display:none !important;}
   .pl-ws-sidepane{display:block !important;width:auto !important;border:none;background:#fff;}
   .pl-side{display:block !important;overflow:visible;padding:0;margin-top:10px;}
   .pl-ws-seq .ln-pl-seqmap{height:460px;flex:none;}

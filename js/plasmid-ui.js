@@ -269,10 +269,94 @@
   }
   window.addEventListener('resize', plApplySideW);
 
+  function plNarrow() {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+  }
+  /* The notebook's shell is a row: the menu down the side and the page beside
+     it, each as tall as it needs to be. The menu is the taller of the two, so
+     with the sequence open the row ran a few hundred pixels past the bottom
+     of the workspace — blank, and enough to make the whole page scroll, which
+     is what made the sequence look like a letterbox with nothing under it.
+     While the workspace is the page being shown, the row is the window and
+     the menu scrolls inside itself. */
+  function fitShell() {
+    var shell = document.querySelector('.ln-shell');
+    if (!shell) return;
+    if (!document.body.classList.contains('ln-full') || plNarrow()) { shell.style.height = ''; return; }
+    var top = shell.getBoundingClientRect().top + (document.scrollingElement ? document.scrollingElement.scrollTop : 0);
+    shell.style.height = Math.max(520, window.innerHeight - top) + 'px';
+  }
+
+  /* How tall the bases are drawn. Nothing, the usual case, means the window:
+     the workspace ends where the screen does. A number means the reader has
+     dragged the bar under the sequence down — a plasmid is read by scrolling
+     through it, and on a long stretch it is worth more than a screenful at a
+     time — and then the workspace is as tall as it was asked to be and the
+     page scrolls to the rest of it. */
+  var PL_SEQ_MIN_H = 260;
+  var plSeqH = 0;
+  try { plSeqH = Math.max(0, parseInt(localStorage.getItem('elias_pl_seqh'), 10) || 0); } catch (e) { /* blocked */ }
+  function plSeqBox() { return document.querySelector('.pl-ws-seq .ln-pl-seqmap'); }
+  function plApplySeqH() {
+    var box = plSeqBox();
+    if (!box) return;
+    if (!plSeqH || plNarrow()) { box.style.flex = ''; box.style.height = ''; }
+    else { box.style.flex = 'none'; box.style.height = Math.max(PL_SEQ_MIN_H, plSeqH) + 'px'; }
+  }
+  function plSetSeqH(px, keep) {
+    plSeqH = Math.max(PL_SEQ_MIN_H, Math.round(px));
+    plApplySeqH();
+    fitWs();
+    if (keep) { try { localStorage.setItem('elias_pl_seqh', String(plSeqH)); } catch (e) { /* blocked */ } }
+    window.dispatchEvent(new Event('resize'));
+    schedulePrimerPaint();
+    paintCaret();
+  }
+  // Back to the window, which is where it starts.
+  function plSeqFit() {
+    plSeqH = 0;
+    try { localStorage.removeItem('elias_pl_seqh'); } catch (e) { /* blocked */ }
+    plApplySeqH();
+    fitWs();
+    window.dispatchEvent(new Event('resize'));
+    schedulePrimerPaint();
+    paintCaret();
+  }
+  function plVGripDown(ev) {
+    if (ev.button != null && ev.button !== 0) return;
+    var box = plSeqBox(); if (!box) return;
+    var startY = ev.clientY, startH = box.getBoundingClientRect().height;
+    ev.preventDefault();
+    document.body.classList.add('pl-rowsizing');
+    function at(e) { return startH + (e.clientY - startY); }
+    function move(e) { plSetSeqH(at(e), false); }
+    function up(e) {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.body.classList.remove('pl-rowsizing');
+      plSetSeqH(at(e), true);
+    }
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  }
+  function plVGripKey(ev) {
+    var box = plSeqBox(); if (!box) return;
+    var step = ev.shiftKey ? 120 : 40, h = box.getBoundingClientRect().height;
+    if (ev.key === 'ArrowDown') plSetSeqH(h + step, true);
+    else if (ev.key === 'ArrowUp') plSetSeqH(h - step, true);
+    else if (ev.key === 'Enter' || ev.key === ' ') plSeqFit();
+    else return;
+    ev.preventDefault();
+  }
+
   function fitWs() {
+    fitShell();
     var ws = document.querySelector('.pl-ws'); if (!ws) return;
     var main = ws.closest('.ln-main');
-    if (!main || window.matchMedia('(max-width: 900px)').matches) { ws.style.height = ''; return; }
+    if (!main || plNarrow()) { ws.style.height = ''; return; }
+    /* Asked to be taller than the window, the workspace takes the height it
+       was given and the page scrolls through it. */
+    if (plSeqH) { ws.style.height = ''; return; }
     /* Where its top edge sits when nothing is scrolled, whichever of the
        window and the main column turns out to be the one that scrolls. */
     var top = ws.getBoundingClientRect().top + main.scrollTop + (document.scrollingElement ? document.scrollingElement.scrollTop : 0);
@@ -371,6 +455,7 @@
       '</div></div>';
     fitWs();
     plApplySideW();
+    plApplySeqH();
     setTimeout(fitWs, 0);
     wire();
     plApplyFields();
@@ -1309,7 +1394,10 @@
       plAnnOfferHtml() +
       '<div class="pl-edbar">' + editorNote(p, shown, sum) + '</div>' +
       (len
-        ? '<div class="ln-pl-seqmap" id="pl-seq-map" tabindex="0" role="textbox" aria-label="Plasmid sequence"></div>'
+        ? '<div class="ln-pl-seqmap" id="pl-seq-map" tabindex="0" role="textbox" aria-label="Plasmid sequence"></div>' +
+          '<div class="pl-ws-vgrip" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize the sequence" ' +
+            'title="Drag, or use the up and down arrows, to make the sequence taller. Double-click to fit the window." ' +
+            'onpointerdown="plVGripDown(event)" onkeydown="plVGripKey(event)" ondblclick="plSeqFit()"></div>'
         : '<div class="pl-empty-seq" id="pl-seq-empty" tabindex="0" role="textbox" aria-label="Empty sequence \u2014 type or paste here">' +
           'Type or paste a sequence here, drop a GenBank, SnapGene or FASTA file ' +
           'anywhere on this page, or use <strong>Import sequence file</strong>.</div>') +
@@ -4382,6 +4470,10 @@
   window.plSidePick = plSidePick;
   window.plGripDown = plGripDown;
   window.plGripKey = plGripKey;
+  window.plVGripDown = plVGripDown;
+  window.plVGripKey = plVGripKey;
+  window.plSeqFit = plSeqFit;
+  window.plFitShell = fitShell;
   window.plViewPick = plViewPick;
   window.plPrPick = plPrPick;
   window.plPrAll = plPrAll;
